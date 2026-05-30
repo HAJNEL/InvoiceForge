@@ -16,6 +16,7 @@ import { TruckList } from './features/trucks/TruckList';
 import { ScheduleList } from './features/schedules/ScheduleList';
 import { RecurringList } from './features/recurring/RecurringList';
 import { TripList } from './features/trips/TripList';
+import { TripForm } from './features/trips/TripForm';
 import { SettingsPage } from './features/settings/SettingsPage';
 import { ExtractionReview } from './features/invoices/ExtractionReview';
 import { Login } from './features/auth/Login';
@@ -52,6 +53,8 @@ export default function App() {
           <Route path="/trucks" element={<TruckList />} />
           <Route path="/schedules" element={<ScheduleList />} />
           <Route path="/trips" element={<TripList />} />
+          <Route path="/trips/new" element={<TripForm />} />
+          <Route path="/trips/edit/:id" element={<TripForm />} />
           <Route path="/recurring" element={<RecurringList />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/" element={<Navigate to="/dashboard" />} />

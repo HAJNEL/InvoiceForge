@@ -1,5 +1,5 @@
 import { useState, useEffect, Dispatch, SetStateAction, useRef, useMemo } from 'react';
-import { Plus, Trash2, Edit3, Loader2, AlertCircle, Calendar as CalendarIcon, Navigation, Warehouse, CheckCircle2, Send, FileText, TrendingUp, Search, Package, X, Eye, ExternalLink } from 'lucide-react';
+import { Plus, Trash2, Edit3, Loader2, AlertCircle, Calendar as CalendarIcon, Navigation, Warehouse, CheckCircle2, Send, FileText, Package, X, Eye, ExternalLink, History } from 'lucide-react';
 import { 
   APIProvider, 
   Map, 
@@ -14,7 +14,7 @@ import { useTrucks } from '../trucks/hooks/useTrucks';
 import { useInvoices, UIInvoice } from '../invoices/hooks/useInvoices';
 import { useSettings } from '../settings/hooks/useSettings';
 import { TripStatus, Trip, Settings } from '../../types';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
 
 const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_PLATFORM_KEY || '';
@@ -39,73 +39,61 @@ interface GeocodedInvoice {
 
 export function TripList() {
   const navigate = useNavigate();
-  const { trips, loading: tripsLoading, addTrip, updateTrip, deleteTrip } = useTrips();
+  const { trips, loading: tripsLoading, deleteTrip, updateTrip } = useTrips();
   const { trucks } = useTrucks();
-  const { invoices } = useInvoices();
+  const { invoices, updateInvoice } = useInvoices();
   const { settings } = useSettings();
   
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingTrip, setEditingTrip] = useState<Trip | null>(null);
-  const [formData, setFormData] = useState({
-    name: '',
-    date: new Date().toISOString().split('T')[0],
-    truckId: '',
-    status: TripStatus.PROPOSED as TripStatus,
-    invoiceIds: [] as string[]
-  });
-
   const [geocodedInvoices, setGeocodedInvoices] = useState<GeocodedInvoice[]>([]);
-  const [invoiceSearchTerm, setInvoiceSearchTerm] = useState('');
-  const [stockCodeSearchTerm, setStockCodeSearchTerm] = useState('');
   const [selectedInvoiceForStock, setSelectedInvoiceForStock] = useState<UIInvoice | null>(null);
 
   // Map state
   const [selectedInvoice, setSelectedInvoice] = useState<GeocodedInvoice | null>(null);
   const [routedTrip, setRoutedTrip] = useState<Trip | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
+  const [highlightedTripId, setHighlightedTripId] = useState<string | null>(null);
 
-  const currentSelectionTotal = useMemo(() => {
-    return invoices
-      .filter(inv => formData.invoiceIds.includes(inv.id))
-      .reduce((sum, inv) => sum + (inv.amount || 0), 0);
-  }, [invoices, formData.invoiceIds]);
+  const highlightedInvoiceIds = useMemo(() => {
+    if (!highlightedTripId) return [];
+    const trip = trips.find(t => t.id === highlightedTripId);
+    return trip?.invoiceIds || [];
+  }, [trips, highlightedTripId]);
 
-  const selectedTruck = useMemo(() => {
-    return trucks.find(t => t.id === formData.truckId);
-  }, [trucks, formData.truckId]);
+  const activeInvoices = useMemo(() => {
+    return invoices.filter(inv => inv.status?.toLowerCase() !== 'completed');
+  }, [invoices]);
 
-  const groupedAvailableInvoices = useMemo(() => {
-    const filtered = invoices.filter(inv => {
-      const matchesSearch = 
-        inv.number.toLowerCase().includes(invoiceSearchTerm.toLowerCase()) ||
-        inv.client.toLowerCase().includes(invoiceSearchTerm.toLowerCase()) ||
-        (inv.district?.toLowerCase() || '').includes(invoiceSearchTerm.toLowerCase());
-
-      const matchesStockCode = !stockCodeSearchTerm || (inv.lineItems?.some(item => 
-        item.stockCode.toLowerCase().includes(stockCodeSearchTerm.toLowerCase()) ||
-        item.description.toLowerCase().includes(stockCodeSearchTerm.toLowerCase())
-      ) ?? false);
-
-      return matchesSearch && matchesStockCode;
+  const displayedTrips = useMemo(() => {
+    return trips.filter((trip) => {
+      const isHistory = trip.status === TripStatus.COMPLETED || trip.status === TripStatus.INVOICED;
+      return showHistory ? isHistory : !isHistory;
     });
+  }, [trips, showHistory]);
 
-    const grouped: Record<string, UIInvoice[]> = {};
-    filtered.forEach(inv => {
-      const district = inv.district || 'Unassigned';
-      if (!grouped[district]) grouped[district] = [];
-      grouped[district].push(inv);
-    });
+  const handleStatusClick = async (trip: Trip) => {
+    const statuses = [
+      TripStatus.PROPOSED,
+      TripStatus.ASSEMBLED,
+      TripStatus.ON_ROUTE,
+      TripStatus.PARTIALLY_COMPLETED,
+      TripStatus.COMPLETED,
+      TripStatus.INVOICED
+    ];
+    const currentIndex = statuses.indexOf(trip.status);
+    const nextIndex = (currentIndex + 1) % statuses.length;
+    const nextStatus = statuses[nextIndex];
 
-    return grouped;
-  }, [invoices, invoiceSearchTerm, stockCodeSearchTerm]);
+    await updateTrip(trip.id, { status: nextStatus });
 
-  const toggleInvoice = (id: string) => {
-    setFormData(prev => ({
-      ...prev,
-      invoiceIds: prev.invoiceIds.includes(id)
-        ? prev.invoiceIds.filter(i => i !== id)
-        : [...prev.invoiceIds, id]
-    }));
+    // When status changes to COMPLETED, update all invoices on this trip to 'completed'
+    if (nextStatus === TripStatus.COMPLETED) {
+      if (trip.invoiceIds && trip.invoiceIds.length > 0) {
+        await Promise.all(
+          trip.invoiceIds.map(id => updateInvoice(id, { status: 'completed' }))
+        );
+      }
+    }
   };
 
   if (!hasValidKey) {
@@ -148,17 +136,19 @@ export function TripList() {
               </button>
             )}
             <button
-              onClick={() => {
-                setEditingTrip(null);
-                setFormData({
-                  name: '',
-                  date: new Date().toISOString().split('T')[0],
-                  truckId: trucks[0]?.id || '',
-                  status: TripStatus.PROPOSED,
-                  invoiceIds: []
-                });
-                setIsModalOpen(true);
-              }}
+              onClick={() => setShowHistory(!showHistory)}
+              className={cn(
+                "flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-sm transition-all border",
+                showHistory 
+                  ? "bg-zinc-100 text-zinc-800 border-zinc-300 hover:bg-zinc-200 shadow-inner" 
+                  : "bg-white text-zinc-600 border-zinc-200 hover:bg-zinc-50"
+              )}
+            >
+              <History className="w-4.5 h-4.5 text-zinc-500" />
+              {showHistory ? "View Active Trips" : "View History"}
+            </button>
+            <button
+              onClick={() => navigate('/trips/new')}
               className="flex items-center gap-2 bg-brand-primary text-white px-4 py-2 rounded-xl font-bold text-sm hover:bg-brand-primary/90 transition-all shadow-sm"
             >
               <Plus className="w-4 h-4" />
@@ -170,88 +160,92 @@ export function TripList() {
         {/* Map Section */}
         <div className="h-[400px] w-full rounded-2xl overflow-hidden shadow-lg border border-zinc-200 relative bg-zinc-100">
           <MapComponent 
-            invoices={invoices} 
+            invoices={activeInvoices} 
             geocodedInvoices={geocodedInvoices}
             setGeocodedInvoices={setGeocodedInvoices}
             onInvoiceClick={setSelectedInvoice}
             warehouse={settings}
             routedTrip={routedTrip}
+            highlightedInvoiceIds={highlightedInvoiceIds}
           />
-          {selectedInvoice && (
-             <div className="absolute bottom-4 left-4 right-4 bg-white p-6 rounded-2xl shadow-2xl border border-zinc-200 z-10 animate-in slide-in-from-bottom-4 duration-300 ring-4 ring-brand-primary/5">
-                <div className="flex justify-between items-start mb-4">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <h4 className="text-xl font-black text-brand-primary uppercase tracking-tight">
-                        {selectedInvoice.client}
-                      </h4>
-                      <span className="px-2 py-0.5 bg-brand-primary/5 text-brand-primary rounded-md text-[10px] font-black uppercase tracking-widest border border-brand-primary/10">
-                        {selectedInvoice.district || 'No District'}
-                      </span>
-                    </div>
-                    <p className="text-[11px] font-bold text-zinc-400 uppercase tracking-widest flex items-center gap-1.5">
-                      <FileText className="w-3 h-3" />
-                      Invoice: {selectedInvoice.number} • {selectedInvoice.address}
-                    </p>
-                  </div>
-                  <div className="flex gap-2">
-                    <button 
-                      onClick={() => navigate(`/invoices/${selectedInvoice.id}`)}
-                      className="flex items-center gap-2 bg-brand-primary text-white px-4 py-2 rounded-xl font-bold text-xs hover:bg-brand-primary/90 transition-all shadow-sm group"
-                    >
-                      <Eye className="w-4 h-4" />
-                      View Invoice
-                      <ExternalLink className="w-3 h-3 opacity-50 group-hover:opacity-100 transition-opacity" />
-                    </button>
-                    <button 
-                      onClick={() => setSelectedInvoice(null)}
-                      className="p-2 hover:bg-zinc-100 rounded-xl text-zinc-400 transition-all border border-transparent hover:border-zinc-200"
-                    >
-                      <X className="w-5 h-5" />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Stock Items Section */}
-                <div className="bg-zinc-50 rounded-2xl border border-zinc-100 p-5">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2">
-                      <div className="p-1.5 bg-white rounded-lg border border-zinc-100 shadow-sm">
-                        <Package className="w-3.5 h-3.5 text-brand-accent" />
-                      </div>
-                      <h5 className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400">Stock Manifest</h5>
-                    </div>
-                    {selectedInvoice.lineItems && selectedInvoice.lineItems.length > 0 && (
-                      <span className="text-[9px] font-black text-zinc-400 bg-white px-2 py-1 rounded-md border border-zinc-200">
-                        {selectedInvoice.lineItems.length} ITEMS
-                      </span>
-                    )}
-                  </div>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                    {(!selectedInvoice.lineItems || selectedInvoice.lineItems.length === 0) ? (
-                      <div className="col-span-full py-8 text-center bg-white rounded-xl border border-dashed border-zinc-200">
-                        <Package className="w-6 h-6 text-zinc-200 mx-auto mb-2" />
-                        <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight">No stock items found</p>
-                      </div>
-                    ) : (
-                      selectedInvoice.lineItems.map((item, idx) => (
-                        <div key={idx} className="flex items-center gap-3 bg-white p-3 rounded-xl border border-zinc-100 shadow-sm group hover:border-brand-accent/30 transition-all">
-                          <div className="px-2 py-1 bg-brand-primary/5 rounded-lg font-mono text-[10px] font-black text-brand-primary border border-brand-primary/10">
-                            {item.stockCode}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-[10px] font-bold text-zinc-800 truncate leading-tight group-hover:text-brand-primary transition-colors">{item.description}</p>
-                            <p className="text-[9px] font-black text-zinc-400 uppercase tracking-tighter mt-1">Qty: <span className="text-zinc-900">{item.qty}</span></p>
-                          </div>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-             </div>
-          )}
         </div>
+
+        {/* Selected Invoice Details Card */}
+        {selectedInvoice && (
+           <div className="bg-white p-6 rounded-2xl shadow-xl border border-zinc-200 z-10 animate-in slide-in-from-top-4 duration-300 ring-4 ring-brand-primary/5">
+              <div className="flex justify-between items-start mb-4">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-1">
+                    <h4 className="text-xl font-black text-brand-primary uppercase tracking-tight flex items-center gap-2">
+                      <FileText className="w-5 h-5 text-brand-primary" strokeWidth={2.5} />
+                      Invoice {selectedInvoice.number}
+                    </h4>
+                    <span className="px-2 py-0.5 bg-brand-primary/5 text-brand-primary rounded-md text-[10px] font-black uppercase tracking-widest border border-brand-primary/10">
+                      {selectedInvoice.district || 'No District'}
+                    </span>
+                  </div>
+                  <p className="text-[11px] font-bold text-zinc-400 uppercase tracking-widest flex items-center gap-1.5 leading-relaxed">
+                    <span>Delivery Address:</span>
+                    <span className="text-zinc-800 normal-case font-extrabold">{selectedInvoice.address}</span>
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <button 
+                    onClick={() => navigate(`/invoices/${selectedInvoice.id}`)}
+                    className="flex items-center gap-2 bg-brand-primary text-white px-4 py-2 rounded-xl font-bold text-xs hover:bg-brand-primary/90 transition-all shadow-sm group"
+                  >
+                    <Eye className="w-4 h-4" />
+                    View Invoice
+                    <ExternalLink className="w-3 h-3 opacity-50 group-hover:opacity-100 transition-opacity" />
+                  </button>
+                  <button 
+                    onClick={() => setSelectedInvoice(null)}
+                    className="p-2 hover:bg-zinc-100 rounded-xl text-zinc-400 transition-all border border-transparent hover:border-zinc-200"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Stock Items Section */}
+              <div className="bg-zinc-50 rounded-2xl border border-zinc-100 p-5">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 bg-white rounded-lg border border-zinc-100 shadow-sm">
+                      <Package className="w-3.5 h-3.5 text-brand-accent" />
+                    </div>
+                    <h5 className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400">Stock Manifest</h5>
+                  </div>
+                  {selectedInvoice.lineItems && selectedInvoice.lineItems.length > 0 && (
+                    <span className="text-[9px] font-black text-zinc-400 bg-white px-2 py-1 rounded-md border border-zinc-200">
+                      {selectedInvoice.lineItems.length} ITEMS
+                    </span>
+                  )}
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {(!selectedInvoice.lineItems || selectedInvoice.lineItems.length === 0) ? (
+                    <div className="col-span-full py-8 text-center bg-white rounded-xl border border-dashed border-zinc-200">
+                      <Package className="w-6 h-6 text-zinc-200 mx-auto mb-2" />
+                      <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight">No stock items found</p>
+                    </div>
+                  ) : (
+                    selectedInvoice.lineItems.map((item, idx) => (
+                      <div key={idx} className="flex items-center gap-3 bg-white p-3 rounded-xl border border-zinc-100 shadow-sm group hover:border-brand-accent/30 transition-all">
+                        <div className="px-2 py-1 bg-brand-primary/5 rounded-lg font-mono text-[10px] font-black text-brand-primary border border-brand-primary/10">
+                          {item.stockCode}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[10px] font-bold text-zinc-800 truncate leading-tight group-hover:text-brand-primary transition-colors">{item.description}</p>
+                          <p className="text-[9px] font-black text-zinc-400 uppercase tracking-tighter mt-1">Qty: <span className="text-zinc-900">{item.qty}</span></p>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+           </div>
+        )}
 
         {/* Trips Table */}
         <div className="bg-white rounded-2xl shadow-sm border border-zinc-200 overflow-hidden">
@@ -275,22 +269,36 @@ export function TripList() {
                       <p className="text-zinc-500 text-sm">Loading trips...</p>
                     </td>
                   </tr>
-                ) : trips.length === 0 ? (
+                ) : displayedTrips.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="px-6 py-12 text-center">
                       <Navigation className="w-12 h-12 text-zinc-200 mx-auto mb-4" />
-                      <p className="text-zinc-500 font-medium">No trips planned yet.</p>
-                      <p className="text-zinc-400 text-xs mt-1">Create your first trip to see it on the map.</p>
+                      <p className="text-zinc-500 font-medium font-bold uppercase tracking-wide">
+                        {showHistory ? "No Invoiced Trips in History" : "No Active Trips Planned"}
+                      </p>
+                      {!showHistory && (
+                        <p className="text-zinc-400 text-xs mt-1">Create your first trip or toggle history to view past deliveries.</p>
+                      )}
                     </td>
                   </tr>
                 ) : (
-                  trips.map((trip) => {
+                  displayedTrips.map((trip) => {
                     const truck = trucks.find(t => t.id === trip.truckId);
                     const tripInvoices = invoices.filter(inv => trip.invoiceIds?.includes(inv.id));
                     const totalValue = tripInvoices.reduce((sum, inv) => sum + (inv.amount || 0), 0);
+                    const isHighlighted = highlightedTripId === trip.id;
                     
                     return (
-                      <tr key={trip.id} className="hover:bg-zinc-50/50 transition-colors group">
+                      <tr 
+                        key={trip.id} 
+                        onClick={() => setHighlightedTripId(prev => prev === trip.id ? null : trip.id)}
+                        className={cn(
+                          "transition-colors group cursor-pointer border-l-4",
+                          isHighlighted 
+                            ? "bg-emerald-50/40 hover:bg-emerald-50/60 border-l-emerald-500" 
+                            : "hover:bg-zinc-50/50 border-l-transparent"
+                        )}
+                      >
                         <td className="px-6 py-4">
                           <span className="font-bold text-zinc-900">{trip.name}</span>
                         </td>
@@ -314,10 +322,13 @@ export function TripList() {
                             {trip.invoiceIds?.length || 0} items
                           </span>
                         </td>
-                        <td className="px-6 py-4">
-                          <StatusBadge status={trip.status} />
+                        <td className="px-6 py-4" onClick={(e) => e.stopPropagation()}>
+                          <StatusBadge 
+                            status={trip.status} 
+                            onClick={() => handleStatusClick(trip)} 
+                          />
                         </td>
-                        <td className="px-6 py-4 text-right">
+                        <td className="px-6 py-4 text-right" onClick={(e) => e.stopPropagation()}>
                           <div className="flex justify-end gap-2 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                             <button
                               onClick={() => setRoutedTrip(trip)}
@@ -332,17 +343,7 @@ export function TripList() {
                               <Navigation className="w-4 h-4" />
                             </button>
                             <button
-                              onClick={() => {
-                                setEditingTrip(trip);
-                                setFormData({
-                                  name: trip.name,
-                                  date: trip.date,
-                                  truckId: trip.truckId,
-                                  status: trip.status,
-                                  invoiceIds: trip.invoiceIds || []
-                                });
-                                setIsModalOpen(true);
-                              }}
+                              onClick={() => navigate(`/trips/edit/${trip.id}`)}
                               className="p-2 text-zinc-400 hover:text-brand-primary hover:bg-white rounded-lg border border-transparent hover:border-zinc-200 transition-all"
                             >
                               <Edit3 className="w-4 h-4" />
@@ -387,265 +388,7 @@ export function TripList() {
           </div>
         </div>
 
-        {/* Modal */}
-        <AnimatePresence>
-          {isModalOpen && (
-            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                onClick={() => setIsModalOpen(false)}
-                className="absolute inset-0 bg-brand-primary/40 backdrop-blur-sm"
-              />
-              <motion.div
-                initial={{ scale: 0.95, opacity: 0, y: 20 }}
-                animate={{ scale: 1, opacity: 1, y: 0 }}
-                exit={{ scale: 0.95, opacity: 0, y: 20 }}
-                className="relative bg-white w-full max-w-3xl rounded-3xl shadow-2xl overflow-hidden"
-              >
-                <div className="p-8">
-                  <div className="flex justify-between items-start mb-6">
-                    <div>
-                      <h3 className="text-xl font-black text-brand-primary uppercase tracking-tight">
-                        {editingTrip ? 'Edit Trip' : 'Create New Trip'}
-                      </h3>
-                      <p className="text-sm text-zinc-500">Dispatch logistics and vehicle optimization.</p>
-                    </div>
-                  </div>
-                  
-                  <div className="grid grid-cols-2 gap-6">
-                    <div className="space-y-4">
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Trip Name</label>
-                        <input
-                          type="text"
-                          value={formData.name}
-                          onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                          className="w-full px-4 py-2 border border-zinc-200 rounded-xl focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent transition-all"
-                          placeholder="E.g. Monday Morning Deliveries"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Date</label>
-                        <input
-                          type="date"
-                          value={formData.date}
-                          onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                          className="w-full px-4 py-2 border border-zinc-200 rounded-xl focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent transition-all"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Truck</label>
-                        <select
-                          value={formData.truckId}
-                          onChange={(e) => setFormData({ ...formData, truckId: e.target.value })}
-                          className="w-full px-4 py-2 border border-zinc-200 rounded-xl focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent transition-all bg-white"
-                        >
-                          <option value="">Select a truck</option>
-                          {trucks.map(truck => (
-                            <option key={truck.id} value={truck.id}>{truck.name} ({truck.licensePlate})</option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Status</label>
-                        <select
-                          value={formData.status}
-                          onChange={(e) => setFormData({ ...formData, status: e.target.value as TripStatus })}
-                          className="w-full px-4 py-2 border border-zinc-200 rounded-xl focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent transition-all bg-white"
-                        >
-                          {Object.values(TripStatus).map(status => (
-                            <option key={status} value={status}>{status.charAt(0).toUpperCase() + status.slice(1).replace(/-/g, ' ')}</option>
-                          ))}
-                        </select>
-                      </div>
 
-                      {/* Capacity Summary */}
-                      <div className="pt-4 mt-4 border-t border-zinc-100">
-                        <div className="flex items-center gap-2 text-brand-primary mb-3">
-                          <TrendingUp className="w-4 h-4" />
-                          <h4 className="text-xs font-black uppercase tracking-widest">Live Capacity Monitor</h4>
-                        </div>
-                        <div className="p-4 bg-zinc-50 rounded-2xl border border-zinc-200">
-                           <div className="flex justify-between items-end mb-2">
-                             <div>
-                               <p className="text-[10px] text-zinc-400 font-black uppercase">Current Load</p>
-                               <p className="text-lg font-black text-brand-primary">R {currentSelectionTotal.toLocaleString()}</p>
-                             </div>
-                             <div className="text-right">
-                               <p className="text-[10px] text-zinc-400 font-black uppercase">Truck Limit</p>
-                               <p className="text-sm font-bold text-zinc-600">R {(selectedTruck?.maxValue || 0).toLocaleString()}</p>
-                             </div>
-                           </div>
-                           <CapacityProgressBar current={currentSelectionTotal} max={selectedTruck?.maxValue || 0} height="h-3" showLabel />
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-between">
-                        <label className="text-[10px] font-black uppercase tracking-widest text-zinc-400 block">Select Invoices</label>
-                        <div className="flex gap-2">
-                          <div className="relative w-32">
-                            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-zinc-400" />
-                            <input 
-                              type="text"
-                              placeholder="Search..."
-                              value={invoiceSearchTerm}
-                              onChange={(e) => setInvoiceSearchTerm(e.target.value)}
-                              className="w-full pl-7 pr-2 py-1.5 bg-zinc-50 border border-zinc-200 rounded-lg text-[10px] focus:outline-none focus:ring-1 focus:ring-brand-accent/20 focus:border-brand-accent"
-                            />
-                          </div>
-                          <div className="relative w-32">
-                            <Package className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-zinc-400" />
-                            <input 
-                              type="text"
-                              placeholder="Stock..."
-                              value={stockCodeSearchTerm}
-                              onChange={(e) => setStockCodeSearchTerm(e.target.value)}
-                              className="w-full pl-7 pr-2 py-1.5 bg-zinc-50 border border-zinc-200 rounded-lg text-[10px] focus:outline-none focus:ring-1 focus:ring-brand-accent/20 focus:border-brand-accent font-mono"
-                            />
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="h-[400px] overflow-y-auto border border-zinc-100 rounded-2xl overflow-hidden bg-zinc-50/10">
-                        {Object.keys(groupedAvailableInvoices).length === 0 ? (
-                          <div className="p-12 text-center">
-                            <Package className="w-8 h-8 text-zinc-200 mx-auto mb-2" />
-                            <p className="text-sm text-zinc-400 font-medium tracking-tight">No invoices found matching search.</p>
-                          </div>
-                        ) : (
-                          (Object.entries(groupedAvailableInvoices) as [string, UIInvoice[]][]).map(([district, districtInvoices]) => (
-                            <div key={district} className="space-y-px">
-                              <div className="px-4 py-2 bg-zinc-100/50 flex items-center justify-between sticky top-0 z-10 backdrop-blur-md border-y border-zinc-200/50">
-                                <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500">{district}</span>
-                                <span className="text-[9px] font-bold text-zinc-400">{districtInvoices.length}</span>
-                              </div>
-                              <div className="divide-y divide-zinc-200/30">
-                                {districtInvoices.map((inv) => (
-                                  <div 
-                                    key={inv.id}
-                                    className={cn(
-                                      "px-4 py-3 cursor-pointer transition-all hover:bg-white group relative border-l-4 border-transparent",
-                                      formData.invoiceIds.includes(inv.id) && "bg-brand-accent/[0.02] border-brand-accent"
-                                    )}
-                                  >
-                                    <div className="flex items-center gap-4">
-                                      <div 
-                                        onClick={() => toggleInvoice(inv.id)}
-                                        className={cn(
-                                          "w-5 h-5 rounded-lg border flex items-center justify-center transition-all shrink-0",
-                                          formData.invoiceIds.includes(inv.id) 
-                                            ? "bg-brand-accent border-brand-accent text-white" 
-                                            : "bg-white border-zinc-300 group-hover:border-brand-accent"
-                                        )}
-                                      >
-                                        {formData.invoiceIds.includes(inv.id) && <Plus className="w-3 h-3" />}
-                                      </div>
-                                      
-                                      <div className="flex-1 min-w-0" onClick={() => toggleInvoice(inv.id)}>
-                                        <p className="text-sm font-bold text-zinc-900 group-hover:text-brand-accent transition-colors truncate">
-                                          {inv.client}
-                                        </p>
-                                        <div className="flex items-center justify-between mb-0.5">
-                                          <p className="text-xs font-mono font-black text-zinc-500 truncate">
-                                            {inv.number}
-                                          </p>
-                                          <p className="text-xs font-mono font-black text-brand-primary">R {inv.amount.toLocaleString()}</p>
-                                        </div>
-                                        <p className="text-[10px] text-zinc-500 truncate font-semibold">{inv.district || 'No District'}</p>
-                                        
-                                        {stockCodeSearchTerm ? (
-                                          <div className="mt-2 space-y-1">
-                                            {inv.lineItems?.filter(item => 
-                                              item.stockCode.toLowerCase().includes(stockCodeSearchTerm.toLowerCase()) ||
-                                              item.description.toLowerCase().includes(stockCodeSearchTerm.toLowerCase())
-                                            ).map((item, idx) => (
-                                              <div key={idx} className="flex items-center gap-2 text-[9px] font-mono leading-tight bg-white p-1 rounded border border-zinc-100">
-                                                <span className="font-black text-brand-accent shrink-0">{item.stockCode}</span>
-                                                <span className="text-zinc-500 truncate">{item.description}</span>
-                                                <span className="ml-auto font-black text-zinc-900 shrink-0">QTY: {item.qty}</span>
-                                              </div>
-                                            ))}
-                                          </div>
-                                        ) : null}
-                                      </div>
-
-                                      <button
-                                        type="button"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          setSelectedInvoiceForStock(inv);
-                                        }}
-                                        className="flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl hover:bg-zinc-100 text-zinc-400 hover:text-brand-accent transition-all shrink-0 border border-transparent hover:border-zinc-200"
-                                      >
-                                        <Package className="w-4 h-4" />
-                                        <span className="text-[8px] font-black uppercase tracking-tighter">Stock</span>
-                                      </button>
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          ))
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex gap-3 mt-10">
-                    <button
-                      onClick={() => setIsModalOpen(false)}
-                      className="flex-1 px-6 py-3 rounded-2xl font-bold text-zinc-500 hover:bg-zinc-100 transition-all border border-transparent"
-                    >
-                      Cancel
-                    </button>
-                    {editingTrip && (
-                      <button
-                        onClick={async () => {
-                          if (deleteConfirmId === editingTrip.id) {
-                            await deleteTrip(editingTrip.id);
-                            setDeleteConfirmId(null);
-                            setIsModalOpen(false);
-                          } else {
-                            setDeleteConfirmId(editingTrip.id);
-                          }
-                        }}
-                        className={cn(
-                          "px-4 py-3 rounded-2xl font-bold transition-all border",
-                          deleteConfirmId === editingTrip.id 
-                            ? "bg-red-500 text-white border-red-600 animate-pulse" 
-                            : "text-red-500 hover:bg-red-50 border-zinc-100"
-                        )}
-                      >
-                        {deleteConfirmId === editingTrip.id ? 'Confirm Delete?' : 'Delete Trip'}
-                      </button>
-                    )}
-                    <button
-                      onClick={async () => {
-                         if (!formData.name || !formData.date || !formData.truckId) {
-                           alert('Please fill in all required fields');
-                           return;
-                         }
-                         if (editingTrip) {
-                           await updateTrip(editingTrip.id, formData);
-                         } else {
-                           await addTrip(formData);
-                         }
-                         setIsModalOpen(false);
-                       }}
-                      className="flex-2 bg-brand-primary text-white px-8 py-3 rounded-2xl font-bold hover:bg-brand-primary/90 transition-all shadow-lg"
-                    >
-                      {editingTrip ? 'Save Changes' : 'Create Trip'}
-                    </button>
-                  </div>
-                </div>
-              </motion.div>
-            </div>
-          )}
-        </AnimatePresence>
         
         {selectedInvoiceForStock && (
           <StockModal 
@@ -761,8 +504,15 @@ function StockModal({ invoice, onClose }: { invoice: UIInvoice; onClose: () => v
   );
 }
 
-function InvoicePin({ status, number }: { status: string; number: string }) {
+function InvoicePin({ status, number, isHighlighted }: { status: string; number: string; isHighlighted?: boolean }) {
   const getStatusConfig = (status: string) => {
+    if (isHighlighted) {
+      return {
+        background: '#22c55e', // Vibrant Green 500
+        borderColor: '#15803d', // Green 700
+        icon: <CheckCircle2 className="w-3 h-3 text-white" />
+      };
+    }
     switch (status.toLowerCase()) {
       case 'paid':
         return {
@@ -794,7 +544,7 @@ function InvoicePin({ status, number }: { status: string; number: string }) {
   const config = getStatusConfig(status);
 
   return (
-    <Pin background={config.background} glyphColor="#fff" borderColor={config.borderColor} scale={1.2}>
+    <Pin background={config.background} glyphColor="#fff" borderColor={config.borderColor} scale={isHighlighted ? 1.4 : 1.2}>
       <div className="flex flex-col items-center gap-0.5">
         {config.icon}
         <span className="text-[7px] font-black text-white uppercase leading-none">{number.slice(-3)}</span>
@@ -803,13 +553,14 @@ function InvoicePin({ status, number }: { status: string; number: string }) {
   );
 }
 
-function MapComponent({ invoices, geocodedInvoices, setGeocodedInvoices, onInvoiceClick, warehouse, routedTrip }: { 
+function MapComponent({ invoices, geocodedInvoices, setGeocodedInvoices, onInvoiceClick, warehouse, routedTrip, highlightedInvoiceIds }: { 
   invoices: UIInvoice[], 
   geocodedInvoices: GeocodedInvoice[], 
   setGeocodedInvoices: Dispatch<SetStateAction<GeocodedInvoice[]>>,
   onInvoiceClick: (inv: GeocodedInvoice) => void,
   warehouse: Settings | null,
-  routedTrip: Trip | null
+  routedTrip: Trip | null,
+  highlightedInvoiceIds: string[]
 }) {
   const map = useMap();
   const geocodingLib = useMapsLibrary('geocoding');
@@ -960,24 +711,38 @@ function MapComponent({ invoices, geocodedInvoices, setGeocodedInvoices, onInvoi
     geocodeInvoices();
   }, [geocodingLib, invoices, geocodedInvoices, setGeocodedInvoices]);
 
+  // Fit bounds when map or geocodedInvoices loads
   useEffect(() => {
-    if (map && (geocodedInvoices.length > 0 || (warehouse?.warehouseLat && warehouse?.warehouseLng))) {
-      const bounds = new google.maps.LatLngBounds();
-      let hasPoints = false;
+    if (!map) return;
 
+    if (geocodedInvoices.length > 0) {
+      const bounds = new google.maps.LatLngBounds();
       geocodedInvoices.forEach((gi) => {
         bounds.extend(gi.position);
-        hasPoints = true;
       });
 
       if (warehouse?.warehouseLat && warehouse?.warehouseLng) {
         bounds.extend({ lat: warehouse.warehouseLat, lng: warehouse.warehouseLng });
-        hasPoints = true;
       }
 
-      if (hasPoints) {
-        map.fitBounds(bounds, { top: 50, right: 50, bottom: 50, left: 50 });
+      map.fitBounds(bounds, { top: 50, right: 50, bottom: 50, left: 50 });
+
+      // Prevent extreme zoom-in if points are too close or single point
+      const limitZoom = () => {
+        if (map.getZoom() && map.getZoom()! > 14) {
+          map.setZoom(12);
+        }
+      };
+      if (typeof google !== 'undefined' && google.maps?.event) {
+        google.maps.event.addListenerOnce(map, 'idle', limitZoom);
       }
+    } else if (warehouse?.warehouseLat && warehouse?.warehouseLng) {
+      // Loader/fallback to prevent loading zoomed-in exactly on the warehouse point
+      map.setCenter({ lat: warehouse.warehouseLat, lng: warehouse.warehouseLng });
+      map.setZoom(11);
+    } else {
+      map.setCenter({ lat: -25.7479, lng: 28.2293 });
+      map.setZoom(11);
     }
   }, [map, geocodedInvoices, warehouse]);
 
@@ -989,13 +754,24 @@ function MapComponent({ invoices, geocodedInvoices, setGeocodedInvoices, onInvoi
       style={{ width: '100%', height: '100%' }}
       internalUsageAttributionIds={['gmp_mcp_codeassist_v1_aistudio']}
     >
-      {geocodedInvoices.map((inv) => (
+      {geocodedInvoices.filter(gi => {
+        // Hide pins on the map when the invoice status is completed
+        const actualInvoice = invoices.find(inv => inv.id === gi.id);
+        if (actualInvoice && actualInvoice.status?.toLowerCase() === 'completed') {
+          return false;
+        }
+        return gi.status?.toLowerCase() !== 'completed';
+      }).map((inv) => (
         <AdvancedMarker 
           key={inv.id} 
           position={inv.position}
           onClick={() => onInvoiceClick(inv)}
         >
-          <InvoicePin status={inv.status} number={inv.number} />
+          <InvoicePin 
+            status={inv.status} 
+            number={inv.number} 
+            isHighlighted={highlightedInvoiceIds.includes(inv.id)}
+          />
         </AdvancedMarker>
       ))}
 
@@ -1012,7 +788,7 @@ function MapComponent({ invoices, geocodedInvoices, setGeocodedInvoices, onInvoi
   );
 }
 
-function StatusBadge({ status }: { status: TripStatus }) {
+function StatusBadge({ status, onClick }: { status: TripStatus; onClick?: () => void }) {
   const styles = {
     [TripStatus.PROPOSED]: "bg-blue-50 text-blue-600 border-blue-100",
     [TripStatus.ASSEMBLED]: "bg-indigo-50 text-indigo-600 border-indigo-100",
@@ -1023,11 +799,17 @@ function StatusBadge({ status }: { status: TripStatus }) {
   };
 
   return (
-    <span className={cn(
-      "px-2 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider border whitespace-nowrap",
-      styles[status]
-    )}>
+    <button
+      onClick={onClick}
+      disabled={!onClick}
+      className={cn(
+        "px-2 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider border whitespace-nowrap transition-all text-left",
+        styles[status],
+        onClick ? "cursor-pointer hover:shadow-sm hover:scale-105 active:scale-95 hover:bg-opacity-80" : ""
+      )}
+      title={onClick ? "Click to toggle next status" : undefined}
+    >
       {status.replace(/-/g, ' ')}
-    </span>
+    </button>
   );
 }

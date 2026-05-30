@@ -61,7 +61,7 @@
         "swift": { "type": "string" },
         "page": { "type": "string" },
         "userId": { "type": "string" },
-        "status": { "type": "string", "enum": ["draft", "pending", "paid", "overdue", "cancelled"] },
+        "status": { "type": "string", "enum": ["draft", "assembly", "loaded", "delivered", "completed", "invoiced"] },
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["taxInvoice", "userId", "totalDue", "status"]

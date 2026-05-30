@@ -32,7 +32,7 @@ service cloud.firestore {
       return data.taxInvoice is string && data.taxInvoice.size() < 100
         && data.userId == request.auth.uid
         && data.totalDue is number
-        && data.status in ['draft', 'assembly', 'loaded', 'delivered', 'invoiced']
+        && data.status in ['draft', 'assembly', 'loaded', 'delivered', 'completed', 'invoiced']
         && (!('lineItems' in data) || data.lineItems is list)
         && (!('district' in data) || (data.district is string && data.district.size() < 200))
         && (!('schoolName' in data) || (data.schoolName is string && data.schoolName.size() < 200))
