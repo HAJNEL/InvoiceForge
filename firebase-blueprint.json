@@ -1,0 +1,162 @@
+{
+  "entities": {
+    "Invoice": {
+      "title": "Invoice",
+      "description": "Financial document representing a request for payment.",
+      "type": "object",
+      "properties": {
+        "taxInvoice": { "type": "string" },
+        "invoiceDate": { "type": "string" },
+        "customerPO": { "type": "string" },
+        "salesOrderNo": { "type": "string" },
+        "deliveryNoteNo": { "type": "string" },
+        "customerContact": { "type": "string" },
+        "customerCode": { "type": "string" },
+        "customerName": { "type": "string" },
+        "schoolName": { "type": "string" },
+        "streetAddress": { "type": "string" },
+        "suburb": { "type": "string" },
+        "district": { "type": "string" },
+        "customerAddressLine1": { "type": "string" },
+        "customerAddressLine2": { "type": "string" },
+        "postalCode": { "type": "string" },
+        "vatNo": { "type": "string" },
+        "deliveryCustomerName": { "type": "string" },
+        "deliveryAddressLine1": { "type": "string" },
+        "deliveryAddressLine2": { "type": "string" },
+        "deliveryRegion": { "type": "string" },
+        "lineItems": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "stockCode": { "type": "string" },
+              "description": { "type": "string" },
+              "qty": { "type": "number" },
+              "unitPrice": { "type": "number" },
+              "disc": { "type": "number" },
+              "value": { "type": "number" }
+            }
+          }
+        },
+        "subTotal": { "type": "number" },
+        "vatAmount": { "type": "number" },
+        "amountIncl": { "type": "number" },
+        "freight": { "type": "number" },
+        "totalDue": { "type": "number" },
+        "accountTerms": { "type": "string" },
+        "companyName": { "type": "string" },
+        "companyAddressLine1": { "type": "string" },
+        "companyAddressLine2": { "type": "string" },
+        "companyPhysicalAddress": { "type": "string" },
+        "companyIndustrialPark": { "type": "string" },
+        "telephone": { "type": "string" },
+        "email": { "type": "string" },
+        "website": { "type": "string" },
+        "registrationNo": { "type": "string" },
+        "companyVatNo": { "type": "string" },
+        "bankName": { "type": "string" },
+        "branch": { "type": "string" },
+        "account": { "type": "string" },
+        "swift": { "type": "string" },
+        "page": { "type": "string" },
+        "userId": { "type": "string" },
+        "status": { "type": "string", "enum": ["draft", "pending", "paid", "overdue", "cancelled"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["taxInvoice", "userId", "totalDue", "status"]
+    },
+    "Client": {
+      "title": "Client",
+      "description": "Customer entity for CRM.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "userId": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "address": { "type": "string" }
+      },
+      "required": ["name", "userId"]
+    },
+    "Truck": {
+      "title": "Truck",
+      "description": "Fleet vehicle entity.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "licensePlate": { "type": "string" },
+        "maxValue": { "type": "number" },
+        "userId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "licensePlate", "userId"]
+    },
+    "Schedule": {
+      "title": "Schedule",
+      "description": "Delivery schedule for a specific truck and day.",
+      "type": "object",
+      "properties": {
+        "day": { "type": "string" },
+        "truckId": { "type": "string" },
+        "invoiceIds": { "type": "array", "items": { "type": "string" } },
+        "userId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["day", "truckId", "invoiceIds", "userId"]
+    },
+    "Trip": {
+      "title": "Trip",
+      "description": "A delivery trip with geographical data and related invoices.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "date": { "type": "string", "format": "date" },
+        "truckId": { "type": "string" },
+        "status": { "type": "string", "enum": ["proposed", "assembled", "on-route", "partially-completed", "completed", "invoiced"] },
+        "invoiceIds": { "type": "array", "items": { "type": "string" } },
+        "userId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "date", "truckId", "status", "userId"]
+    },
+    "Settings": {
+      "title": "Settings",
+      "description": "User application settings, including warehouse location.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "warehouseAddress": { "type": "string" },
+        "warehouseLat": { "type": "number" },
+        "warehouseLng": { "type": "number" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId"]
+    }
+  },
+  "firestore": {
+    "/invoices/{invoiceId}": {
+      "schema": "Invoice",
+      "description": "Collection of invoices."
+    },
+    "/clients/{clientId}": {
+      "schema": "Client",
+      "description": "Collection of clients."
+    },
+    "/trucks/{truckId}": {
+      "schema": "Truck",
+      "description": "Collection of trucks."
+    },
+    "/schedules/{scheduleId}": {
+      "schema": "Schedule",
+      "description": "Collection of delivery schedules."
+    },
+    "/trips/{tripId}": {
+      "schema": "Trip",
+      "description": "Collection of trips."
+    },
+    "/settings/{settingsId}": {
+      "schema": "Settings",
+      "description": "User specific settings."
+    }
+  }
+}

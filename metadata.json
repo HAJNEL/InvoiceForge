@@ -1,0 +1,6 @@
+{
+  "name": "InvoiceForge",
+  "description": "Professional AI-powered invoice management SaaS with automated PDF extraction, bulk uploads, and financial analytics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["AI Data Extraction", "Firebase Integration", "SaaS Dashboard"]
+}

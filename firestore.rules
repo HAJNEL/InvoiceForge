@@ -1,0 +1,186 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Global safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Global Helpers
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(data) {
+      return isSignedIn() && data != null && request.auth.uid == data.userId;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // Invoice Validation
+    function isValidInvoice(data) {
+      return data.taxInvoice is string && data.taxInvoice.size() < 100
+        && data.userId == request.auth.uid
+        && data.totalDue is number
+        && data.status in ['draft', 'assembly', 'loaded', 'delivered', 'invoiced']
+        && (!('lineItems' in data) || data.lineItems is list)
+        && (!('district' in data) || (data.district is string && data.district.size() < 200))
+        && (!('schoolName' in data) || (data.schoolName is string && data.schoolName.size() < 200))
+        && (!('streetAddress' in data) || (data.streetAddress is string && data.streetAddress.size() < 500))
+        && (!('suburb' in data) || (data.suburb is string && data.suburb.size() < 200))
+        && data.keys().hasAll(['taxInvoice', 'userId', 'totalDue', 'status']);
+    }
+
+    // Client Validation
+    function isValidClient(data) {
+      return data.name is string && data.name.size() < 200
+        && data.userId == request.auth.uid
+        && data.keys().hasAll(['name', 'userId']);
+    }
+
+    // Truck Validation
+    function isValidTruck(data) {
+      return data.name is string && data.name.size() < 200
+        && data.licensePlate is string && data.licensePlate.size() < 50
+        && (!('maxValue' in data) || data.maxValue is number)
+        && (!('year' in data) || data.year is number)
+        && (!('capacityKg' in data) || data.capacityKg is number)
+        && (!('volumetricCapacity' in data) || data.volumetricCapacity is number)
+        && (!('nextServiceKm' in data) || data.nextServiceKm is number)
+        && (!('currentKm' in data) || data.currentKm is number)
+        && data.userId == request.auth.uid
+        && data.keys().hasAll(['name', 'licensePlate', 'userId']);
+    }
+
+    // Schedule Validation
+    function isValidSchedule(data) {
+      return data.day is string && data.day.size() < 50
+        && data.truckId is string && data.truckId.size() < 128
+        && data.invoiceIds is list
+        && data.userId == request.auth.uid
+        && data.keys().hasAll(['day', 'truckId', 'invoiceIds', 'userId']);
+    }
+
+    function isValidTrip(data) {
+      return data.name is string && data.name.size() < 200
+        && data.date is string && data.date.size() < 50
+        && data.truckId is string && data.truckId.size() < 128
+        && data.status in ['proposed', 'assembled', 'on-route', 'partially-completed', 'completed', 'invoiced']
+        && (!('invoiceIds' in data) || data.invoiceIds is list)
+        && data.userId == request.auth.uid
+        && data.keys().hasAll(['name', 'date', 'truckId', 'status', 'userId']);
+    }
+
+    function isValidSettings(data) {
+      return data.userId == request.auth.uid
+        && (!('warehouseAddress' in data) || (data.warehouseAddress is string && data.warehouseAddress.size() < 500))
+        && (!('warehouseLat' in data) || data.warehouseLat is number)
+        && (!('warehouseLng' in data) || data.warehouseLng is number)
+        && data.keys().hasAll(['userId']);
+    }
+
+    match /invoices/{invoiceId} {
+      allow get: if isOwner(existing());
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      
+      allow create: if isSignedIn() 
+        && isValidId(invoiceId)
+        && isValidInvoice(incoming());
+        
+      allow update: if isOwner(existing())
+        && isValidInvoice(incoming())
+        && incoming().userId == existing().userId; // Immutable owner
+      
+      allow delete: if isOwner(existing());
+    }
+
+    match /clients/{clientId} {
+      allow get: if isOwner(existing());
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      
+      allow create: if isSignedIn() 
+        && isValidId(clientId)
+        && isValidClient(incoming());
+        
+      allow update: if isOwner(existing())
+        && isValidClient(incoming())
+        && incoming().userId == existing().userId;
+      
+      allow delete: if isOwner(existing());
+    }
+
+    match /trucks/{truckId} {
+      allow get: if isOwner(existing());
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      
+      allow create: if isSignedIn() 
+        && isValidId(truckId)
+        && isValidTruck(incoming());
+        
+      allow update: if isOwner(existing())
+        && isValidTruck(incoming())
+        && incoming().userId == existing().userId;
+      
+      allow delete: if isOwner(existing());
+
+      match /serviceHistory/{recordId} {
+        allow read, write: if isSignedIn() && get(/databases/$(database)/documents/trucks/$(truckId)).data.userId == request.auth.uid;
+      }
+    }
+
+    match /schedules/{scheduleId} {
+      allow get: if isOwner(existing());
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      
+      allow create: if isSignedIn() 
+        && isValidId(scheduleId)
+        && isValidSchedule(incoming());
+        
+      allow update: if isOwner(existing())
+        && isValidSchedule(incoming())
+        && incoming().userId == existing().userId;
+      
+      allow delete: if isOwner(existing());
+    }
+
+    match /trips/{tripId} {
+      allow get: if isOwner(existing());
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      
+      allow create: if isSignedIn() 
+        && isValidId(tripId)
+        && isValidTrip(incoming());
+        
+      allow update: if isOwner(existing())
+        && isValidTrip(incoming())
+        && incoming().userId == existing().userId;
+      
+      allow delete: if isOwner(existing());
+    }
+
+    match /settings/{settingsId} {
+      allow get: if isOwner(existing());
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      
+      allow create: if isSignedIn() 
+        && isValidId(settingsId)
+        && isValidSettings(incoming());
+        
+      allow update: if isOwner(existing())
+        && isValidSettings(incoming())
+        && incoming().userId == existing().userId;
+      
+      allow delete: if isOwner(existing());
+    }
+  }
+}
