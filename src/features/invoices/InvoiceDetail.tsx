@@ -21,6 +21,27 @@ import { Link, useParams, useNavigate } from 'react-router-dom';
 import { useInvoice } from './hooks/useInvoice';
 import { useInvoices } from './hooks/useInvoices';
 import { cn, formatCurrency } from '../../lib/utils';
+import { validateAndSubtractInventory } from '../../utils/inventory';
+import { auth } from '../../lib/firebase';
+
+const STATUS_DISPLAY_MAP: Record<string, string> = {
+  'partially_complete': 'Partially Complete',
+  'partially complete': 'Partially Complete',
+  'partiallycomplete': 'Partially Complete',
+  loaded: 'Partially Complete',
+  draft: 'Draft',
+  darft: 'Draft',
+  proposed: 'Proposed',
+  assembled: 'Assembled',
+  assembly: 'Assembled',
+  'on-route': 'On Route',
+  'on route': 'On Route',
+  'on_route': 'On Route',
+  delivered: 'Delivered',
+  completed: 'Complete',
+  complete: 'Complete',
+  invoiced: 'Complete'
+};
 
 export function InvoiceDetail() {
   const { id } = useParams();
@@ -28,6 +49,11 @@ export function InvoiceDetail() {
   const { invoice, loading, error } = useInvoice(id);
   const { deleteInvoice, updateInvoice } = useInvoices();
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+  const [showDeliveredPrompt, setShowDeliveredPrompt] = useState(false);
+  const [deliveredDateInput, setDeliveredDateInput] = useState(() => new Date().toISOString().split('T')[0]);
+  const [pendingStatus, setPendingStatus] = useState<string | null>(null);
+  const [statusError, setStatusError] = useState<string | null>(null);
+  const [bypassWarning, setBypassWarning] = useState(false);
 
   const handleDelete = async () => {
     if (id) {
@@ -42,11 +68,50 @@ export function InvoiceDetail() {
 
   const handleStatusChange = async (newStatus: string) => {
     if (id && invoice) {
+      setStatusError(null);
+      setBypassWarning(false);
+      if (newStatus === 'delivered' || newStatus === 'complete' || newStatus === 'completed') {
+        setPendingStatus(newStatus === 'completed' ? 'complete' : newStatus);
+        setShowDeliveredPrompt(true);
+        return;
+      }
       setIsUpdatingStatus(true);
       try {
         await updateInvoice(id, { status: newStatus });
       } catch (err) {
         console.error('Failed to update status:', err);
+      } finally {
+        setIsUpdatingStatus(false);
+      }
+    }
+  };
+
+  const handleSaveDeliveredStatus = async () => {
+    if (id && invoice) {
+      setIsUpdatingStatus(true);
+      setStatusError(null);
+      try {
+        const userUid = auth.currentUser?.uid || '';
+        const invCheck = await validateAndSubtractInventory(id, userUid, bypassWarning);
+        if (!invCheck.success) {
+          setStatusError(
+            (invCheck.error || "Limited inventory stock available.") +
+            "\n\nYou can still proceed to catch up on data. Click 'Confirm Anyway' to bypass validation and record delivery."
+          );
+          setBypassWarning(true);
+          return;
+        }
+
+        await updateInvoice(id, { 
+          status: pendingStatus || 'delivered',
+          deliveredDate: deliveredDateInput
+        });
+        setPendingStatus(null);
+        setShowDeliveredPrompt(false);
+        setBypassWarning(false);
+      } catch (err) {
+        console.error('Failed to update status:', err);
+        setStatusError(err instanceof Error ? err.message : String(err));
       } finally {
         setIsUpdatingStatus(false);
       }
@@ -75,7 +140,7 @@ export function InvoiceDetail() {
     );
   }
 
-  const invoiceStatuses = ['draft', 'assembly', 'loaded', 'delivered', 'invoiced'];
+  const invoiceStatuses = ['partially_complete', 'draft', 'proposed', 'assembled', 'on_route', 'delivered', 'complete'];
   const totalQty = invoice.lineItems?.reduce((sum, item) => sum + (parseFloat(item.qty?.toString()) || 0), 0) || 0;
 
   return (
@@ -92,7 +157,7 @@ export function InvoiceDetail() {
             <div className="flex items-center gap-3">
               <h1 className="text-2xl font-bold tracking-tight">Invoice #{invoice.taxInvoice || invoice.invoiceNumber || 'NO-NUM'}</h1>
               <div className="relative group">
-                <StatusBadge status={invoice.status} />
+                <StatusBadge status={invoice.status} deliveredDate={invoice.deliveredDate} />
               </div>
             </div>
             <p className="text-zinc-500 text-sm mt-1">Generated on {invoice.invoiceDate || invoice.issueDate || 'N/A'}</p>
@@ -228,30 +293,81 @@ export function InvoiceDetail() {
 
         <div className="space-y-8">
           {/* Status Update Controller */}
-          <div className="saas-card p-6">
+           <div className="saas-card p-6">
             <h3 className="font-bold text-xs uppercase tracking-widest text-zinc-400 mb-4 flex items-center gap-2">
               <Clock className="w-4 h-4" />
               Invoice Status
             </h3>
             <div className="grid grid-cols-1 gap-2">
-              {invoiceStatuses.map((status) => (
-                <button
-                  key={status}
-                  onClick={() => handleStatusChange(status)}
-                  disabled={isUpdatingStatus || invoice.status === status}
-                  className={cn(
-                    "flex items-center justify-between px-4 py-3 rounded-xl border text-sm font-bold transition-all",
-                    invoice.status === status 
-                      ? "bg-brand-primary text-white border-brand-primary" 
-                      : "bg-white text-zinc-600 border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50"
-                  )}
-                >
-                  <span className="uppercase tracking-tight">{status}</span>
-                  {invoice.status === status && <CheckCircle2 className="w-4 h-4" />}
-                  {isUpdatingStatus && invoice.status !== status && <Loader2 className="w-4 h-4 animate-spin text-zinc-300" />}
-                </button>
-              ))}
+              {invoiceStatuses.map((status) => {
+                const displayLabel = STATUS_DISPLAY_MAP[status] || status;
+                const isSelected = invoice.status === status || 
+                  (status === 'partially_complete' && (invoice.status === 'partially_complete' || invoice.status === 'partially complete' || invoice.status === 'loaded')) ||
+                  (status === 'assembled' && (invoice.status === 'assembled' || invoice.status === 'assembly')) ||
+                  (status === 'on_route' && (invoice.status === 'on_route' || invoice.status === 'on-route' || invoice.status === 'on route')) ||
+                  (status === 'complete' && (invoice.status === 'complete' || invoice.status === 'completed' || invoice.status === 'invoiced'));
+                return (
+                  <button
+                    key={status}
+                    onClick={() => handleStatusChange(status)}
+                    disabled={isUpdatingStatus || isSelected}
+                    className={cn(
+                      "flex items-center justify-between px-4 py-3 rounded-xl border text-sm font-bold transition-all",
+                      isSelected 
+                        ? "bg-brand-primary text-white border-brand-primary" 
+                        : "bg-white text-zinc-600 border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50"
+                    )}
+                  >
+                    <span className="uppercase tracking-tight">{displayLabel}</span>
+                    {isSelected && <CheckCircle2 className="w-4 h-4" />}
+                    {isUpdatingStatus && !isSelected && <Loader2 className="w-4 h-4 animate-spin text-zinc-300" />}
+                  </button>
+                );
+              })}
             </div>
+
+            {showDeliveredPrompt && (
+              <div className="mt-4 p-4 bg-zinc-50 rounded-xl border border-zinc-200 space-y-3">
+                <p className="text-xs font-bold text-zinc-700">Specify Delivered Date:</p>
+                <input 
+                  type="date"
+                  value={deliveredDateInput}
+                  onChange={(e) => setDeliveredDateInput(e.target.value)}
+                  className="w-full text-xs font-mono font-bold p-2 bg-white border border-zinc-200 rounded-lg focus:outline-none"
+                />
+                
+                {statusError && (
+                  <div className={cn(
+                    "p-3 text-xs font-semibold rounded-lg leading-relaxed whitespace-pre-wrap text-left font-sans border",
+                    bypassWarning
+                      ? "bg-amber-50 border-amber-200 text-amber-800"
+                      : "bg-red-50 border-red-200 text-red-700"
+                  )}>
+                    {bypassWarning && <span className="font-black block uppercase tracking-widest text-[9px] mb-1 text-amber-600">⚠️ Low Stock Warning:</span>}
+                    {statusError}
+                  </div>
+                )}
+
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => {
+                      setShowDeliveredPrompt(false);
+                      setStatusError(null);
+                      setBypassWarning(false);
+                    }}
+                    className="flex-1 py-1.5 border border-zinc-200 rounded-lg text-xs font-bold hover:bg-white transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSaveDeliveredStatus}
+                    className="flex-1 py-1.5 bg-brand-primary text-white rounded-lg text-xs font-bold hover:opacity-90 transition-all shadow-sm"
+                  >
+                    {bypassWarning ? 'Confirm Anyway' : 'Confirm'}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="saas-card p-6">
@@ -326,26 +442,44 @@ export function InvoiceDetail() {
   );
 }
 
-function StatusBadge({ status }: { status: string }) {
+function StatusBadge({ status, deliveredDate }: { status: string; deliveredDate?: string }) {
+  const norm = status.toLowerCase();
   const styles: Record<string, string> = {
-    invoiced: "bg-emerald-50 text-emerald-600 border-emerald-100",
-    delivered: "bg-indigo-50 text-indigo-600 border-indigo-100",
-    completed: "bg-indigo-50 text-indigo-600 border-indigo-100",
-    loaded: "bg-amber-50 text-amber-600 border-amber-100",
-    assembly: "bg-blue-50 text-blue-600 border-blue-100",
+    'partially_complete': "bg-rose-50 text-rose-600 border-rose-100",
+    'partially complete': "bg-rose-50 text-rose-600 border-rose-100",
+    loaded: "bg-rose-50 text-rose-600 border-rose-100",
     draft: "bg-zinc-100 text-zinc-600 border-zinc-200",
+    darft: "bg-zinc-100 text-zinc-600 border-zinc-200",
+    proposed: "bg-amber-50 text-amber-600 border-amber-100",
+    assembled: "bg-blue-50 text-blue-600 border-blue-100",
+    assembly: "bg-blue-50 text-blue-600 border-blue-100",
+    'on-route': "bg-sky-50 text-sky-600 border-sky-100",
+    'on route': "bg-sky-50 text-sky-600 border-sky-100",
+    'on_route': "bg-sky-50 text-sky-600 border-sky-100",
+    delivered: "bg-teal-50 text-teal-600 border-teal-100",
+    completed: "bg-emerald-50 text-emerald-600 border-emerald-100",
+    complete: "bg-emerald-50 text-emerald-600 border-emerald-100",
+    invoiced: "bg-emerald-50 text-emerald-600 border-emerald-100"
   };
 
-  const key = status.toLowerCase();
+  const key = norm;
   const activeStyle = styles[key] || styles.draft;
+  const label = STATUS_DISPLAY_MAP[key] || status;
 
   return (
-    <div className={cn(
-      "px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border flex items-center gap-2",
-      activeStyle
-    )}>
-      <div className={cn("w-1.5 h-1.5 rounded-full", activeStyle.replace('bg-', 'bg-opacity-100 ').split(' ')[1])}></div>
-      {status}
+    <div className="flex flex-col gap-0.5 items-start">
+      <div className={cn(
+        "px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border flex items-center gap-2",
+        activeStyle
+      )}>
+        <div className={cn("w-1.5 h-1.5 rounded-full", activeStyle.replace('bg-', 'bg-opacity-100 ').split(' ')[1])}></div>
+        {label}
+      </div>
+      {(norm === 'delivered' || norm === 'completed' || norm === 'complete') && deliveredDate && (
+        <span className="text-[9px] text-zinc-400 font-mono italic px-1 mt-1 font-semibold">
+          Delivered: {deliveredDate}
+        </span>
+      )}
     </div>
   );
 }

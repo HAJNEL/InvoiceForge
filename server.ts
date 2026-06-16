@@ -3,13 +3,34 @@ import path from "path";
 import https from "https";
 import dotenv from "dotenv";
 import { OpenAI } from "openai";
-import { GoogleGenAI, Type } from "@google/genai";
+import { LlamaCloud, toFile } from "@llamaindex/llama-cloud";
 import { createRequire } from "module";
+import { initializeApp, getApps, App } from "firebase-admin/app";
+import { getAuth } from "firebase-admin/auth";
 
 // Create a require function that is compatible with both ESM (tsx dev) and CJS (production)
 const customRequire = typeof require !== "undefined"
   ? require
   : createRequire(import.meta.url);
+
+let firebaseAdminApp: App | null = null;
+function getFirebaseAdmin(): App {
+  if (!firebaseAdminApp) {
+    const firebaseConfig = customRequire("./firebase-applet-config.json");
+    if (!firebaseConfig || !firebaseConfig.projectId) {
+      throw new Error("Firebase project ID is not configured in firebase-applet-config.json.");
+    }
+    const apps = getApps();
+    if (apps.length > 0) {
+      firebaseAdminApp = apps[0];
+    } else {
+      firebaseAdminApp = initializeApp({
+        projectId: firebaseConfig.projectId,
+      });
+    }
+  }
+  return firebaseAdminApp;
+}
 
 async function extractTextFromPdf(buffer: Buffer): Promise<string> {
   const pdfModule = customRequire("pdf-parse");
@@ -82,451 +103,7 @@ function getOpenAI(): OpenAI {
   return openaiClient;
 }
 
-// Helper for Gemini Extraction fallback
-async function extractWithGeminiFallback(textContent: string): Promise<Record<string, unknown>> {
-  const geminiApiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GENAI_API_KEY;
-  if (!geminiApiKey) {
-    throw new Error("GEMINI_API_KEY / GOOGLE_GENAI_API_KEY is not configured.");
-  }
 
-  const aiClient = new GoogleGenAI({
-    apiKey: geminiApiKey,
-    httpOptions: {
-      headers: {
-        "User-Agent": "aistudio-build",
-      }
-    }
-  });
-  const prompt = `Extract all invoice details from the following document text. 
-  Follow the provided JSON schema exactly. 
-  
-  CRITICAL INSTRUCTION:
-  Look for a specific 5-line address block and extract it as follows:
-  Line 1: Client Name (map to customerName)
-  Line 2: School Name (map to schoolName)
-  Line 3: Street Address (map to streetAddress)
-  Line 4: Suburb (map to suburb)
-  Line 5: District (map to district)
-
-  If a field is not found, return an empty string or 0 as appropriate.
-  
-  Document Text:
-  ${textContent}`;
-
-  const response = await aiClient.models.generateContent({
-    model: "gemini-3.5-flash",
-    contents: prompt,
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          taxInvoice: { type: Type.STRING },
-          invoiceDate: { type: Type.STRING },
-          customerPO: { type: Type.STRING },
-          salesOrderNo: { type: Type.STRING },
-          deliveryNoteNo: { type: Type.STRING },
-          customerContact: { type: Type.STRING },
-          customerCode: { type: Type.STRING },
-          customerName: { type: Type.STRING },
-          schoolName: { type: Type.STRING },
-          streetAddress: { type: Type.STRING },
-          suburb: { type: Type.STRING },
-          district: { type: Type.STRING },
-          customerAddressLine1: { type: Type.STRING },
-          customerAddressLine2: { type: Type.STRING },
-          postalCode: { type: Type.STRING },
-          vatNo: { type: Type.STRING },
-          deliveryCustomerName: { type: Type.STRING },
-          deliveryAddressLine1: { type: Type.STRING },
-          deliveryAddressLine2: { type: Type.STRING },
-          deliveryRegion: { type: Type.STRING },
-          lineItems: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                stockCode: { type: Type.STRING },
-                description: { type: Type.STRING },
-                qty: { type: Type.NUMBER },
-                unitPrice: { type: Type.NUMBER },
-                disc: { type: Type.NUMBER },
-                value: { type: Type.NUMBER }
-              }
-            }
-          },
-          subTotal: { type: Type.NUMBER },
-          vatAmount: { type: Type.NUMBER },
-          amountIncl: { type: Type.NUMBER },
-          freight: { type: Type.NUMBER },
-          totalDue: { type: Type.NUMBER },
-          accountTerms: { type: Type.STRING },
-          companyName: { type: Type.STRING },
-          companyAddressLine1: { type: Type.STRING },
-          companyAddressLine2: { type: Type.STRING },
-          companyPhysicalAddress: { type: Type.STRING },
-          companyIndustrialPark: { type: Type.STRING },
-          telephone: { type: Type.STRING },
-          email: { type: Type.STRING },
-          website: { type: Type.STRING },
-          registrationNo: { type: Type.STRING },
-          companyVatNo: { type: Type.STRING },
-          bankName: { type: Type.STRING },
-          branch: { type: Type.STRING },
-          account: { type: Type.STRING },
-          swift: { type: Type.STRING },
-          page: { type: Type.STRING }
-        }
-      }
-    }
-  });
-
-  const text = response.text;
-  if (!text) {
-    throw new Error("No text response from Gemini.");
-  }
-
-  return JSON.parse(text) as Record<string, unknown>;
-}
-
-// Helper for OpenAI Extraction fallback
-async function extractWithOpenAIFallback(textContent: string): Promise<Record<string, unknown>> {
-  const openaiApiInstance = getOpenAI();
-  const response = await openaiApiInstance.chat.completions.create({
-    model: "gpt-4o",
-    messages: [
-      {
-        role: "system",
-        content: `You are an expert invoice parser. Extract the details into a valid JSON object matching this schema:
-        {
-          "taxInvoice": "string",
-          "invoiceDate": "string",
-          "customerPO": "string",
-          "salesOrderNo": "string",
-          "deliveryNoteNo": "string",
-          "customerContact": "string",
-          "customerCode": "string",
-          "customerName": "string",
-          "schoolName": "string",
-          "streetAddress": "string",
-          "suburb": "string",
-          "district": "string",
-          "customerAddressLine1": "string",
-          "customerAddressLine2": "string",
-          "postalCode": "string",
-          "vatNo": "string",
-          "deliveryCustomerName": "string",
-          "deliveryAddressLine1": "string",
-          "deliveryAddressLine2": "string",
-          "deliveryRegion": "string",
-          "lineItems": [
-            { "stockCode": "string", "description": "string", "qty": number, "unitPrice": number, "disc": number, "value": number }
-          ],
-          "subTotal": number,
-          "vatAmount": number,
-          "amountIncl": number,
-          "freight": number,
-          "totalDue": number,
-          "accountTerms": "string",
-          "companyName": "string",
-          "companyAddressLine1": "string",
-          "companyAddressLine2": "string",
-          "companyPhysicalAddress": "string",
-          "companyIndustrialPark": "string",
-          "telephone": "string",
-          "email": "string",
-          "website": "string",
-          "registrationNo": "string",
-          "companyVatNo": "string",
-          "bankName": "string",
-          "branch": "string",
-          "account": "string",
-          "swift": "string",
-          "page": "string"
-        }`
-      },
-      {
-        role: "user",
-        content: textContent
-      }
-    ],
-    response_format: { type: "json_object" },
-    temperature: 0,
-  });
-
-  const parsedContent = response.choices[0]?.message?.content;
-  if (!parsedContent) {
-    throw new Error("No response content from OpenAI fallback.");
-  }
-  return JSON.parse(parsedContent) as Record<string, unknown>;
-}
-
-// Robust fallback parsing engine using regex and heuristics (completely local / offline)
-function extractWithHeuristicFallback(textContent: string): Record<string, unknown> {
-  console.log("Analyzing text structure using local heuristic parsing engines...");
-  const lines = textContent.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-
-  // Regular expression searches helper
-  const findMatch = (regexes: RegExp[]): string => {
-    for (const regex of regexes) {
-      const match = textContent.match(regex);
-      if (match && match[1]) {
-        return match[1].trim();
-      }
-    }
-    return "";
-  };
-
-  const taxInvoice = findMatch([
-    /(?:Invoice|Tax\s*Invoice|INV)\s*(?:No|Number|#)[:\s-]+([A-Za-z0-9-–/]+)/i,
-    /(?:Invoice|Tax\s*Invoice|INV)\s*#?[:\s-]*([A-Za-z0-9-–/]+)/i,
-    /([A-Z0-9-]{5,15})\s+Invoice/i
-  ]) || "INV-" + Math.floor(100000 + Math.random() * 900000);
-
-  const invoiceDate = findMatch([
-    /(?:Invoice\s*Date|Date\s*Of\s*Issue|Date)[:\s-]+([0-9]{1,4}[-/][0-9]{1,2}[-/][0-9]{1,4}|[0-9]{1,2}\s+[A-Za-z]+\s+[0-9]{4})/i,
-    /(?:Date)[:\s-]+([0-9]{1,4}[-/][0-9]{1,2}[-/][0-9]{1,4}|[0-9]{1,2}\s+[A-Za-z]+\s+[0-9]{4})/i
-  ]) || new Date().toISOString().split("T")[0];
-
-  const customerPO = findMatch([
-    /(?:PO|P\.O\.|Purchase\s*Order|Customer\s*Order|Order)\s*(?:No|Number|#)?[:\s-]+([A-Za-z0-9-–/]+)/i,
-    /PO\s*#?\s*([A-Za-z0-9-–/]+)/i
-  ]) || "";
-
-  const salesOrderNo = findMatch([
-    /(?:Sales\s*Order|S\.O\.|SO)\s*(?:No|Number|#)?[:\s-]+([A-Za-z0-9-–/]+)/i
-  ]);
-
-  const deliveryNoteNo = findMatch([
-    /(?:Delivery\s*Note|D\.N\.|DN)\s*(?:No|Number|#)?[:\s-]+([A-Za-z0-9-–/]+)/i
-  ]);
-
-  const customerCode = findMatch([
-    /(?:Customer\s*Code|Client\s*Code|Acc\s*No|Account\s*No|Cust\s*Code|Code)[:\s-]+([A-Za-z0-9-–/]+)/i
-  ]);
-
-  const customerContact = findMatch([
-    /(?:Contact|Attn|Attention|Contact\s*Person)[:\s-]+([^\r\n]+)/i
-  ]);
-
-  const vatNo = findMatch([
-    /(?:VAT\s*Reg(?:\s*No)?|VAT\s*No|Tax\s*Reg(?:\s*No)?|VAT\s*Registration\s*No)[:\s-]+([A-Za-z0-9-–/]+)/i,
-    /VAT\s*(?:No|#)?\s*[:\s-]*([0-9]{10,14})/i
-  ]);
-
-  const companyVatNo = findMatch([
-    /(?:Company\s*VAT|Our\s*VAT\s*No)[:\s-]+([0-9]{10,14})/i
-  ]);
-
-  const registrationNo = findMatch([
-    /(?:Reg\s*No|Registration\s*No|Co\s*Reg\s*No)[:\s-]+([A-Za-z0-9-–/]+)/i
-  ]);
-
-  const telephone = findMatch([
-    /(?:Tel|Telephone|Phone|Tel\s*No)[:\s-]+([0-9+\s()-]+)/i
-  ]);
-
-  const email = findMatch([
-    /(?:Email|E-mail|Mail)[:\s-]+([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/i
-  ]);
-
-  const website = findMatch([
-    /(?:Web|Website|Url)[:\s-]+(www\.[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}|https?:\/\/[^\s]+)/i
-  ]);
-
-  // Banking Info
-  const bankName = findMatch([
-    /(?:Bank|Bank\s*Name)[:\s-]+([A-Za-z\s]+)/i,
-    /Account\s*held\s*at[:\s-]+([A-Za-z\s]+)/i
-  ]);
-
-  const branch = findMatch([
-    /(?:Branch|Branch\s*Code|Branch\s*No)[:\s-]+([0-9A-Za-z]+)/i
-  ]);
-
-  const account = findMatch([
-    /(?:Account|Account\s*No|Acc\s*No|Account\s*Number)[:\s-]+([0-9\s]+)/i
-  ]);
-
-  const swift = findMatch([
-    /(?:Swift|Swift\s*Code|BIC)[:\s-]+([0-9A-Za-z]{8,11})/i
-  ]);
-
-  // Try to parse values
-  const parseAmountField = (regexes: RegExp[]): number => {
-    const matched = findMatch(regexes);
-    if (matched) {
-      const purified = matched.replace(/[^\d.]/g, "");
-      const val = parseFloat(purified);
-      return isNaN(val) ? 0 : val;
-    }
-    return 0;
-  };
-
-  let parsedSubTotal = parseAmountField([
-    /(?:Sub\s*Total|Subtotal|Net\s*Amount)[:\s-]+R?\s*([\d\s.,]+)/i,
-    /Total\s*Excl(?:\s*VAT)?[:\s-]+R?\s*([\d\s.,]+)/i
-  ]);
-
-  let parsedVatAmount = parseAmountField([
-    /(?:VAT|GST|Tax\s*Amount)[:\s-]+R?\s*([\d\s.,]+)/i,
-    /Total\s*VAT[:\s-]+R?\s*([\d\s.,]+)/i
-  ]);
-
-  const freight = parseAmountField([
-    /(?:Freight|Delivery\s*Charge|Shipping)[:\s-]+R?\s*([\d\s.,]+)/i
-  ]);
-
-  let parsedTotalDue = parseAmountField([
-    /(?:Total\s*Due|Amount\s*Due|Grand\s*Total|Total)[:\s-]+R?\s*([\d\s.,]+)/i,
-    /Total\s*Incl(?:\s*VAT)?[:\s-]+R?\s*([\d\s.,]+)/i
-  ]);
-
-  if (parsedTotalDue === 0) {
-    if (parsedSubTotal > 0) {
-      parsedVatAmount = parsedVatAmount || (parsedSubTotal * 0.15);
-      parsedTotalDue = parsedSubTotal + parsedVatAmount + freight;
-    }
-  } else if (parsedSubTotal === 0) {
-    parsedSubTotal = parsedTotalDue / 1.15;
-    parsedVatAmount = parsedTotalDue - parsedSubTotal;
-  }
-
-  // Fallbacks for financial numbers
-  if (parsedSubTotal === 0) parsedSubTotal = 1500.00;
-  if (parsedVatAmount === 0) parsedVatAmount = parsedSubTotal * 0.15;
-  if (parsedTotalDue === 0) parsedTotalDue = parsedSubTotal + parsedVatAmount;
-
-  // Search Address block
-  // Critical instructions mapping five-line address block
-  let customerName = "";
-  let schoolName = "";
-  let streetAddress = "";
-  let suburb = "";
-  let district = "";
-  let foundAddressBlock = false;
-
-  for (let i = 0; i < lines.length - 4; i++) {
-    if (/Bill\s*To|Invoice\s*To|Recipient|Customer|Delivered\s*To/i.test(lines[i])) {
-      customerName = lines[i + 1] || "";
-      schoolName = lines[i + 2] || "";
-      streetAddress = lines[i + 3] || "";
-      suburb = lines[i + 4] || "";
-      district = lines[i + 5] || "";
-      foundAddressBlock = true;
-      break;
-    }
-  }
-
-  if (!foundAddressBlock || !customerName) {
-    const schoolLineIndex = lines.findIndex(l => /School|College|Primary|Academy|High/i.test(l));
-    if (schoolLineIndex !== -1) {
-      schoolName = lines[schoolLineIndex];
-      customerName = lines[schoolLineIndex - 1] || schoolName;
-      streetAddress = lines[schoolLineIndex + 1] || "";
-      suburb = lines[schoolLineIndex + 2] || "";
-      district = lines[schoolLineIndex + 3] || "";
-    } else {
-      customerName = "Default Customer Ltd";
-      schoolName = "Default Primary School";
-      streetAddress = "123 Educational Blvd";
-      suburb = "Centurion";
-      district = "Gauteng";
-    }
-  }
-
-  const customerAddressLine1 = streetAddress;
-  const customerAddressLine2 = `${suburb}, ${district}`.trim().replace(/^,|,$/g, "");
-
-  // Company Name
-  const companyName = lines[0] || "InvoiceForge Enterprise Group";
-  const companyAddressLine1 = lines[1] || "45 Technology Drive, Industrial Park";
-  const companyAddressLine2 = lines[2] || "Midrand, 1685";
-  const companyPhysicalAddress = `${companyAddressLine1}, ${companyAddressLine2}`;
-  const companyIndustrialPark = "Midrand Corporate Park";
-
-  // Line items extraction
-  const lineItems: Array<Record<string, unknown>> = [];
-  for (const line of lines) {
-    if (/Total|Subtotal|VAT|Invoice|Tax/i.test(line)) {
-      continue;
-    }
-    const match = line.match(/^([A-Za-z0-9-–/]{3,15})\s+(.+?)\s+(\d+)\s+([\d\s.,]+)\s+([\d\s.,]+)$/);
-    if (match) {
-      const qtyStr = match[3];
-      const qty = parseInt(qtyStr) || 1;
-      const unitStr = match[4].replace(/[^\d.]/g, "");
-      const unitPrice = parseFloat(unitStr) || 0;
-      const valStr = match[5].replace(/[^\d.]/g, "");
-      const value = parseFloat(valStr) || (qty * unitPrice);
-
-      lineItems.push({
-        stockCode: match[1].trim(),
-        description: match[2].trim(),
-        qty,
-        unitPrice,
-        disc: 0,
-        value
-      });
-    }
-  }
-
-  if (lineItems.length === 0) {
-    lineItems.push({
-      stockCode: "STK-ED-001",
-      description: "Standard Educational Services Delivery",
-      qty: 1,
-      unitPrice: parsedSubTotal,
-      disc: 0,
-      value: parsedSubTotal
-    });
-  }
-
-  return {
-    taxInvoice,
-    invoiceDate,
-    customerPO,
-    salesOrderNo: salesOrderNo || "",
-    deliveryNoteNo: deliveryNoteNo || "",
-    customerContact: customerContact || "Finance Administration",
-    customerCode: customerCode || "CUST-999",
-    customerName,
-    schoolName,
-    streetAddress,
-    suburb,
-    district,
-    customerAddressLine1,
-    customerAddressLine2,
-    postalCode: "0157",
-    vatNo: vatNo || "4990123456",
-    deliveryCustomerName: customerName,
-    deliveryAddressLine1: streetAddress,
-    deliveryAddressLine2: suburb,
-    deliveryRegion: district,
-    lineItems,
-    subTotal: parsedSubTotal,
-    vatAmount: parsedVatAmount,
-    amountIncl: parsedTotalDue,
-    freight,
-    totalDue: parsedTotalDue,
-    accountTerms: "30 Days",
-    companyName,
-    companyAddressLine1,
-    companyAddressLine2,
-    companyPhysicalAddress,
-    companyIndustrialPark,
-    telephone: telephone || "011 234 5678",
-    email: email || "billing@company.co.za",
-    website: website || "www.company.co.za",
-    registrationNo: registrationNo || "2020/123456/07",
-    companyVatNo: companyVatNo || "4110987654",
-    bankName: bankName || "First National Bank",
-    branch: branch || "250655",
-    account: account || "62123456789",
-    swift: swift || "FIRNZAJJ",
-    page: "1 of 1"
-  };
-}
 
 interface RequestOptions {
   headers?: Record<string, string>;
@@ -811,18 +388,347 @@ app.post("/api/extractWithXAI", async (req, res) => {
   }
 });
 
-interface LlamaFileUploadResponse {
-  id: string;
-}
+const INVOICE_SCHEMA = {
+  "additionalProperties": false,
+  "properties": {
+    "invoice_number": {
+      "description": "The unique identifier for the invoice.",
+      "type": "string"
+    },
+    "invoice_date": {
+      "description": "The date when the invoice was issued. Format: YY/MM/DD or DD/MM/YY, e.g., '04/05/26'.",
+      "type": "string"
+    },
+    "customer_purchase_order_number": {
+      "anyOf": [
+        {
+          "description": "The purchase order number provided by the customer.",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "The purchase order number provided by the customer."
+    },
+    "sales_order_number": {
+      "anyOf": [
+        {
+          "description": "The internal sales order number.",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "The internal sales order number."
+    },
+    "delivery_note_number": {
+      "anyOf": [
+        {
+          "description": "The number associated with the delivery note for the goods.",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "The number associated with the delivery note for the goods."
+    },
+    "customer_contact": {
+      "anyOf": [
+        {
+          "description": "The name or details of the customer contact person.",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "The name or details of the customer contact person."
+    },
+    "bill_to_details": {
+      "description": "Details of the entity being billed.",
+      "properties": {
+        "name": {
+          "description": "The name of the entity being billed.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "ship_to_details": {
+      "anyOf": [
+        {
+          "description": "Details of the entity where goods are shipped.",
+          "properties": {
+            "name": {
+              "description": "The name of the entity receiving the shipment.",
+              "type": "string"
+            },
+            "school_name": {
+              "anyOf": [
+                {
+                  "description": "The name of the school, if applicable, for the shipment.",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The name of the school, if applicable, for the shipment."
+            },
+            "address": {
+              "description": "The shipping address.",
+              "properties": {
+                "street_address": {
+                  "description": "Street name and number of the shipping address.",
+                  "type": "string"
+                },
+                "city": {
+                  "description": "City of the shipping address.",
+                  "type": "string"
+                },
+                "region": {
+                  "anyOf": [
+                    {
+                      "description": "Region or district of the shipping address.",
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Region or district of the shipping address."
+                }
+              },
+              "required": [
+                "street_address",
+                "city",
+                "region"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "name",
+            "school_name",
+            "address"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Details of the entity where goods are shipped."
+    },
+    "line_items": {
+      "description": "A list of individual products or services on the invoice.",
+      "items": {
+        "properties": {
+          "stock_code": {
+            "description": "The unique code for the stock item.",
+            "type": "string"
+          },
+          "description": {
+            "description": "A description of the item.",
+            "type": "string"
+          },
+          "quantity": {
+            "description": "The quantity of the item.",
+            "type": "number"
+          },
+          "unit_price": {
+            "description": "The price per unit of the item.",
+            "type": "number"
+          },
+          "discount": {
+            "anyOf": [
+              {
+                "description": "The discount applied to the item, typically a percentage or fixed amount.",
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The discount applied to the item, typically a percentage or fixed amount."
+          },
+          "line_item_value": {
+            "description": "The total value for this line item (quantity * unit price - discount).",
+            "type": "number"
+          }
+        },
+        "required": [
+          "stock_code",
+          "description",
+          "quantity",
+          "unit_price",
+          "discount",
+          "line_item_value"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "summary": {
+      "description": "Summary of financial totals for the invoice.",
+      "properties": {
+        "sub_total": {
+          "description": "The total amount before VAT and other charges.",
+          "type": "number"
+        },
+        "vat_rate": {
+          "anyOf": [
+            {
+              "description": "The VAT rate applied, e.g., '15%'.",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The VAT rate applied, e.g., '15%'."
+        },
+        "vat_amount": {
+          "description": "The total amount of VAT charged.",
+          "type": "number"
+        },
+        "amount_inclusive_of_vat": {
+          "anyOf": [
+            {
+              "description": "The total amount including VAT.",
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The total amount including VAT."
+        },
+        "freight_amount": {
+          "anyOf": [
+            {
+              "description": "The cost of freight or shipping.",
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The cost of freight or shipping."
+        },
+        "total_due": {
+          "description": "The final total amount due for the invoice.",
+          "type": "number"
+        }
+      },
+      "required": [
+        "sub_total",
+        "vat_rate",
+        "vat_amount",
+        "amount_inclusive_of_vat",
+        "freight_amount",
+        "total_due"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "invoice_number",
+    "invoice_date",
+    "customer_purchase_order_number",
+    "sales_order_number",
+    "delivery_note_number",
+    "customer_contact",
+    "bill_to_details",
+    "ship_to_details",
+    "line_items",
+    "summary"
+  ],
+  "type": "object"
+};
 
-interface LlamaExtractionTriggerResponse {
-  id: string;
-}
+function mapLlamaResultToDetailedInvoice(extracted: Record<string, unknown> | null | undefined): Record<string, unknown> {
+  if (!extracted) return {};
 
-interface LlamaExtractPollResponse {
-  status: string;
-  extract_result?: unknown;
-  extractResult?: unknown;
+  const billTo = (extracted.bill_to_details || {}) as Record<string, unknown>;
+  let shipTo = extracted.ship_to_details as Record<string, unknown> | null | undefined;
+  if (!shipTo && extracted.bill_to_details) {
+    shipTo = {
+      name: billTo.name,
+      school_name: null,
+      address: null
+    };
+  }
+  const shipToName = (shipTo?.name || billTo.name || "") as string;
+  const schoolName = (shipTo?.school_name || "") as string;
+  const shipAddr = (shipTo?.address || {}) as Record<string, unknown>;
+  const summary = (extracted.summary || {}) as Record<string, unknown>;
+
+  // Standardize mapping to DetailedInvoice format
+  const mapped: Record<string, unknown> = {
+    taxInvoice: String(extracted.invoice_number || "").trim() || `TEMP-${Date.now()}`,
+    invoiceDate: String(extracted.invoice_date || "").trim(),
+    customerPO: String(extracted.customer_purchase_order_number || "").trim(),
+    salesOrderNo: String(extracted.sales_order_number || "").trim(),
+    deliveryNoteNo: String(extracted.delivery_note_number || "").trim(),
+    customerContact: String(extracted.customer_contact || "").trim(),
+    customerCode: "",
+    customerName: String(billTo.name || "").trim(),
+    schoolName: String(schoolName || "").trim(),
+    streetAddress: String(shipAddr.street_address || "").trim(),
+    suburb: "",
+    district: String(shipAddr.region || "").trim(),
+    customerAddressLine1: String(billTo.name || "").trim(),
+    customerAddressLine2: "",
+    postalCode: "",
+    vatNo: "",
+    deliveryCustomerName: String(shipToName || "").trim(),
+    deliveryAddressLine1: String(shipAddr.street_address || "").trim(),
+    deliveryAddressLine2: String(shipAddr.city || "").trim(),
+    deliveryRegion: String(shipAddr.region || "").trim(),
+    lineItems: Array.isArray(extracted.line_items)
+      ? extracted.line_items.map((itemValue) => {
+          const item = (itemValue || {}) as Record<string, unknown>;
+          return {
+            stockCode: String(item.stock_code || "").trim(),
+            description: String(item.description || "").trim(),
+            qty: typeof item.quantity === "number" ? item.quantity : parseFloat(String(item.quantity || "0")) || 0,
+            unitPrice: typeof item.unit_price === "number" ? item.unit_price : parseFloat(String(item.unit_price || "0")) || 0,
+            disc: typeof item.discount === "number" ? item.discount : parseFloat(String(item.discount || "0")) || 0,
+            value: typeof item.line_item_value === "number" ? item.line_item_value : parseFloat(String(item.line_item_value || "0")) || 0,
+          };
+        })
+      : [],
+    subTotal: typeof summary.sub_total === "number" ? summary.sub_total : parseFloat(String(summary.sub_total || "0")) || 0,
+    vatAmount: typeof summary.vat_amount === "number" ? summary.vat_amount : parseFloat(String(summary.vat_amount || "0")) || 0,
+    amountIncl: typeof summary.amount_inclusive_of_vat === "number" ? summary.amount_inclusive_of_vat : parseFloat(String(summary.amount_inclusive_of_vat || "0")) || 0,
+    freight: typeof summary.freight_amount === "number" ? summary.freight_amount : parseFloat(String(summary.freight_amount || "0")) || 0,
+    totalDue: typeof summary.total_due === "number" ? summary.total_due : parseFloat(String(summary.total_due || "0")) || 0,
+    accountTerms: "",
+    companyName: "",
+    companyAddressLine1: "",
+    companyAddressLine2: "",
+    companyPhysicalAddress: "",
+    companyIndustrialPark: "",
+    telephone: "",
+    email: "",
+    website: "",
+    registrationNo: "",
+    companyVatNo: "",
+    bankName: "",
+    branch: "",
+    account: "",
+    swift: "",
+    page: "1"
+  };
+
+  return mapped;
 }
 
 // 3. LlamaCloud / LlamaIndex Extraction Route
@@ -833,193 +739,217 @@ app.post("/api/extractWithLlamaExtract", async (req, res) => {
   }
 
   try {
-    const apiKey = process.env.LLAMAINDEX_API_KEY || process.env.LLAMA_CLOUD_API_KEY;
+    const apiKey = process.env.LLAMA_CLOUD_API_KEY || process.env.LLAMAINDEX_API_KEY;
     if (!apiKey) {
       return res.status(500).json({
         success: false,
-        error: "LlamaIndex API key is not configured. Please set the LLAMAINDEX_API_KEY environment secret in the settings."
+        error: "Llama Cloud API key is not configured. Please set the LLAMA_CLOUD_API_KEY or LLAMAINDEX_API_KEY environment secret in the settings."
       });
     }
 
-    console.log(`Uploading ${fileName} to LlamaCloud...`);
-    const boundary = "----WebKitFormBoundary" + Math.random().toString(36).substring(2);
-    const headerPurpose = `--${boundary}\r\nContent-Disposition: form-data; name="purpose"\r\n\r\nextract\r\n`;
-    const headerFile = `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${fileName}"\r\nContent-Type: ${mimeType || "application/pdf"}\r\n\r\n`;
-    const footer = `\r\n--${boundary}--\r\n`;
+    console.log(`[LlamaCloud SDK] Initializing client for uploading and extracting: ${fileName}...`);
+    const client = new LlamaCloud({ apiKey });
+
+    const buffer = Buffer.from(base64, "base64");
     
-    const buffer = Buffer.concat([
-      Buffer.from(headerPurpose, "utf-8"),
-      Buffer.from(headerFile, "utf-8"),
-      Buffer.from(base64, "base64"),
-      Buffer.from(footer, "utf-8")
-    ]);
-
-    const uploadResponse = await makeRequest("https://api.llamaindex.ai/v1/files", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${apiKey}`,
-        "Content-Type": `multipart/form-data; boundary=${boundary}`
-      }
-    }, buffer);
-
-    if (!uploadResponse.ok) {
-      const errText = await uploadResponse.text();
-      console.error("LlamaCloud file upload response error:", errText);
-      throw new Error(`LlamaCloud file upload failed with status ${uploadResponse.status}: ${errText}`);
-    }
-
-    const uploadData = (await uploadResponse.json()) as LlamaFileUploadResponse;
-    const fileId = uploadData.id;
-    console.log("File uploaded successfully to LlamaCloud, file ID:", fileId);
-
-    const configurationId = "cfg-gv42rnwnuvawp75vd758c2g8pxpj";
-    console.log(`Triggering LlamaCloud extraction run for file ${fileId} with configuration ID ${configurationId}...`);
+    // Convert base64 buffer to SDK's Uploadable File object
+    const uploadable = await toFile(buffer, fileName, { type: mimeType || "application/pdf" });
     
-    const runResponse = await makeRequest("https://api.llamaindex.ai/v1/extracts", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${apiKey}`,
-        "Content-Type": "application/json"
+    console.log("[LlamaCloud SDK] Uploading file to storage...");
+    const uploadedFile = await client.files.create({
+      file: uploadable,
+      purpose: "extract"
+    });
+
+    console.log(`[LlamaCloud SDK] File uploaded successfully. ID: ${uploadedFile.id}. Running custom schema extraction...`);
+    const jobResult = await client.extract.run({
+      file_input: uploadedFile.id,
+      configuration: {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        data_schema: INVOICE_SCHEMA as any
       }
-    }, JSON.stringify({
-      file_input: fileId,
-      configuration_id: configurationId
-    }));
+    });
 
-    if (!runResponse.ok) {
-      const errText = await runResponse.text();
-      console.error("LlamaCloud extraction trigger error:", errText);
-      throw new Error(`LlamaCloud extraction trigger failed with status ${runResponse.status}: ${errText}`);
+    const rawExtractResult = jobResult.extract_result;
+    if (!rawExtractResult) {
+      throw new Error("LlamaCloud succeeded but returned no extraction results under extract_result.");
     }
 
-    const extractJobData = (await runResponse.json()) as LlamaExtractionTriggerResponse;
-    const extractId = extractJobData.id;
-    if (!extractId) {
-      throw new Error("Could not locate LlamaCloud Extract ID from response: " + JSON.stringify(extractJobData));
-    }
-    console.log("Extraction triggered successfully, Extract ID:", extractId);
-
-    let status = "pending";
-    const startPoll = Date.now();
-    const PAGE_TIMEOUT = 120000;
-    let pollResponseData: LlamaExtractPollResponse | null = null;
-
-    while (
-      (status === "pending" || status === "running" || status === "PENDING" || status === "RUNNING") && 
-      (Date.now() - startPoll < PAGE_TIMEOUT)
-    ) {
-      await new Promise(resolve => setTimeout(resolve, 3000));
-      
-      console.log(`Polling LlamaCloud extract ${extractId} status...`);
-      const pollResp = await makeRequest(`https://api.llamaindex.ai/v1/extracts/${extractId}`, {
-        headers: { "Authorization": `Bearer ${apiKey}` }
-      });
-
-      if (!pollResp.ok) {
-        console.warn(`Polling failed with status ${pollResp.status}, will retry`);
-        continue;
-      }
-
-      pollResponseData = (await pollResp.json()) as LlamaExtractPollResponse;
-      status = pollResponseData.status || "pending";
-      console.log(`LlamaCloud extract status: ${status}`);
+    let extractedObj: unknown = rawExtractResult;
+    if (Array.isArray(extractedObj)) {
+      extractedObj = extractedObj[0];
     }
 
-    if (!pollResponseData) {
-      throw new Error("LlamaCloud extraction ended with no status data.");
-    }
-
-    const lowerStatus = status.toLowerCase();
-    if (lowerStatus !== "completed" && lowerStatus !== "success" && lowerStatus !== "done") {
-      throw new Error(`LlamaCloud extraction did not complete, ended with status: ${status}`);
-    }
-
-    console.log("LlamaCloud extraction completed successfully, retrieving results...");
-    const extractResultField = pollResponseData.extract_result || pollResponseData.extractResult;
-    
-    if (!extractResultField) {
-      throw new Error("LlamaCloud extraction succeeded but extract_result was not found in response.");
-    }
-
-    let structuredData: unknown = null;
-    if (typeof extractResultField === "string") {
+    if (typeof extractedObj === "string") {
       try {
-        structuredData = JSON.parse(extractResultField) as unknown;
-      } catch (e) {
-        console.warn("Failed to parse extract_result as JSON string directly, returning raw string:", e);
-        structuredData = extractResultField;
+        extractedObj = JSON.parse(extractedObj);
+      } catch (parseErr) {
+        console.warn("[LlamaCloud SDK] Failed to parse extract_result string as JSON directly, keeping string format.", parseErr);
       }
-    } else {
-      structuredData = extractResultField;
     }
 
-    console.log("Structured extraction complete with LlamaCloud:", JSON.stringify(structuredData));
+    const structuredData = mapLlamaResultToDetailedInvoice(extractedObj as Record<string, unknown>);
+    console.log("[LlamaCloud SDK] Structured extraction matched successfully to DetailedInvoice format.");
+
     return res.json({ success: true, data: structuredData });
 
   } catch (error: unknown) {
     const err = error as Error;
-    const isDnsError = err.message?.includes("getaddrinfo") || err.message?.includes("EAI_AGAIN") || err.message?.includes("ENOTFOUND");
+    console.error("[LlamaCloud SDK Critical Error] Llama Cloud integration failed:", err.message || err);
     
-    if (isDnsError) {
-      console.warn(`[LlamaIndex Network Isolated] External API DNS resolution failed (getaddrinfo EAI_AGAIN api.llamaindex.ai). This is expected if the preview environment is running in a sandbox with network isolation.`);
-    } else {
-      console.warn(`[LlamaIndex API Failed] Error during LlamaIndex integration: ${err.message}`);
+    // Explicitly do not fall back to Gemini/GPT-4o/Heuristics per user's constraint.
+    // Present a clear reason indicating credits are depleted / extraction failed.
+    return res.status(500).json({
+      success: false,
+      error: "The credits for LlamaParse are depleted or the service request failed. Please check your Llama Cloud API key and usage."
+    });
+  }
+});
+
+// Endpoint for raw server-side PDF text extraction
+app.post("/api/extractPdfText", async (req, res) => {
+  const { base64 } = req.body as { base64?: string };
+  if (!base64) {
+    return res.status(400).json({ success: false, error: "The request must contain base64." });
+  }
+  try {
+    const buffer = Buffer.from(base64, "base64");
+    const text = await extractTextFromPdf(buffer);
+    return res.json({ success: true, text });
+  } catch (err: unknown) {
+    const error = err as Error;
+    console.error("PDF text extraction error:", error);
+    return res.status(500).json({ success: false, error: error.message || "Failed to extract PDF text." });
+  }
+});
+
+// API endpoints for administrative team member management (Auth)
+interface FirebaseAuthErrorLike {
+  message?: string;
+  stack?: string;
+  code?: string;
+  cause?: {
+    message?: string;
+    stack?: string;
+    toString?: () => string;
+  } | unknown;
+  toString?: () => string;
+}
+
+function getApiDisabledErrorDetails(err: unknown): { isApiDisabled: boolean; errorUrl: string } {
+  const typedErr = err as FirebaseAuthErrorLike;
+  const causeObj = typedErr?.cause as FirebaseAuthErrorLike | undefined;
+
+  const serialized = [
+    typedErr?.message,
+    typedErr?.stack,
+    typedErr?.code,
+    JSON.stringify(err),
+    causeObj?.message,
+    causeObj?.stack,
+    causeObj?.toString?.(),
+    typedErr?.toString?.()
+  ].filter(Boolean).join("\n");
+
+  const isApiDisabled = 
+    serialized.includes("identitytoolkit") || 
+    serialized.includes("googleapis.com/apis") ||
+    serialized.includes("403") ||
+    serialized.includes("permission") ||
+    serialized.includes("Identity Toolkit API");
+
+  // Attempt to extract the URL: e.g., //console.developers.google.com/apis/api/identitytoolkit.googleapis.com/overview?project=XXXX
+  const urlRegex = /(?:https?:)?\/\/console\.(?:developers|cloud)\.google\.com\/[^\s'"]+/;
+  const match = serialized.match(urlRegex);
+  
+  let errorUrl = "";
+  if (match) {
+    errorUrl = match[0];
+    if (errorUrl.startsWith("//")) {
+      errorUrl = "https:" + errorUrl;
     }
-    console.log(`[Failover Activated] Initiating automated multi-tier failover cascade (Gemini 3.5-Flash -> GPT-4o -> Offline Local Heuristic Parser)...`);
-
+  } else {
+    // Try to find the project ID or number in config if we have it
     try {
-      console.log("Parsing PDF structure locally from uploaded base64 data using pdf-parse...");
-      const pdfBuffer = Buffer.from(base64, "base64");
-      const textContent = await extractTextFromPdf(pdfBuffer);
-
-      if (!textContent || textContent.trim().length === 0) {
-        console.warn("[Local Parser Warning] Extracted PDF text content is empty or unparseable. Proceeding anyway with local heuristic values...");
+      const firebaseConfig = customRequire("./firebase-applet-config.json");
+      if (firebaseConfig && firebaseConfig.projectId) {
+        errorUrl = `https://console.cloud.google.com/apis/api/identitytoolkit.googleapis.com/overview?project=${firebaseConfig.projectId}`;
       }
+    } catch {
+      // ignore
+    }
+  }
 
-      console.log("Tier 1 Failover: Call Gemini-3.5-Flash for intelligent, schema-guided structured extraction...");
-      try {
-        const structuredData = await extractWithGeminiFallback(textContent || "");
-        console.log("[Failover Success] Gemini AI extraction completed successfully! Returning high-fidelity structured data.");
-        return res.json({ success: true, data: structuredData });
-      } catch (geminiError: unknown) {
-        const gemErr = geminiError as Error;
-        const isGeminiAuthError = gemErr.message?.includes("API key not valid") || gemErr.message?.includes("INVALID_ARGUMENT") || gemErr.message?.includes("not configured");
-        
-        if (isGeminiAuthError) {
-          console.warn("[Tier 1 Failover Unconfigured] Gemini extraction could not authenticate. Make sure process.env.GEMINI_API_KEY holds a valid Google GenAI key in the Settings panel.");
-        } else {
-          console.warn(`[Tier 1 Failover Failed] Gemini extraction failed with error: ${gemErr.message}`);
-        }
-        
-        console.log("Tier 2 Failover: Call OpenAI GPT-4o for structured extraction...");
-        try {
-          const structuredData = await extractWithOpenAIFallback(textContent || "");
-          console.log("[Failover Success] OpenAI extraction completed successfully! Returning structured data.");
-          return res.json({ success: true, data: structuredData });
-        } catch (openAiError: unknown) {
-          const oaiErr = openAiError as Error;
-          const isOpenAiAuthError = oaiErr.message?.includes("Incorrect API key") || oaiErr.message?.includes("401") || oaiErr.message?.includes("is required");
-          
-          if (isOpenAiAuthError) {
-            console.warn("[Tier 2 Failover Unconfigured] OpenAI extraction could not authenticate due to invalid/missing credentials.");
-          } else {
-            console.warn(`[Tier 2 Failover Failed] OpenAI extraction failed with error: ${oaiErr.message}`);
-          }
-          
-          console.log("Tier 3 Failover: Engaging offline local heuristic parsing engine...");
-          const structuredData = extractWithHeuristicFallback(textContent || "");
-          console.log("[Failover Success] Offline local heuristic parser successfully recovered invoice structure! Returning locally extracted details.");
-          return res.json({ success: true, data: structuredData });
-        }
-      }
-    } catch (fallbackError: unknown) {
-      const fbErr = fallbackError as Error;
-      console.error("[Failover Cascade Critical Error] Local PDF parsing or failover sequence encountered an fatal error:", fbErr);
-      return res.status(500).json({
-        success: false,
-        error: `LlamaCloud extraction and all failover pipelines encountered errors. Raw error: ${err.message}. Failover error: ${fbErr.message}`
+  if (!errorUrl) {
+    errorUrl = "https://console.cloud.google.com/apis/api/identitytoolkit.googleapis.com/overview";
+  }
+
+  return { isApiDisabled, errorUrl };
+}
+
+app.post("/api/team-members/reset-password", async (req, res) => {
+  const { userId, newPassword } = req.body as { userId?: string; newPassword?: string };
+  if (!userId || !newPassword) {
+    return res.status(400).json({ success: false, error: "Missing userId or newPassword in request body." });
+  }
+
+  try {
+    getFirebaseAdmin();
+    const authAdmin = getAuth();
+    await authAdmin.updateUser(userId, { password: newPassword });
+    console.log(`[FIREBASE ADMIN] Password reset successfully for user: ${userId}`);
+    return res.json({ success: true, message: "Password reset completed successfully." });
+  } catch (error: unknown) {
+    const err = error as FirebaseAuthErrorLike;
+    console.error("Firebase Admin Reset Password Error:", err);
+    
+    // Leverage our extremely dynamic error evaluator to check fields and extract URLs
+    const { isApiDisabled, errorUrl } = getApiDisabledErrorDetails(err);
+    if (isApiDisabled) {
+      return res.json({ 
+        success: false, 
+        apiNotEnabled: true, 
+        errorUrl, 
+        error: "Google Cloud Identity Toolkit API is currently disabled. Server-side administrative actions (like direct password resets) cannot be executed until this API is enabled." 
       });
     }
+    return res.status(500).json({ success: false, error: err.message || "Failed to reset password." });
+  }
+});
+
+app.post("/api/team-members/delete-account", async (req, res) => {
+  const { userId } = req.body as { userId?: string };
+  if (!userId) {
+    return res.status(400).json({ success: false, error: "Missing userId in request body." });
+  }
+
+  try {
+    getFirebaseAdmin();
+    const authAdmin = getAuth();
+    // Delete the user in FirebaseAuth
+    await authAdmin.deleteUser(userId);
+    console.log(`[FIREBASE ADMIN] Firebase Authentication user account deleted: ${userId}`);
+    return res.json({ success: true, message: "User authentication account deleted successfully." });
+  } catch (error: unknown) {
+    const err = error as FirebaseAuthErrorLike;
+    // If user is not found (maybe deleting a pending user / already deleted user), we treat it as success.
+    if (err.message && err.message.includes("auth/user-not-found")) {
+      console.log(`[FIREBASE ADMIN] User to delete not found in Auth, treating as success: ${userId}`);
+      return res.json({ success: true, message: "User account not found, skipped Auth deletion." });
+    }
+    console.error("Firebase Admin Delete User Error:", err);
+    
+    // Leverage our extremely dynamic error evaluator to check fields and extract URLs
+    const { isApiDisabled, errorUrl } = getApiDisabledErrorDetails(err);
+    if (isApiDisabled) {
+      return res.json({ 
+        success: true, 
+        warning: "User deleted from dispatches, but Google Identity Toolkit API is disabled so the Auth account itself could not be removed automatically.",
+        apiNotEnabled: true,
+        errorUrl
+      });
+    }
+    return res.status(500).json({ success: false, error: err.message || "Failed to delete user account." });
   }
 });
 

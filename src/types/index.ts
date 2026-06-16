@@ -75,14 +75,43 @@ export enum TripStatus {
   INVOICED = 'invoiced'
 }
 
+export interface TripStop {
+  id: string;
+  location: string;
+  type: string;
+  startTime: string;
+  endTime: string;
+  duration?: string;
+  invoiceId?: string;
+  // Compatibility fields
+  client: string;
+  number: string;
+  amount: number;
+  address: string;
+}
+
 export interface Trip {
   id: string;
   userId: string;
   name: string;
   date: string;
   truckId: string;
+  truckName?: string;
   status: TripStatus;
   invoiceIds: string[];
+  stops?: TripStop[];
+  manifestItems?: { stockCode: string; description: string; qty: number }[];
+  checkedItems?: { [key: string]: boolean };
+  partialItems?: {
+    [key: string]: {
+      isPartial: boolean;
+      actualQty: number;
+      expectedQty: number;
+      reason: string;
+      stockCode?: string;
+      description?: string;
+    }
+  };
   createdAt: string;
   updatedAt: string;
 }
@@ -102,6 +131,7 @@ export interface Settings {
   warehouseAddress?: string;
   warehouseLat?: number;
   warehouseLng?: number;
+  sidebarLogoBase64?: string;
   updatedAt: string;
 }
 
@@ -113,3 +143,20 @@ export interface DashboardStats {
   recentInvoices: Invoice[];
   revenueData: { date: string; amount: number }[];
 }
+
+export interface TeamMember {
+  id: string;
+  ownerId: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  role: 'viewer' | 'editor';
+  note?: string;
+  inviteCode: string;
+  status: 'pending' | 'active' | 'deleted';
+  userId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  roles?: string[];
+}
+

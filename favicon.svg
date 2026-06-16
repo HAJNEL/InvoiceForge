@@ -1,0 +1,46 @@
+<svg viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="120" height="120" rx="28" fill="#141414" />
+  <g transform="translate(10, 10)">
+    <!-- Left N Shape -->
+    <path 
+      d="M 18,25 
+         H 29 
+         V 41 
+         L 56.5,75 
+         H 44.5 
+         L 29,54 
+         V 75 
+         H 18 
+         Z" 
+      fill="#F8FAFC" 
+    />
+
+    {/* Right R Shape */}
+    <path 
+      d="M 44,25 
+         H 74 
+         C 84.5,25 91.5,31.5 91.5,41 
+         C 91.5,50.5 84.5,57.5 74,57.5 
+         H 54 
+         L 71.5,75 
+         H 84.5 
+         L 67,57.5 
+         H 74 
+         C 84.5,57.5 91.5,50.5 91.5,41 
+         C 91.5,31.5 84.5,25 74,25"
+      fill="#E5001A"
+      fill-rule="evenodd"
+      clip-rule="evenodd"
+    />
+    
+    <path
+      d="M 54,35 
+         H 72 
+         C 75.5,35 78.5,37.5 78.5,41 
+         C 78.5,44.5 75.5,47 72,47 
+         H 54 
+         Z"
+      fill="#E5001A"
+    />
+  </g>
+</svg>

@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@google/genai": "^1.29.0",
+    "@llamaindex/llama-cloud": "^2.9.0",
     "@tailwindcss/vite": "^4.1.14",
     "@types/pdfjs-dist": "^2.10.377",
     "@vis.gl/react-google-maps": "^1.8.3",
@@ -22,6 +23,7 @@
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
     "firebase": "^12.13.0",
+    "firebase-admin": "^14.0.0",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
     "openai": "^6.37.0",

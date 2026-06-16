@@ -1,4 +1,4 @@
-import { useState, FormEvent, useMemo } from 'react';
+import { useState, FormEvent, useMemo, useEffect } from 'react';
 import { 
   Truck as TruckIcon, 
   Plus, 
@@ -17,7 +17,9 @@ import {
   Clock,
   Wrench,
   History,
-  DollarSign
+  DollarSign,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import { useTrucks, Truck } from './hooks/useTrucks';
 import { useServiceHistory, ServiceRecord } from './hooks/useServiceHistory';
@@ -139,11 +141,27 @@ export function TruckList() {
     }
   };
 
-  const filteredTrucks = trucks.filter(truck => 
-    truck.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    truck.licensePlate.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    truck.model?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredTrucks = useMemo(() => {
+    return trucks.filter(truck => 
+      truck.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      truck.licensePlate.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      truck.model?.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+  }, [trucks, searchQuery]);
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 8;
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery]);
+
+  const totalPages = Math.ceil(filteredTrucks.length / itemsPerPage);
+
+  const paginatedTrucks = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    return filteredTrucks.slice(startIndex, startIndex + itemsPerPage);
+  }, [filteredTrucks, currentPage, itemsPerPage]);
 
   const getRenewalStatus = (dateString?: string) => {
     if (!dateString) return null;
@@ -239,7 +257,7 @@ export function TruckList() {
                   </td>
                 </tr>
               ) : (
-                filteredTrucks.map((truck) => {
+                paginatedTrucks.map((truck) => {
                   const renewal = getRenewalStatus(truck.licenseRenewalDate);
                   return (
                     <tr key={truck.id} className="group hover:bg-zinc-50/50 transition-colors">
@@ -315,6 +333,57 @@ export function TruckList() {
             </tbody>
           </table>
         </div>
+
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between px-6 py-4 border-t border-zinc-150 bg-zinc-50/50">
+            <span className="text-xs text-zinc-500 font-medium">
+              Showing <span className="font-bold text-zinc-800">{((currentPage - 1) * itemsPerPage) + 1}</span> to <span className="font-bold text-zinc-800">{Math.min(currentPage * itemsPerPage, filteredTrucks.length)}</span> of <span className="font-bold text-zinc-800">{filteredTrucks.length}</span> vehicles
+            </span>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                disabled={currentPage === 1}
+                className="p-1.5 border border-zinc-250 bg-white rounded-lg hover:bg-zinc-50 disabled:opacity-40 disabled:hover:bg-white text-zinc-700 transition"
+                title="Previous Page"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <div className="flex items-center gap-1">
+                {Array.from({ length: totalPages }).map((_, i) => {
+                  const pNum = i + 1;
+                  if (totalPages > 5 && Math.abs(currentPage - pNum) > 1 && pNum !== 1 && pNum !== totalPages) {
+                    if (Math.abs(currentPage - pNum) === 2) {
+                      return <span key={pNum} className="text-xs text-zinc-400 font-bold px-0.5">...</span>;
+                    }
+                    return null;
+                  }
+                  return (
+                    <button
+                      key={pNum}
+                      onClick={() => setCurrentPage(pNum)}
+                      className={cn(
+                        "w-7 h-7 flex items-center justify-center text-xs font-bold rounded-lg border transition",
+                        currentPage === pNum 
+                          ? "bg-brand-primary border-brand-primary text-white" 
+                          : "border-zinc-200 bg-white hover:bg-zinc-50 text-zinc-700"
+                      )}
+                    >
+                      {pNum}
+                    </button>
+                  );
+                })}
+              </div>
+              <button
+                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                disabled={currentPage === totalPages}
+                className="p-1.5 border border-zinc-250 bg-white rounded-lg hover:bg-zinc-50 disabled:opacity-40 disabled:hover:bg-white text-zinc-700 transition"
+                title="Next Page"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       <AnimatePresence>

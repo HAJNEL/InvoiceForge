@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { formatCurrency } from '../../lib/utils';
@@ -7,10 +8,8 @@ import {
   Save, 
   BrainCircuit,
   FileText,
-  Building2,
   User,
   Truck,
-  CreditCard,
   AlertCircle,
   Plus,
   Trash2
@@ -35,7 +34,103 @@ export function ExtractionReview() {
         const docRef = doc(db, 'invoices', id);
         const docSnap = await getDoc(docRef);
         if (docSnap.exists()) {
-          setInvoice(docSnap.data() as DetailedInvoice);
+          const rawData = docSnap.data() as any;
+          
+          // Fallback extraction from schema-structured keys if present
+          const cleanData: any = { ...rawData };
+          
+          if (rawData.invoice_number && !cleanData.taxInvoice) {
+            cleanData.taxInvoice = rawData.invoice_number;
+          }
+          if (rawData.invoice_date && !cleanData.invoiceDate) {
+            cleanData.invoiceDate = rawData.invoice_date;
+          }
+          if (rawData.customer_purchase_order_number && !cleanData.customerPO) {
+            cleanData.customerPO = rawData.customer_purchase_order_number;
+          }
+          if (rawData.sales_order_number && !cleanData.salesOrderNo) {
+            cleanData.salesOrderNo = rawData.sales_order_number;
+          }
+          if (rawData.delivery_note_number && !cleanData.deliveryNoteNo) {
+            cleanData.deliveryNoteNo = rawData.delivery_note_number;
+          }
+          if (rawData.customer_contact && !cleanData.customerContact) {
+            cleanData.customerContact = rawData.customer_contact;
+          }
+          
+          if (rawData.bill_to_details?.name && !cleanData.customerName) {
+            cleanData.customerName = rawData.bill_to_details.name;
+          }
+          
+          if (rawData.ship_to_details) {
+            const ship = rawData.ship_to_details;
+            if (ship.name && !cleanData.deliveryCustomerName) {
+              cleanData.deliveryCustomerName = ship.name;
+            }
+            if (ship.school_name && !cleanData.schoolName) {
+              cleanData.schoolName = ship.school_name;
+            }
+            if (ship.address) {
+              const addr = ship.address;
+              if (addr.street_address && !cleanData.deliveryAddressLine1) {
+                cleanData.deliveryAddressLine1 = addr.street_address;
+              }
+              if (addr.city && !cleanData.deliveryAddressLine2) {
+                cleanData.deliveryAddressLine2 = addr.city;
+              }
+              if (addr.region && !cleanData.deliveryRegion) {
+                cleanData.deliveryRegion = addr.region;
+              }
+            }
+          }
+          
+          if (rawData.summary) {
+            const sum = rawData.summary;
+            if (sum.sub_total !== undefined && cleanData.subTotal === undefined) {
+              cleanData.subTotal = sum.sub_total;
+            }
+            if (sum.vat_rate !== undefined && cleanData.vatRate === undefined) {
+              cleanData.vatRate = sum.vat_rate;
+            }
+            if (sum.vat_amount !== undefined && cleanData.vatAmount === undefined) {
+              cleanData.vatAmount = sum.vat_amount;
+            }
+            if (sum.amount_inclusive_of_vat !== undefined && cleanData.amountIncl === undefined) {
+              cleanData.amountIncl = sum.amount_inclusive_of_vat;
+            }
+            if (sum.freight_amount !== undefined && cleanData.freight === undefined) {
+              cleanData.freight = sum.freight_amount;
+            }
+            if (sum.total_due !== undefined && cleanData.totalDue === undefined) {
+              cleanData.totalDue = sum.total_due;
+            }
+          }
+
+          // Ensure default/fallback values as required by the schema
+          if (!cleanData.vatRate) {
+            cleanData.vatRate = "15%";
+          }
+          if (cleanData.amountIncl === undefined) {
+            cleanData.amountIncl = cleanData.totalDue !== undefined ? cleanData.totalDue - (cleanData.freight || 0) : 0;
+          }
+          
+          if (rawData.line_items && !cleanData.lineItems) {
+            cleanData.lineItems = rawData.line_items.map((it: any) => ({
+              stockCode: it.stock_code || "",
+              description: it.description || "",
+              qty: it.quantity || 0,
+              unitPrice: it.unit_price || 0,
+              disc: it.discount || 0,
+              value: it.line_item_value || 0
+            }));
+          } else if (cleanData.lineItems) {
+            cleanData.lineItems = cleanData.lineItems.map((it: any) => ({
+              ...it,
+              disc: it.disc !== undefined ? it.disc : (it.discount || 0)
+            }));
+          }
+
+          setInvoice(cleanData);
         } else {
           console.error("No such invoice!");
           navigate(isEditing ? '/invoices' : '/invoices/import');
@@ -73,13 +168,135 @@ export function ExtractionReview() {
         }
       }
 
+      // Structure final document according to the user's exact schema
       const docRef = doc(db, 'invoices', id);
       const currentStatus = (invoice as { status?: string }).status;
+
+      const invoiceSchemaData = {
+        invoice_number: String(invoice.taxInvoice || "").trim(),
+        invoice_date: String(invoice.invoiceDate || "").trim(),
+        customer_purchase_order_number: invoice.customerPO ? String(invoice.customerPO).trim() : null,
+        sales_order_number: invoice.salesOrderNo ? String(invoice.salesOrderNo).trim() : null,
+        delivery_note_number: invoice.deliveryNoteNo ? String(invoice.deliveryNoteNo).trim() : null,
+        customer_contact: invoice.customerContact ? String(invoice.customerContact).trim() : null,
+        bill_to_details: {
+          name: String(invoice.customerName || "").trim()
+        },
+        ship_to_details: invoice.deliveryCustomerName || invoice.schoolName || invoice.deliveryAddressLine1 ? {
+          name: String(invoice.deliveryCustomerName || invoice.customerName || "").trim(),
+          school_name: invoice.schoolName ? String(invoice.schoolName).trim() : null,
+          address: {
+            street_address: String(invoice.deliveryAddressLine1 || "").trim(),
+            city: String(invoice.deliveryAddressLine2 || "").trim(),
+            region: invoice.deliveryRegion ? String(invoice.deliveryRegion).trim() : null
+          }
+        } : null,
+        line_items: (invoice.lineItems || []).map(item => ({
+          stock_code: String(item.stockCode || "").trim(),
+          description: String(item.description || "").trim(),
+          quantity: Number(item.qty) || 0,
+          unit_price: Number(item.unitPrice) || 0,
+          discount: item.disc !== undefined ? Number(item.disc) : null,
+          line_item_value: Number(item.value) || 0
+        })),
+        summary: {
+          sub_total: Number(invoice.subTotal) || 0,
+          vat_rate: invoice.vatRate ? String(invoice.vatRate).trim() : null,
+          vat_amount: Number(invoice.vatAmount) || 0,
+          amount_inclusive_of_vat: invoice.amountIncl !== undefined ? Number(invoice.amountIncl) : null,
+          freight_amount: invoice.freight !== undefined ? Number(invoice.freight) : null,
+          total_due: Number(invoice.totalDue) || 0
+        }
+      };
+
       await updateDoc(docRef, {
         ...invoice,
+        ...invoiceSchemaData,
         status: isEditing ? currentStatus || status : status,
         updatedAt: new Date().toISOString()
       });
+
+      // Auto-geocode and cache coordinates in localStorage to load markers instantly on /trips
+      const GMAPS_KEY = process.env.GOOGLE_MAPS_PLATFORM_KEY || '';
+      if (GMAPS_KEY) {
+        try {
+          const fullAddress = [
+            invoice.deliveryAddressLine1,
+            invoice.deliveryAddressLine2,
+            invoice.district,
+            'South Africa'
+          ].filter(Boolean).join(', ');
+
+          let targetAddress = fullAddress;
+          let geocodeResult = null;
+
+          if (targetAddress && targetAddress.trim().length >= 5) {
+            const res = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(targetAddress)}&key=${GMAPS_KEY}`);
+            if (res.ok) {
+              const data = await res.json();
+              if (data.status === 'OK' && data.results?.[0]) {
+                geocodeResult = data.results[0];
+              }
+            }
+          }
+
+          if (!geocodeResult) {
+            const fallbackAddress = [invoice.schoolName || invoice.customerName || invoice.deliveryCustomerName, invoice.district, 'South Africa'].filter(Boolean).join(', ');
+            if (fallbackAddress && fallbackAddress.trim().length >= 5) {
+              const res = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(fallbackAddress)}&key=${GMAPS_KEY}`);
+              if (res.ok) {
+                const data = await res.json();
+                if (data.status === 'OK' && data.results?.[0]) {
+                  geocodeResult = data.results[0];
+                  targetAddress = fallbackAddress;
+                }
+              }
+            }
+          }
+
+          if (geocodeResult) {
+            const position = {
+              lat: geocodeResult.geometry.location.lat,
+              lng: geocodeResult.geometry.location.lng
+            };
+
+            // Setup and store cache in localStorage matching other components
+            const existingStoredStr = localStorage.getItem('geocoded_invoices');
+            let existingStored: any[] = [];
+            if (existingStoredStr) {
+              try {
+                const parsed = JSON.parse(existingStoredStr);
+                if (Array.isArray(parsed)) {
+                  existingStored = parsed;
+                }
+              } catch {
+                existingStored = [];
+              }
+            }
+
+            // Filter out older record
+            existingStored = existingStored.filter((item: any) => item.id !== id);
+
+            const geocodedItem = {
+              id: id,
+              number: invoice.taxInvoice || invoice.invoice_number || `TEMP-${Date.now()}`,
+              client: invoice.schoolName || invoice.deliveryCustomerName || invoice.customerName || 'Unknown Client',
+              status: isEditing ? currentStatus || status : status,
+              address: geocodeResult.formatted_address || targetAddress,
+              position: position,
+              district: invoice.district,
+              lineItems: invoice.lineItems || []
+            };
+
+            existingStored.push(geocodedItem);
+            localStorage.setItem('geocoded_invoices', JSON.stringify(existingStored));
+            console.log(`[DEBUG] Successfully geocoded and stored marker in localStorage for single reviewed invoice: ${geocodedItem.number}`);
+          }
+        } catch (geocodeErr) {
+          console.error('Error auto-geocoding single reviewed invoice:', geocodeErr);
+        }
+      }
+
       navigate(isEditing ? `/invoices/${id}` : '/invoices');
     } catch (err) {
       console.error("Error updating invoice:", err);
@@ -100,19 +317,26 @@ export function ExtractionReview() {
     const itemsWithValues = newItems.map(item => {
       const qty = Number(item.qty) || 0;
       const unitPrice = Number(item.unitPrice) || 0;
+      const disc = Number(item.disc) || 0;
       return {
         ...item,
         qty,
         unitPrice,
-        disc: item.disc || 0,
-        value: Number((qty * unitPrice).toFixed(2))
+        disc,
+        value: Number((qty * unitPrice - disc).toFixed(2))
       };
     });
 
     // Calculate totals
     const subTotal = Number(itemsWithValues.reduce((sum, item) => sum + item.value, 0).toFixed(2));
-    const vatAmount = Number((subTotal * 0.15).toFixed(2));
+    
+    // Calculate VAT using vatRate
+    const vatRateStr = invoice.vatRate || "15%";
+    const vatPercent = parseFloat(vatRateStr.replace(/%/g, '')) || 0;
+    const vatAmount = Number((subTotal * (vatPercent / 100)).toFixed(2));
+    
     const freight = Number(invoice.freight) || 0;
+    const amountIncl = Number((subTotal + vatAmount).toFixed(2));
     const totalDue = Number((subTotal + vatAmount + freight).toFixed(2));
 
     setInvoice({
@@ -120,6 +344,7 @@ export function ExtractionReview() {
       lineItems: itemsWithValues,
       subTotal,
       vatAmount,
+      amountIncl,
       totalDue
     });
   };
@@ -208,7 +433,7 @@ export function ExtractionReview() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 space-y-8">
-          {/* Main Info */}
+          {/* Document Header */}
           <div className="saas-card bg-white p-8 space-y-8">
             <div className="flex items-center gap-3 text-brand-primary">
               <FileText className="w-5 h-5" />
@@ -221,92 +446,114 @@ export function ExtractionReview() {
               <ReviewField label="Customer P/O" value={invoice.customerPO} onChange={(v) => updateField('customerPO', v)} />
               <ReviewField label="Sales Order No" value={invoice.salesOrderNo} onChange={(v) => updateField('salesOrderNo', v)} />
               <ReviewField label="Delivery Note" value={invoice.deliveryNoteNo} onChange={(v) => updateField('deliveryNoteNo', v)} />
-              <ReviewField label="Account Terms" value={invoice.accountTerms} onChange={(v) => updateField('accountTerms', v)} />
+              <ReviewField label="Customer Contact" value={invoice.customerContact || ''} onChange={(v) => updateField('customerContact', v)} />
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            {/* Customer Details */}
-            <div className="saas-card bg-white p-8 space-y-6">
-              <div className="flex items-center gap-3 text-zinc-500">
-                <User className="w-5 h-5" />
-                <h3 className="font-bold text-xs uppercase tracking-widest">Customer Details</h3>
-              </div>
-              <div className="space-y-4">
-                <ReviewField label="Customer Name" value={invoice.customerName} onChange={(v) => updateField('customerName', v)} />
-                <ReviewField label="School Name" value={invoice.schoolName} onChange={(v) => updateField('schoolName', v)} />
-                <ReviewField label="Street Address" value={invoice.streetAddress} onChange={(v) => updateField('streetAddress', v)} />
-                <ReviewField label="Suburb" value={invoice.suburb} onChange={(v) => updateField('suburb', v)} />
-                <ReviewField label="District" value={invoice.district} onChange={(v) => updateField('district', v)} />
-                <ReviewField label="Customer Code" value={invoice.customerCode} onChange={(v) => updateField('customerCode', v)} />
-                <ReviewField label="Address Line 1" value={invoice.customerAddressLine1} onChange={(v) => updateField('customerAddressLine1', v)} />
-                <ReviewField label="Address Line 2" value={invoice.customerAddressLine2} onChange={(v) => updateField('customerAddressLine2', v)} />
-                <ReviewField label="Postal Code" value={invoice.postalCode} onChange={(v) => updateField('postalCode', v)} />
-                <ReviewField label="VAT No" value={invoice.vatNo} onChange={(v) => updateField('vatNo', v)} />
-              </div>
+          {/* Shipping Details */}
+          <div className="saas-card bg-white p-8 space-y-8">
+            <div className="flex items-center gap-3 text-brand-primary">
+              <Truck className="w-5 h-5" />
+              <h3 className="font-bold text-xs uppercase tracking-widest">Shipping Details</h3>
             </div>
+            
+            <div className="grid grid-cols-2 lg:grid-cols-3 gap-6">
+              <ReviewField label="Shipping Name" value={invoice.deliveryCustomerName || ''} onChange={(v) => updateField('deliveryCustomerName', v)} />
+              <ReviewField label="School Name" value={invoice.schoolName || ''} onChange={(v) => updateField('schoolName', v)} />
+              <ReviewField label="Street Address" value={invoice.deliveryAddressLine1 || ''} onChange={(v) => updateField('deliveryAddressLine1', v)} />
+              <ReviewField label="City" value={invoice.deliveryAddressLine2 || ''} onChange={(v) => updateField('deliveryAddressLine2', v)} />
+              <ReviewField label="Region" value={invoice.deliveryRegion || ''} onChange={(v) => updateField('deliveryRegion', v)} />
+            </div>
+          </div>
 
-            {/* Delivery Details */}
-            <div className="saas-card bg-white p-8 space-y-6">
-              <div className="flex items-center gap-3 text-zinc-500">
-                <Truck className="w-5 h-5" />
-                <h3 className="font-bold text-xs uppercase tracking-widest">Delivery Details</h3>
-              </div>
-              <div className="space-y-4">
-                <ReviewField label="Address Line 1" value={invoice.deliveryAddressLine1} onChange={(v) => updateField('deliveryAddressLine1', v)} />
-                <ReviewField label="Address Line 2" value={invoice.deliveryAddressLine2} onChange={(v) => updateField('deliveryAddressLine2', v)} />
-                <ReviewField label="Region" value={invoice.deliveryRegion} onChange={(v) => updateField('deliveryRegion', v)} />
-              </div>
+          {/* Bill To Details */}
+          <div className="saas-card bg-white p-8 space-y-8">
+            <div className="flex items-center gap-3 text-brand-primary">
+              <User className="w-5 h-5" />
+              <h3 className="font-bold text-xs uppercase tracking-widest">Bill To Details</h3>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              <ReviewField label="Billing Name" value={invoice.customerName} onChange={(v) => updateField('customerName', v)} />
             </div>
           </div>
         </div>
 
-        {/* Totals & Company Info */}
+        {/* Totals Side Panel - Only contains fields from the schema's summary */}
         <div className="space-y-8">
-          <div className="saas-card bg-zinc-900 text-white p-8 space-y-8">
-            <h3 className="font-bold text-[10px] uppercase tracking-[0.2em] text-zinc-500">Totals</h3>
+          <div className="saas-card bg-white text-zinc-900 p-8 space-y-6">
+            <h3 className="font-bold text-[10px] uppercase tracking-[0.2em] text-zinc-400">Invoice Summary</h3>
             <div className="space-y-4">
-              <div className="flex justify-between items-center text-sm">
-                <span className="text-zinc-400 font-medium">Sub Total</span>
-                <span className="font-bold font-mono whitespace-nowrap">{formatCurrency(invoice.subTotal)}</span>
+              <div className="flex justify-between items-center text-sm border-b border-zinc-100 pb-3">
+                <span className="text-zinc-500 font-medium font-sans uppercase text-[10px] tracking-wider">Sub Total</span>
+                <span className="font-extrabold font-mono text-zinc-900 text-base whitespace-nowrap">{formatCurrency(invoice.subTotal)}</span>
               </div>
-              <div className="flex justify-between items-center text-sm">
-                <span className="text-zinc-400 font-medium">VAT (15%)</span>
-                <span className="font-bold font-mono whitespace-nowrap">{formatCurrency(invoice.vatAmount)}</span>
+              
+              <div className="space-y-1.5 pt-1">
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-400">VAT Rate</label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={invoice.vatRate || '15%'}
+                    onChange={(e) => {
+                      const updated = { ...invoice, vatRate: e.target.value };
+                      setInvoice(updated);
+                      // Recalculate totals
+                      setTimeout(() => updateLineItems(invoice.lineItems), 0);
+                    }}
+                    className="w-full px-3 py-1.5 bg-zinc-50 border border-zinc-200 rounded-lg text-sm font-mono text-zinc-800 focus:outline-none focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent transition-all"
+                    placeholder="15%"
+                  />
+                  <div className="px-3 py-1.5 bg-zinc-100 border border-zinc-200 rounded-lg text-sm font-bold font-mono text-zinc-600 whitespace-nowrap flex items-center justify-center">
+                    {formatCurrency(invoice.vatAmount)}
+                  </div>
+                </div>
               </div>
-              <div className="flex justify-between items-center text-sm text-amber-500">
-                <span className="font-medium">Freight</span>
-                <span className="font-bold font-mono whitespace-nowrap">{formatCurrency(invoice.freight)}</span>
-              </div>
-              <div className="flex justify-between items-center text-2xl font-black border-t border-zinc-800 pt-6">
-                <span className="uppercase tracking-tighter">Total Due</span>
-                <span className="text-brand-accent font-mono whitespace-nowrap">{formatCurrency(invoice.totalDue)}</span>
-              </div>
-            </div>
-          </div>
 
-          <div className="saas-card bg-white p-8 space-y-6">
-            <div className="flex items-center gap-3 text-zinc-500">
-              <Building2 className="w-5 h-5" />
-              <h3 className="font-bold text-xs uppercase tracking-widest">Company Info</h3>
-            </div>
-            <div className="space-y-4">
-              <ReviewField label="Company Name" value={invoice.companyName} onChange={(v) => updateField('companyName', v)} />
-              <ReviewField label="Registration #" value={invoice.registrationNo} onChange={(v) => updateField('registrationNo', v)} />
-              <ReviewField label="Company VAT #" value={invoice.companyVatNo} onChange={(v) => updateField('companyVatNo', v)} />
-              <ReviewField label="Email" value={invoice.email} onChange={(v) => updateField('email', v)} />
-            </div>
-          </div>
+              <div className="space-y-1.5 border-t border-zinc-100 pt-3">
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-400">Freight Amount</label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-zinc-400">R</span>
+                  <input
+                    type="number"
+                    step="any"
+                    value={invoice.freight === 0 ? '' : invoice.freight}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      const fVal = val === '' ? 0 : parseFloat(val);
+                      const updated = { ...invoice, freight: fVal };
+                      setInvoice(updated);
+                      setTimeout(() => updateLineItems(invoice.lineItems), 0);
+                    }}
+                    className="w-full pl-7 pr-3 py-1.5 bg-zinc-50 border border-zinc-200 rounded-lg text-sm font-mono text-zinc-800 focus:outline-none focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent transition-all"
+                    placeholder="0.00"
+                  />
+                </div>
+              </div>
 
-          <div className="saas-card bg-zinc-50 border-zinc-100 p-8 space-y-6">
-            <div className="flex items-center gap-3 text-zinc-500">
-              <CreditCard className="w-5 h-5" />
-              <h3 className="font-bold text-xs uppercase tracking-widest">Banking Details</h3>
-            </div>
-            <div className="space-y-4">
-              <ReviewField label="Bank Name" value={invoice.bankName} onChange={(v) => updateField('bankName', v)} />
-              <ReviewField label="Account" value={invoice.account} onChange={(v) => updateField('account', v)} />
-              <ReviewField label="SWIFT" value={invoice.swift} onChange={(v) => updateField('swift', v)} />
+              <div className="space-y-1.5 border-t border-zinc-100 pt-3">
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-400">Amount Incl. of VAT</label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-zinc-400">R</span>
+                  <input
+                    type="number"
+                    step="any"
+                    value={invoice.amountIncl === 0 ? '' : invoice.amountIncl}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      const aVal = val === '' ? 0 : parseFloat(val);
+                      updateField('amountIncl', aVal);
+                    }}
+                    className="w-full pl-7 pr-3 py-1.5 bg-zinc-50 border border-zinc-200 rounded-lg text-sm font-mono text-zinc-800 focus:outline-none focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent transition-all"
+                    placeholder="0.00"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-between items-center text-xl font-black border-t border-zinc-100 pt-4 mt-2">
+                <span className="uppercase tracking-tighter text-zinc-500 text-sm">Total Due</span>
+                <span className="text-brand-primary font-bold font-mono text-xl whitespace-nowrap">{formatCurrency(invoice.totalDue)}</span>
+              </div>
             </div>
           </div>
         </div>
@@ -333,18 +580,19 @@ export function ExtractionReview() {
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="border-b border-zinc-100 italic font-mono text-[10px] uppercase tracking-wider text-zinc-400">
-                <th className="px-4 pb-4 font-semibold text-left w-[18%]">Stock Code</th>
-                <th className="px-4 pb-4 font-semibold text-left w-[42%]">Description</th>
-                <th className="px-4 pb-4 font-semibold text-right w-[12%]">Qty</th>
-                <th className="px-4 pb-4 font-semibold text-right w-[14%]">Price</th>
-                <th className="px-4 pb-4 font-semibold text-right w-[14%]">Value</th>
+                <th className="px-4 pb-4 font-semibold text-left w-[15%]">Stock Code</th>
+                <th className="px-4 pb-4 font-semibold text-left w-[33%]">Description</th>
+                <th className="px-4 pb-4 font-semibold text-right w-[10%]">Qty</th>
+                <th className="px-4 pb-4 font-semibold text-right w-[13%]">Price</th>
+                <th className="px-4 pb-4 font-semibold text-right w-[11%]">Discount</th>
+                <th className="px-4 pb-4 font-semibold text-right w-[13%]">Value</th>
                 <th className="px-4 pb-4 font-semibold text-center w-[10%]">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-50">
               {(!invoice.lineItems || invoice.lineItems.length === 0) ? (
                 <tr>
-                  <td colSpan={6} className="py-12 text-center text-sm font-bold text-zinc-400 uppercase tracking-tight">
+                  <td colSpan={7} className="py-12 text-center text-sm font-bold text-zinc-400 uppercase tracking-tight">
                     No line items found. Click add to create one.
                   </td>
                 </tr>
@@ -403,6 +651,24 @@ export function ExtractionReview() {
                             const val = e.target.value;
                             const newItems = [...invoice.lineItems];
                             newItems[idx] = { ...newItems[idx], unitPrice: val === '' ? 0 : parseFloat(val) };
+                            updateLineItems(newItems);
+                          }}
+                          placeholder="0.00"
+                          className="w-full pl-7 pr-3 py-2 bg-zinc-50 border border-zinc-200 hover:border-zinc-300 focus:bg-white focus:border-brand-primary focus:ring-4 focus:ring-brand-primary/5 rounded-xl text-sm font-semibold font-mono text-right focus:outline-none transition-all"
+                        />
+                      </div>
+                    </td>
+                    <td className="p-4 text-right">
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-zinc-400">R</span>
+                        <input 
+                          type="number" 
+                          step="any"
+                          value={item.disc === 0 ? '' : item.disc}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            const newItems = [...invoice.lineItems];
+                            newItems[idx] = { ...newItems[idx], disc: val === '' ? 0 : parseFloat(val) };
                             updateLineItems(newItems);
                           }}
                           placeholder="0.00"

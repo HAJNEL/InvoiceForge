@@ -35,6 +35,7 @@ export interface DetailedInvoice {
   amountIncl: number;
   freight: number;
   totalDue: number;
+  vatRate?: string;
   accountTerms: string;
   companyName: string;
   companyAddressLine1: string;

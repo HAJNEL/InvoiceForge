@@ -61,7 +61,8 @@
         "swift": { "type": "string" },
         "page": { "type": "string" },
         "userId": { "type": "string" },
-        "status": { "type": "string", "enum": ["draft", "assembly", "loaded", "delivered", "completed", "invoiced"] },
+        "status": { "type": "string", "enum": ["draft", "darft", "proposed", "assembled", "assembly", "on-route", "on route", "on_route", "delivered", "completed", "complete", "partially_complete", "partially complete"] },
+        "deliveredDate": { "type": "string" },
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["taxInvoice", "userId", "totalDue", "status"]
@@ -131,6 +132,96 @@
         "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["userId"]
+    },
+    "TeamMember": {
+      "title": "TeamMember",
+      "description": "Team collaborator invited by the account owner.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "ownerId": { "type": "string" },
+        "firstName": { "type": "string" },
+        "lastName": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "role": { "type": "string", "enum": ["viewer", "editor"] },
+        "note": { "type": "string" },
+        "inviteCode": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "active"] },
+        "userId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "ownerId", "firstName", "lastName", "email", "role", "inviteCode", "status", "createdAt", "updatedAt"]
+    },
+    "KnockdownItem": {
+      "title": "KnockdownItem",
+      "description": "Stock item with linked parts.",
+      "type": "object",
+      "properties": {
+        "stockCode": { "type": "string" },
+        "description": { "type": "string" },
+        "qty": { "type": "number" },
+        "displayName": { "type": "string" },
+        "type": { "type": "string", "enum": ["knockdown", "assembled", "pre-assembled"] },
+        "userId": { "type": "string" },
+        "parts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "partCode": { "type": "string" },
+              "description": { "type": "string" },
+              "qty": { "type": "number" }
+            }
+          }
+        },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["stockCode", "description", "qty", "displayName", "userId"]
+    },
+    "JointStockTake": {
+      "title": "JointStockTake",
+      "description": "Stock take record of multiple counted items.",
+      "type": "object",
+      "properties": {
+        "code": { "type": "string" },
+        "submittedBy": { "type": "string" },
+        "submittedByUserId": { "type": "string" },
+        "userId": { "type": "string" },
+        "submittedAt": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "partially_completed", "completed"] },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "stockCode": { "type": "string" },
+              "description": { "type": "string" },
+              "isPart": { "type": "boolean" },
+              "parentItem": { "type": "string" },
+              "countedQty": { "type": "number" },
+              "expectedQty": { "type": "number" },
+              "status": { "type": "string", "enum": ["pending", "approved", "rejected"] }
+            }
+          }
+        }
+      },
+      "required": ["code", "submittedBy", "submittedByUserId", "userId", "submittedAt", "status", "items"]
+    },
+    "InventoryItem": {
+      "title": "InventoryItem",
+      "description": "An item in the approved physical inventory.",
+      "type": "object",
+      "properties": {
+        "stockCode": { "type": "string" },
+        "description": { "type": "string" },
+        "displayName": { "type": "string" },
+        "qty": { "type": "number" },
+        "isPart": { "type": "boolean" },
+        "userId": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["stockCode", "description", "displayName", "qty", "userId"]
     }
   },
   "firestore": {
@@ -157,6 +248,22 @@
     "/settings/{settingsId}": {
       "schema": "Settings",
       "description": "User specific settings."
+    },
+    "/team_members/{memberId}": {
+      "schema": "TeamMember",
+      "description": "Collection of team members."
+    },
+    "/knockdown_items/{itemId}": {
+      "schema": "KnockdownItem",
+      "description": "Collection of knockdown items and parts."
+    },
+    "/stock_takes/{takeId}": {
+      "schema": "JointStockTake",
+      "description": "Collection of joint stock takes."
+    },
+    "/inventory/{itemId}": {
+      "schema": "InventoryItem",
+      "description": "Collection of approved inventory items."
     }
   }
 }

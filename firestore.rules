@@ -15,6 +15,12 @@ service cloud.firestore {
       return isSignedIn() && data != null && request.auth.uid == data.userId;
     }
 
+    function isTeamMemberOfOwner(ownerId) {
+      return isSignedIn() && 
+        exists(/databases/$(database)/documents/team_members/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/team_members/$(request.auth.uid)).data.ownerId == ownerId;
+    }
+
     function incoming() {
       return request.resource.data;
     }
@@ -24,20 +30,20 @@ service cloud.firestore {
     }
 
     function isValidId(id) {
-      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_-]+$');
     }
 
     // Invoice Validation
     function isValidInvoice(data) {
       return data.taxInvoice is string && data.taxInvoice.size() < 100
-        && data.userId == request.auth.uid
         && data.totalDue is number
-        && data.status in ['draft', 'assembly', 'loaded', 'delivered', 'completed', 'invoiced']
+        && data.status in ['draft', 'darft', 'proposed', 'assembled', 'assembly', 'on-route', 'on route', 'on_route', 'delivered', 'completed', 'complete', 'partially_complete', 'partially complete', 'invoiced']
         && (!('lineItems' in data) || data.lineItems is list)
         && (!('district' in data) || (data.district is string && data.district.size() < 200))
         && (!('schoolName' in data) || (data.schoolName is string && data.schoolName.size() < 200))
         && (!('streetAddress' in data) || (data.streetAddress is string && data.streetAddress.size() < 500))
         && (!('suburb' in data) || (data.suburb is string && data.suburb.size() < 200))
+        && (!('deliveredDate' in data) || (data.deliveredDate is string && data.deliveredDate.size() < 100))
         && data.keys().hasAll(['taxInvoice', 'userId', 'totalDue', 'status']);
     }
 
@@ -58,7 +64,6 @@ service cloud.firestore {
         && (!('volumetricCapacity' in data) || data.volumetricCapacity is number)
         && (!('nextServiceKm' in data) || data.nextServiceKm is number)
         && (!('currentKm' in data) || data.currentKm is number)
-        && data.userId == request.auth.uid
         && data.keys().hasAll(['name', 'licensePlate', 'userId']);
     }
 
@@ -77,6 +82,10 @@ service cloud.firestore {
         && data.truckId is string && data.truckId.size() < 128
         && data.status in ['proposed', 'assembled', 'on-route', 'partially-completed', 'completed', 'invoiced']
         && (!('invoiceIds' in data) || data.invoiceIds is list)
+        && (!('checkedItems' in data) || data.checkedItems is map)
+        && (!('truckName' in data) || data.truckName is string)
+        && (!('stops' in data) || data.stops is list)
+        && (!('manifestItems' in data) || data.manifestItems is list)
         && data.userId == request.auth.uid
         && data.keys().hasAll(['name', 'date', 'truckId', 'status', 'userId']);
     }
@@ -86,22 +95,73 @@ service cloud.firestore {
         && (!('warehouseAddress' in data) || (data.warehouseAddress is string && data.warehouseAddress.size() < 500))
         && (!('warehouseLat' in data) || data.warehouseLat is number)
         && (!('warehouseLng' in data) || data.warehouseLng is number)
+        && (!('sidebarLogoBase64' in data) || (data.sidebarLogoBase64 is string && data.sidebarLogoBase64.size() < 400000))
         && data.keys().hasAll(['userId']);
     }
 
+    function isValidTeamMember(data) {
+      return data.id is string && data.id.size() < 128
+        && data.firstName is string && data.firstName.size() < 250
+        && data.lastName is string && data.lastName.size() < 250
+        && data.email is string && data.email.size() < 250
+        && data.role in ['viewer', 'editor']
+        && (!('note' in data) || data.note is string)
+        && (!('roles' in data) || data.roles is list)
+        && data.inviteCode is string && data.inviteCode.size() < 250
+        && data.status in ['pending', 'active']
+        && data.ownerId is string && data.ownerId.size() < 128
+        && (!('userId' in data) || data.userId == null || (data.userId is string && data.userId.size() < 128))
+        && data.keys().hasAll(['id', 'ownerId', 'firstName', 'lastName', 'email', 'role', 'inviteCode', 'status', 'createdAt', 'updatedAt']);
+    }
+
+    function isValidKnockdownItem(data) {
+      return data.stockCode is string && data.stockCode.size() < 100
+        && data.description is string && data.description.size() < 500
+        && data.qty is number
+        && data.displayName is string && data.displayName.size() < 200
+        && (data.userId == request.auth.uid || isTeamMemberOfOwner(data.userId))
+        && (!('parts' in data) || data.parts is list)
+        && (!('type' in data) || data.type in ['knockdown', 'assembled', 'pre-assembled', 'stock-take'])
+        && data.keys().hasAll(['stockCode', 'description', 'qty', 'displayName', 'userId']);
+    }
+
+    function isValidStockTake(data) {
+      return data.code is string && data.code.size() < 100
+        && data.submittedBy is string && data.submittedBy.size() < 250
+        && data.submittedByUserId is string && data.submittedByUserId.size() < 128
+        && data.status in ['pending', 'partially_completed', 'completed']
+        && data.items is list
+        && (data.userId == request.auth.uid || isTeamMemberOfOwner(data.userId))
+        && (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() < 100))
+        && data.keys().hasAll(['code', 'submittedBy', 'submittedByUserId', 'userId', 'submittedAt', 'status', 'items']);
+    }
+
+    function isValidInventory(data) {
+      return data.stockCode is string && data.stockCode.size() < 100
+        && data.description is string && data.description.size() < 500
+        && data.qty is number
+        && data.displayName is string && data.displayName.size() < 250
+        && (data.userId == request.auth.uid || isTeamMemberOfOwner(data.userId))
+        && (!('isPart' in data) || data.isPart is bool)
+        && (!('createdAt' in data) || (data.createdAt is string && data.createdAt.size() < 100))
+        && (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() < 100))
+        && data.keys().hasAll(['stockCode', 'description', 'qty', 'displayName', 'userId']);
+    }
+
     match /invoices/{invoiceId} {
-      allow get: if isOwner(existing());
-      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow get: if isOwner(existing()) || isTeamMemberOfOwner(existing().userId);
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isTeamMemberOfOwner(resource.data.userId));
       
       allow create: if isSignedIn() 
         && isValidId(invoiceId)
-        && isValidInvoice(incoming());
+        && isValidInvoice(incoming())
+        && (incoming().userId == request.auth.uid || isTeamMemberOfOwner(incoming().userId));
         
-      allow update: if isOwner(existing())
+      allow update: if (isOwner(existing()) || isTeamMemberOfOwner(existing().userId))
         && isValidInvoice(incoming())
         && incoming().userId == existing().userId; // Immutable owner
       
-      allow delete: if isOwner(existing());
+      allow delete: if isOwner(existing()) || isTeamMemberOfOwner(existing().userId);
     }
 
     match /clients/{clientId} {
@@ -120,18 +180,19 @@ service cloud.firestore {
     }
 
     match /trucks/{truckId} {
-      allow get: if isOwner(existing());
-      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow get: if isOwner(existing()) || isTeamMemberOfOwner(existing().userId);
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isTeamMemberOfOwner(resource.data.userId));
       
       allow create: if isSignedIn() 
         && isValidId(truckId)
-        && isValidTruck(incoming());
+        && isValidTruck(incoming())
+        && (incoming().userId == request.auth.uid || isTeamMemberOfOwner(incoming().userId));
         
-      allow update: if isOwner(existing())
+      allow update: if (isOwner(existing()) || isTeamMemberOfOwner(existing().userId))
         && isValidTruck(incoming())
         && incoming().userId == existing().userId;
       
-      allow delete: if isOwner(existing());
+      allow delete: if isOwner(existing()) || isTeamMemberOfOwner(existing().userId);
 
       match /serviceHistory/{recordId} {
         allow read, write: if isSignedIn() && get(/databases/$(database)/documents/trucks/$(truckId)).data.userId == request.auth.uid;
@@ -154,23 +215,21 @@ service cloud.firestore {
     }
 
     match /trips/{tripId} {
-      allow get: if isOwner(existing());
-      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow get: if true;
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isTeamMemberOfOwner(resource.data.userId));
       
       allow create: if isSignedIn() 
         && isValidId(tripId)
         && isValidTrip(incoming());
         
-      allow update: if isOwner(existing())
-        && isValidTrip(incoming())
-        && incoming().userId == existing().userId;
+      allow update: if (isOwner(existing()) && isValidTrip(incoming()) && incoming().userId == existing().userId)
+        || (existing() != null && incoming().userId == existing().userId && incoming().name == existing().name && incoming().date == existing().date && incoming().truckId == existing().truckId && (request.auth.uid == existing().userId || isTeamMemberOfOwner(existing().userId)));
       
       allow delete: if isOwner(existing());
     }
 
     match /settings/{settingsId} {
-      allow get: if isOwner(existing());
-      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow read: if true;
       
       allow create: if isSignedIn() 
         && isValidId(settingsId)
@@ -181,6 +240,79 @@ service cloud.firestore {
         && incoming().userId == existing().userId;
       
       allow delete: if isOwner(existing());
+    }
+
+    match /team_members/{memberId} {
+      allow get: if true;
+      allow list: if true;
+      
+      allow create: if isSignedIn()
+        && isValidId(memberId)
+        && isValidTeamMember(incoming())
+        && (incoming().ownerId == request.auth.uid || incoming().userId == request.auth.uid);
+        
+      allow update: if (isSignedIn() && existing().ownerId == request.auth.uid && isValidTeamMember(incoming()))
+        || (existing() != null && existing().status == 'pending' && incoming().status == 'active' && incoming().userId == request.auth.uid);
+        
+      allow delete: if isSignedIn() 
+        && (existing().ownerId == request.auth.uid || existing().status == 'pending' || existing().userId == request.auth.uid);
+    }
+
+    match /knockdown_items/{itemId} {
+      allow get: if isSignedIn() && (resource.data.userId == request.auth.uid || isTeamMemberOfOwner(resource.data.userId));
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isTeamMemberOfOwner(resource.data.userId));
+      
+      allow create: if isSignedIn() 
+        && isValidId(itemId)
+        && isValidKnockdownItem(incoming())
+        && (incoming().userId == request.auth.uid || isTeamMemberOfOwner(incoming().userId));
+        
+      allow update: if isSignedIn()
+        && isValidKnockdownItem(incoming())
+        && (existing().userId == request.auth.uid || isTeamMemberOfOwner(existing().userId));
+      
+      allow delete: if isSignedIn()
+        && (existing().userId == request.auth.uid || isTeamMemberOfOwner(existing().userId));
+    }
+
+    match /stock/{document=**} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /stock_takes/{takeId} {
+      allow get: if isSignedIn() && (resource.data.userId == request.auth.uid || isTeamMemberOfOwner(resource.data.userId));
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isTeamMemberOfOwner(resource.data.userId));
+      
+      allow create: if isSignedIn() 
+        && isValidId(takeId)
+        && isValidStockTake(incoming())
+        && (incoming().userId == request.auth.uid || isTeamMemberOfOwner(incoming().userId));
+        
+      allow update: if isSignedIn()
+        && isValidStockTake(incoming())
+        && (existing().userId == request.auth.uid || isTeamMemberOfOwner(existing().userId))
+        && incoming().userId == existing().userId;
+      
+      allow delete: if isSignedIn()
+        && (existing().userId == request.auth.uid || isTeamMemberOfOwner(existing().userId));
+    }
+
+    match /inventory/{itemId} {
+      allow get: if isSignedIn() && (resource.data.userId == request.auth.uid || isTeamMemberOfOwner(resource.data.userId));
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isTeamMemberOfOwner(resource.data.userId));
+      
+      allow create: if isSignedIn() 
+        && isValidId(itemId)
+        && isValidInventory(incoming())
+        && (incoming().userId == request.auth.uid || isTeamMemberOfOwner(incoming().userId));
+        
+      allow update: if isSignedIn()
+        && isValidInventory(incoming())
+        && (existing().userId == request.auth.uid || isTeamMemberOfOwner(existing().userId))
+        && incoming().userId == existing().userId;
+      
+      allow delete: if isSignedIn()
+        && (existing().userId == request.auth.uid || isTeamMemberOfOwner(existing().userId));
     }
   }
 }

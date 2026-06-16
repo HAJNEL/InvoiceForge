@@ -47,6 +47,22 @@ export function useTrips() {
   const deleteTrip = useCallback(async (id: string) => {
     const path = `trips/${id}`;
     try {
+      // Find the trip dynamically from our state to get the associated invoices
+      const trip = trips.find(t => t.id === id);
+      if (trip && trip.invoiceIds && trip.invoiceIds.length > 0) {
+        await Promise.all(
+          trip.invoiceIds.map(async (invoiceId) => {
+            try {
+              await updateDoc(doc(db, 'invoices', invoiceId), {
+                status: 'draft',
+                updatedAt: new Date().toISOString()
+              });
+            } catch (invErr) {
+              console.error(`Failed to update invoice ${invoiceId} to draft layout upon trip deletion:`, invErr);
+            }
+          })
+        );
+      }
       await deleteDoc(doc(db, 'trips', id));
       return true;
     } catch (err) {
@@ -54,7 +70,7 @@ export function useTrips() {
       handleFirestoreError(err, OperationType.DELETE, path);
       return false;
     }
-  }, []);
+  }, [trips]);
 
   useEffect(() => {
     if (!user) {

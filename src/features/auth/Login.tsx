@@ -1,27 +1,61 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { 
   signInWithEmailAndPassword, 
   signInWithPopup, 
   GoogleAuthProvider 
 } from 'firebase/auth';
-import { auth } from '../../lib/firebase';
-import { FileText, Mail, Lock, Chrome, ArrowRight } from 'lucide-react';
+import { collection, getDocs, limit, query, where } from 'firebase/firestore';
+import { auth, db } from '../../lib/firebase';
+import { Mail, Lock, Chrome, ArrowRight } from 'lucide-react';
+import { NRLogo } from '../../components/Logo';
 
 export function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [publicLogo, setPublicLogo] = useState<string | null>(null);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    async function loadPublicLogo() {
+      try {
+        const q = query(collection(db, 'settings'), limit(1));
+        const snap = await getDocs(q);
+        if (!snap.empty) {
+          const docData = snap.docs[0].data();
+          if (docData.sidebarLogoBase64) {
+            setPublicLogo(docData.sidebarLogoBase64);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to load public logo:", err);
+      }
+    }
+    loadPublicLogo();
+  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError('');
     try {
-      await signInWithEmailAndPassword(auth, email, password);
-      navigate('/dashboard');
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      const user = userCredential.user;
+      
+      // Perform immediate team member check for navigation
+      const q = query(
+        collection(db, 'team_members'),
+        where('userId', '==', user.uid),
+        limit(1)
+      );
+      const snap = await getDocs(q);
+      if (!snap.empty) {
+        navigate('/team-dashboard');
+      } else {
+        navigate('/dashboard');
+      }
     } catch (err: unknown) {
       if (err instanceof Error) {
         setError(err.message);
@@ -36,8 +70,21 @@ export function Login() {
   const handleGoogleLogin = async () => {
     try {
       const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
-      navigate('/dashboard');
+      const userCredential = await signInWithPopup(auth, provider);
+      const user = userCredential.user;
+      
+      // Perform immediate team member check for navigation
+      const q = query(
+        collection(db, 'team_members'),
+        where('userId', '==', user.uid),
+        limit(1)
+      );
+      const snap = await getDocs(q);
+      if (!snap.empty) {
+        navigate('/team-dashboard');
+      } else {
+        navigate('/dashboard');
+      }
     } catch (err: unknown) {
       if (err instanceof Error) {
         setError(err.message);
@@ -51,8 +98,17 @@ export function Login() {
     <div className="min-h-screen bg-zinc-50 flex items-center justify-center p-6">
       <div className="max-w-md w-full">
         <div className="text-center mb-10">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-brand-primary text-white mb-6 shadow-xl shadow-brand-primary/20">
-            <FileText className="w-8 h-8" />
+          <div className="inline-flex items-center justify-center mb-6">
+            {publicLogo ? (
+              <img 
+                src={publicLogo} 
+                alt="Brand Logo" 
+                className="w-20 h-20 rounded-2xl object-contain bg-zinc-900 p-2 shadow-xl shadow-zinc-900/15 border border-zinc-800"
+                referrerPolicy="no-referrer"
+              />
+            ) : (
+              <NRLogo className="w-16 h-16 shadow-xl shadow-red-500/20" variant="red-square" />
+            )}
           </div>
           <h1 className="text-3xl font-bold tracking-tight text-zinc-900 border-b-0">Welcome back</h1>
           <p className="text-zinc-500 mt-2">Sign in to manage your invoices with InvoiceForge</p>
