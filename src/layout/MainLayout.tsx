@@ -11,7 +11,8 @@ import {
   X,
   Truck,
   Calendar,
-  Boxes
+  Boxes,
+  Package
 } from 'lucide-react';
 import { auth } from '../lib/firebase';
 import { cn } from '../lib/utils';
@@ -24,6 +25,7 @@ const navigation = [
   { name: 'Trips', href: '/trips', icon: Calendar },
   { name: 'Stock', href: '/stock', icon: Boxes },
   { name: 'Invoices', href: '/invoices', icon: FileText },
+  { name: 'Products', href: '/products', icon: Package },
   { name: 'Trucks', href: '/trucks', icon: Truck },
   { name: 'Settings', href: '/settings', icon: Settings },
 ];

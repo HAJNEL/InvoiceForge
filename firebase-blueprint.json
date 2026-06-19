@@ -222,6 +222,20 @@
         "createdAt": { "type": "string" }
       },
       "required": ["stockCode", "description", "displayName", "qty", "userId"]
+    },
+    "Product": {
+      "title": "Product",
+      "description": "A unique catalog product linked to the user, persisted from invoice line items.",
+      "type": "object",
+      "properties": {
+        "stockCode": { "type": "string" },
+        "description": { "type": "string" },
+        "unitPrice": { "type": "number" },
+        "userId": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["stockCode", "description", "unitPrice", "userId"]
     }
   },
   "firestore": {
@@ -264,6 +278,10 @@
     "/inventory/{itemId}": {
       "schema": "InventoryItem",
       "description": "Collection of approved inventory items."
+    },
+    "/products/{productId}": {
+      "schema": "Product",
+      "description": "Collection of catalog products derived from invoice line items."
     }
   }
 }

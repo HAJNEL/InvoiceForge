@@ -21,6 +21,7 @@ import { db, auth } from '../../lib/firebase';
 import { collection, addDoc, serverTimestamp, query, where, getDocs } from 'firebase/firestore';
 import { handleFirestoreError, OperationType } from '../../lib/firestore-errors';
 import { DetailedInvoice } from '../../services/xaiService';
+import { useProducts } from '../products/hooks/useProducts';
 
 interface UploadFile {
   id: string;
@@ -37,6 +38,7 @@ export function BulkImport() {
   const [files, setFiles] = useState<UploadFile[]>([]);
   const [useAI, setUseAI] = useState(true);
   const navigate = useNavigate();
+  const { syncLineItemsAsProducts } = useProducts();
 
   const processFile = useCallback(async (uploadFile: { id: string, file: File }) => {
     const { id, file } = uploadFile;
@@ -202,6 +204,9 @@ export function BulkImport() {
             });
             if (invoiceRef) {
               finalInvoiceId = invoiceRef.id;
+              if (normalizedData.lineItems && normalizedData.lineItems.length > 0) {
+                await syncLineItemsAsProducts(normalizedData.lineItems);
+              }
             }
           } catch (dbErr) {
             handleFirestoreError(dbErr, OperationType.CREATE, 'invoices');

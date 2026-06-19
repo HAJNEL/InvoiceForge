@@ -148,6 +148,17 @@ service cloud.firestore {
         && data.keys().hasAll(['stockCode', 'description', 'qty', 'displayName', 'userId']);
     }
 
+    function isValidProduct(data) {
+      return data.stockCode is string && data.stockCode.size() < 100
+        && data.description is string && data.description.size() < 1000
+        && data.unitPrice is number
+        && data.userId is string && data.userId.size() < 128
+        && (data.userId == request.auth.uid || isTeamMemberOfOwner(data.userId))
+        && (!('createdAt' in data) || (data.createdAt is string && data.createdAt.size() < 100))
+        && (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() < 100))
+        && data.keys().hasAll(['stockCode', 'description', 'unitPrice', 'userId']);
+    }
+
     match /invoices/{invoiceId} {
       allow get: if isOwner(existing()) || isTeamMemberOfOwner(existing().userId);
       allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isTeamMemberOfOwner(resource.data.userId));
@@ -308,6 +319,24 @@ service cloud.firestore {
         
       allow update: if isSignedIn()
         && isValidInventory(incoming())
+        && (existing().userId == request.auth.uid || isTeamMemberOfOwner(existing().userId))
+        && incoming().userId == existing().userId;
+      
+      allow delete: if isSignedIn()
+        && (existing().userId == request.auth.uid || isTeamMemberOfOwner(existing().userId));
+    }
+
+    match /products/{productId} {
+      allow get: if isSignedIn() && (resource.data.userId == request.auth.uid || isTeamMemberOfOwner(resource.data.userId));
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isTeamMemberOfOwner(resource.data.userId));
+      
+      allow create: if isSignedIn() 
+        && isValidId(productId)
+        && isValidProduct(incoming())
+        && (incoming().userId == request.auth.uid || isTeamMemberOfOwner(incoming().userId));
+        
+      allow update: if isSignedIn()
+        && isValidProduct(incoming())
         && (existing().userId == request.auth.uid || isTeamMemberOfOwner(existing().userId))
         && incoming().userId == existing().userId;
       

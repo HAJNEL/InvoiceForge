@@ -22,6 +22,7 @@ import { ExtractionReview } from './features/invoices/ExtractionReview';
 import { Login } from './features/auth/Login';
 import { Register } from './features/auth/Register';
 import { useAuth } from './core/hooks/useAuth';
+import { ProductList } from './features/products/components/ProductList';
 import { TeamRegister } from './features/auth/TeamRegister';
 import { TeamDashboard } from './features/team-dashboard/TeamDashboard';
 import { TeamTripDetail } from './features/team-dashboard/TeamTripDetail';
@@ -61,6 +62,7 @@ export default function App() {
         <Route element={isMainMember ? <Layout /> : <Navigate to={user ? "/team-dashboard" : "/login"} />}>
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/invoices" element={<InvoicesList />} />
+          <Route path="/products" element={<ProductList />} />
           <Route path="/stock" element={<StockScreen />} />
           <Route path="/invoices/new" element={<InvoiceForm />} />
           <Route path="/invoices/import" element={<BulkImport />} />

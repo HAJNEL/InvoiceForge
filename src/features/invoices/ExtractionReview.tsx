@@ -17,6 +17,7 @@ import {
 import { db, auth } from '../../lib/firebase';
 import { doc, getDoc, updateDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { DetailedInvoice } from '../../services/geminiService';
+import { useProducts } from '../products/hooks/useProducts';
 
 export function ExtractionReview() {
   const { id } = useParams();
@@ -26,6 +27,7 @@ export function ExtractionReview() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const isEditing = window.location.pathname.includes('/edit');
+  const { syncLineItemsAsProducts } = useProducts();
 
   useEffect(() => {
     async function fetchInvoice() {
@@ -215,6 +217,10 @@ export function ExtractionReview() {
         status: isEditing ? currentStatus || status : status,
         updatedAt: new Date().toISOString()
       });
+
+      if (invoice.lineItems && invoice.lineItems.length > 0) {
+        await syncLineItemsAsProducts(invoice.lineItems);
+      }
 
       // Auto-geocode and cache coordinates in localStorage to load markers instantly on /trips
       const GMAPS_KEY = process.env.GOOGLE_MAPS_PLATFORM_KEY || '';
