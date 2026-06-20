@@ -124,6 +124,7 @@ export function SharedChecklist() {
       case TripStatus.PARTIALLY_COMPLETED:
         return 'bg-purple-50 text-purple-700 border-purple-200';
       case TripStatus.COMPLETED:
+      case TripStatus.DELIVERED:
         return 'bg-green-50 text-green-700 border-green-200';
       default:
         return 'bg-zinc-50 text-zinc-700 border-zinc-200';

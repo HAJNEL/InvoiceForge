@@ -564,11 +564,11 @@ export function TripForm() {
         );
       }
 
-      // If status is set directly to COMPLETED, update all the linked invoices
-      if (formData.status === TripStatus.COMPLETED) {
+      // If status is set directly to DELIVERED or COMPLETED, update all the linked invoices
+      if (formData.status === TripStatus.DELIVERED || formData.status === TripStatus.COMPLETED) {
         if (formData.invoiceIds && formData.invoiceIds.length > 0) {
           await Promise.all(
-            formData.invoiceIds.map(invId => updateInvoice(invId, { status: 'completed' }))
+            formData.invoiceIds.map(invId => updateInvoice(invId, { status: 'delivered' }))
           );
         }
       }
@@ -889,17 +889,27 @@ export function TripForm() {
                         {/* Stop details */}
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center justify-between gap-2">
-                            <p className="font-bold text-zinc-900 text-xs truncate uppercase tracking-tight group-hover:text-brand-primary transition-colors">
-                              {stop.location || stop.client || stop.type}
+                            <p className="font-bold text-zinc-900 text-xs truncate uppercase tracking-tight group-hover:text-brand-primary transition-colors flex items-center gap-1.5 min-w-0">
+                              {isInvoice ? (
+                                <span className="text-zinc-900 font-bold shrink-0 select-none font-mono text-xs">
+                                  #{stop.number}
+                                </span>
+                              ) : (
+                                <span className="truncate">{stop.location || stop.client || stop.type}</span>
+                              )}
                             </p>
-                            <span className="text-[10px] font-mono font-black text-brand-primary">
+                            <span className="text-[10px] font-mono font-black text-brand-primary shrink-0">
                               {isInvoice ? `R ${stop.amount?.toLocaleString() || 0}` : stop.type}
                             </span>
                           </div>
                           
                           <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1 text-[10px] text-zinc-400 justify-between">
                             <span className="truncate flex items-center gap-1.5 font-medium">
-                              {isInvoice ? `Invoice: ${stop.number}` : `Scheduled Stop: Custom Waypoint`}
+                              {isInvoice ? (
+                                <span className="font-semibold text-zinc-600">
+                                  {invoices.find(inv => inv.id === stop.invoiceId)?.schoolName || stop.client || "Unknown School"}
+                                </span>
+                              ) : `Scheduled Stop: Custom Waypoint`}
                               {isInvoice && (() => {
                                 for (const t of trips) {
                                   if (t.invoiceIds?.includes(stop.invoiceId) && t.partialItems) {
@@ -922,9 +932,7 @@ export function TripForm() {
                                 <Clock className="w-3 h-3 text-emerald-650" />
                                 {stop.duration || '30m'} ({stop.startTime?.split('T')[1]} - {stop.endTime?.split('T')[1]})
                               </span>
-                            ) : (
-                              isInvoice && <span className="shrink-0 bg-zinc-150 px-1.5 py-0.5 rounded text-[9px] font-black text-zinc-600">Pending Schedule</span>
-                            )}
+                            ) : null}
                           </div>
                         </div>
 

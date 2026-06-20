@@ -148,6 +148,7 @@
         "inviteCode": { "type": "string" },
         "status": { "type": "string", "enum": ["pending", "active"] },
         "userId": { "type": "string" },
+        "pushoverUserKey": { "type": "string" },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
       },

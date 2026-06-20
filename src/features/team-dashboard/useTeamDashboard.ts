@@ -340,10 +340,18 @@ export function useTeamDashboard() {
       }
 
       // For non-delivered statuses, do a regular single document status update
-      await updateDoc(tripRef, {
+      const updateData: Record<string, unknown> = {
         status,
         updatedAt: new Date().toISOString()
-      });
+      };
+
+      // Reset checklist state for the next role phase so they don't inherit previous selections
+      if (status === 'assembled' || status === 'on-route') {
+        updateData.checkedItems = {};
+        updateData.partialItems = {};
+      }
+
+      await updateDoc(tripRef, updateData);
       return true;
     } catch (err) {
       console.error("Update trip status error:", err);

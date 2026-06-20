@@ -345,7 +345,7 @@ export function InvoicesList() {
 
       {/* Tabs */}
       <div className="flex items-center gap-6 border-b border-zinc-200 overflow-x-auto scroller-hide">
-        {['All', 'Partially Complete', 'Draft', 'Proposed', 'Assembled', 'On Route', 'Delivered', 'Complete'].map((tab) => (
+        {['All', 'Partially Complete', 'Draft', 'Proposed', 'Assembled', 'On Route', 'Delivered'].map((tab) => (
           <button 
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -490,7 +490,7 @@ export function InvoicesList() {
                             <td className="px-6 py-4 text-right" onClick={(e) => e.stopPropagation()}>
                               <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-all transform translate-x-2 group-hover:translate-x-0">
                                 <Link 
-                                  to={`/invoices/${invoice.id}/edit`}
+                                  to={`/invoices/${invoice.id}`}
                                   className="p-2 hover:bg-white border-transparent hover:border-zinc-200 border rounded-lg text-zinc-500 transition-all"
                                   title="Edit"
                                 >

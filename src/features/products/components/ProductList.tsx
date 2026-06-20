@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, FormEvent } from 'react';
 import { 
   Package, 
   Plus, 
@@ -10,7 +10,6 @@ import {
   RefreshCw, 
   AlertCircle, 
   CheckCircle,
-  HelpCircle,
   TrendingUp,
   ChevronLeft,
   ChevronRight
@@ -69,7 +68,7 @@ export function ProductList() {
     setIsModalOpen(true);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!formData.stockCode.trim() || !formData.description.trim()) return;
     

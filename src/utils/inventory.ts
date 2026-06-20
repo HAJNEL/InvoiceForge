@@ -1,5 +1,6 @@
-import { collection, query, where, getDocs, doc, getDoc, updateDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, getDoc, updateDoc, limit } from 'firebase/firestore';
 import { db } from '../lib/firebase';
+import { handleFirestoreError, OperationType } from '../lib/firestore-errors';
 
 export interface InventoryItemItem {
   id: string;
@@ -17,8 +18,14 @@ export async function validateAndSubtractInventory(invoiceId: string, userId: st
   try {
     // 1. Fetch the invoice
     const invoiceRef = doc(db, 'invoices', invoiceId);
-    const invoiceSnap = await getDoc(invoiceRef);
-    if (!invoiceSnap.exists()) {
+    let invoiceSnap;
+    try {
+      invoiceSnap = await getDoc(invoiceRef);
+    } catch (err) {
+      handleFirestoreError(err, OperationType.GET, `invoices/${invoiceId}`);
+    }
+
+    if (!invoiceSnap || !invoiceSnap.exists()) {
       return { success: false, error: 'Invoice not found.' };
     }
 
@@ -49,25 +56,54 @@ export async function validateAndSubtractInventory(invoiceId: string, userId: st
       }
     }
 
-    // 2. Fetch current inventory for this main owner's userId
+    // 2. Resolve actual owner of the inventory if userId is a team member
+    let finalOwnerId = userId;
+    try {
+      const memberDocSnap = await getDoc(doc(db, 'team_members', userId));
+      if (memberDocSnap.exists()) {
+        finalOwnerId = memberDocSnap.data().ownerId || userId;
+      } else {
+        // Fallback to query
+        const teamQuery = query(
+          collection(db, 'team_members'),
+          where('userId', '==', userId),
+          limit(1)
+        );
+        const teamSnap = await getDocs(teamQuery);
+        if (!teamSnap.empty) {
+          finalOwnerId = teamSnap.docs[0].data().ownerId || userId;
+        }
+      }
+    } catch (e) {
+      console.warn("Could not check team member classification in validateAndSubtractInventory:", e);
+    }
+
+    let inventorySnap;
     const inventoryQuery = query(
       collection(db, 'inventory'),
-      where('userId', '==', userId)
+      where('userId', '==', finalOwnerId)
     );
-    const inventorySnap = await getDocs(inventoryQuery);
+    try {
+      inventorySnap = await getDocs(inventoryQuery);
+    } catch (err) {
+      handleFirestoreError(err, OperationType.LIST, 'inventory');
+    }
+
     const inventoryItems: Record<string, { docId: string; stockCode: string; qty: number }> = {};
     
-    inventorySnap.forEach(docItem => {
-      const data = docItem.data();
-      const code = String(data.stockCode || '').trim().toUpperCase();
-      if (code) {
-        inventoryItems[code] = {
-          docId: docItem.id,
-          stockCode: String(data.stockCode),
-          qty: Number(data.qty || 0)
-        };
-      }
-    });
+    if (inventorySnap) {
+      inventorySnap.forEach(docItem => {
+        const data = docItem.data();
+        const code = String(data.stockCode || '').trim().toUpperCase();
+        if (code) {
+          inventoryItems[code] = {
+            docId: docItem.id,
+            stockCode: String(data.stockCode),
+            qty: Number(data.qty || 0)
+          };
+        }
+      });
+    }
 
     // 3. Dry-run safety validation: check if all items exist and have enough quantity
     const errors: string[] = [];
@@ -95,10 +131,14 @@ export async function validateAndSubtractInventory(invoiceId: string, userId: st
 
       const newQty = Math.max(0, invItem.qty - deduct.qty);
       const docRef = doc(db, 'inventory', invItem.docId);
-      await updateDoc(docRef, {
-        qty: newQty,
-        updatedAt: new Date().toISOString()
-      });
+      try {
+        await updateDoc(docRef, {
+          qty: newQty,
+          updatedAt: new Date().toISOString()
+        });
+      } catch (err) {
+        handleFirestoreError(err, OperationType.UPDATE, `inventory/${invItem.docId}`);
+      }
     });
 
     await Promise.all(promises);

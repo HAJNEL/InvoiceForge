@@ -4,6 +4,7 @@
  */
 
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { useEffect } from 'react';
 import { Layout } from './layout/MainLayout';
 import { Dashboard } from './features/dashboard/Dashboard';
 import { InvoicesList } from './features/invoices/InvoiceList';
@@ -31,6 +32,58 @@ export default function App() {
   const { user, loading, isTeamMember } = useAuth();
 
   const isAuthRoleDetermined = user ? (isTeamMember !== null) : true;
+
+  // Global viewport zoom reset effect when any dialog/modal closes
+  useEffect(() => {
+    let wasModalOpen = false;
+
+    const checkModalState = () => {
+      // Query elements representing active dialog wrappers, modals, or backdrop overlays
+      const modals = document.querySelectorAll(
+        '.fixed.inset-0, [class*="fixed"][class*="inset-0"], .bg-black\\/60, .bg-zinc-950\\/40, .bg-zinc-900\\/40, .bg-zinc-950\\/60, .bg-black\\/50'
+      );
+      const isModalOpenNow = modals.length > 0;
+
+      // When a modal has closed (i.e. transitions from open to closed)
+      if (wasModalOpen && !isModalOpenNow) {
+        const viewportMeta = document.querySelector('meta[name="viewport"]');
+        if (viewportMeta) {
+          // Temporarily force scale 1.0 to clear any viewport scale or magnification induced on mobile focus
+          viewportMeta.setAttribute(
+            'content',
+            'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no'
+          );
+          
+          // Re-enable scaling shortly after so the standard user web experience remains flexible
+          setTimeout(() => {
+            viewportMeta.setAttribute(
+              'content',
+              'width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes'
+            );
+          }, 150);
+        }
+      }
+
+      wasModalOpen = isModalOpenNow;
+    };
+
+    // Use MutationObserver to watch for additions and deletions of overlays inside document.body
+    const observer = new MutationObserver(() => {
+      checkModalState();
+    });
+
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+    });
+
+    // Run once initially to capture initial mount state
+    checkModalState();
+
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
 
   if (loading || !isAuthRoleDetermined) {
     return (

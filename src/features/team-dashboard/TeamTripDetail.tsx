@@ -1,15 +1,53 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom';
-import { onSnapshot, doc, getDoc } from 'firebase/firestore';
+import { onSnapshot, doc, getDoc, updateDoc } from 'firebase/firestore';
 import { 
   ArrowLeft, Calendar, Truck, ShieldAlert, 
-  Loader2, DollarSign, FileSpreadsheet, Lock, CheckCircle2, Info, Package, Shield, ArrowRight,
-  AlertTriangle, X
+  Loader2, DollarSign, FileSpreadsheet, Lock, CheckCircle2, Package, Shield, ArrowRight,
+  AlertTriangle, X, ClipboardList
 } from 'lucide-react';
 import { useTeamDashboard } from './useTeamDashboard';
 import { db } from '../../lib/firebase';
 import { Trip, Invoice } from '../../types';
 import { cn } from '../../lib/utils';
+
+interface InvoiceLineItem {
+  stockCode?: string;
+  stock_code?: string;
+  description?: string;
+  qty?: number;
+  quantity?: number;
+  isPart?: boolean;
+  parentItem?: string | null;
+}
+
+interface LoaderChecklistItem {
+  invoiceId: string;
+  invoiceNumber: string;
+  schoolName: string;
+  stockCode: string;
+  description: string;
+  qty: number;
+  isPart: boolean;
+  parentItem: string | null;
+  legacyIndex: number;
+}
+
+interface AssemblerItemToCount {
+  stockCode: string;
+  description: string;
+  qty: number;
+  keyUnified: string;
+  keyLegacy: string;
+  isPart?: boolean;
+  parentItem?: string | null;
+}
+
+interface UniquePreChecklistItem {
+  stockCode: string;
+  description: string;
+  qty: number;
+}
 
 export function TeamTripDetail() {
   const { tripId } = useParams<{ tripId: string }>();
@@ -28,6 +66,296 @@ export function TeamTripDetail() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loadingTrip, setLoadingTrip] = useState(true);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+
+  // Pre-Checklist states
+  const [showPreChecklist, setShowPreChecklist] = useState(false);
+  const [preCheckedState, setPreCheckedState] = useState<Record<string, boolean>>(() => {
+    try {
+      const saved = localStorage.getItem(`pre_checklist_${tripId}`);
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  // Setup Unique Pre-Checklist Items - grouping by item name / stockCode + description
+  const uniquePreChecklistItems = React.useMemo<UniquePreChecklistItem[]>(() => {
+    const itemMap = new Map<string, { stockCode: string; description: string; qty: number }>();
+    invoices.forEach(inv => {
+      const lineItems = (inv.lineItems || inv.line_items || []) as InvoiceLineItem[];
+      lineItems.forEach(item => {
+        const stockCode = item.stockCode || item.stock_code || 'N/A';
+        const description = item.description || '';
+        const qty = Number(item.qty || item.quantity || 0);
+
+        const key = `${stockCode.trim().toUpperCase()}_${description.trim().toUpperCase()}`;
+        const existing = itemMap.get(key);
+        if (existing) {
+          existing.qty += qty;
+        } else {
+          itemMap.set(key, {
+            stockCode,
+            description,
+            qty
+          });
+        }
+      });
+    });
+    return Array.from(itemMap.values()).sort((a, b) => a.stockCode.localeCompare(b.stockCode));
+  }, [invoices]);
+
+  // Compute stats for current pre-checklist
+  const preChecklistStats = React.useMemo(() => {
+    let checkedCount = 0;
+    uniquePreChecklistItems.forEach(item => {
+      const key = `${item.stockCode.trim().toUpperCase()}_${item.description.trim().toUpperCase()}`;
+      if (preCheckedState[key]) {
+        checkedCount++;
+      }
+    });
+    const totalCount = uniquePreChecklistItems.length;
+    const isCompleted = totalCount > 0 && checkedCount === totalCount;
+    return {
+      checkedCount,
+      totalCount,
+      isCompleted
+    };
+  }, [uniquePreChecklistItems, preCheckedState]);
+
+  // Financial aggregate calculation with exhaustive fallback matching
+  const totalFinancialValue = React.useMemo(() => {
+    interface LooseInvoice {
+      amount?: number;
+      totalDue?: number;
+      totalAmount?: number;
+      total_amount?: number;
+      total?: number;
+      subTotal?: number;
+      sub_total?: number;
+      summary?: {
+        total_due?: number;
+        totalDue?: number;
+        sub_total?: number;
+        subTotal?: number;
+        [key: string]: unknown;
+      };
+      lineItems?: Array<{
+        value?: number;
+        line_item_value?: number;
+        lineItemValue?: number;
+        qty?: number;
+        quantity?: number;
+        unitPrice?: number;
+        unit_price?: number;
+      }>;
+      line_items?: Array<{
+        value?: number;
+        line_item_value?: number;
+        lineItemValue?: number;
+        qty?: number;
+        quantity?: number;
+        unitPrice?: number;
+        unit_price?: number;
+      }>;
+    }
+
+    return invoices.reduce((sum, rawInv) => {
+      const inv = rawInv as LooseInvoice;
+      if (!inv) return sum;
+      
+      // Try explicit mapped or stored amounts
+      if (typeof inv.amount === 'number') return sum + inv.amount;
+      
+      const summary = inv.summary || {};
+      if (typeof summary.total_due === 'number') return sum + summary.total_due;
+      if (typeof summary.totalDue === 'number') return sum + summary.totalDue;
+      if (typeof inv.totalDue === 'number') return sum + inv.totalDue;
+      if (typeof inv.totalAmount === 'number') return sum + inv.totalAmount;
+      if (typeof inv.total_amount === 'number') return sum + inv.total_amount;
+      if (typeof inv.total === 'number') return sum + inv.total;
+      
+      // Fallback to subtotal fields
+      if (typeof summary.sub_total === 'number') return sum + summary.sub_total;
+      if (typeof summary.subTotal === 'number') return sum + summary.subTotal;
+      if (typeof inv.subTotal === 'number') return sum + inv.subTotal;
+      if (typeof inv.sub_total === 'number') return sum + inv.sub_total;
+      
+      // Safe fallback: sum line items
+      const lineItems = inv.lineItems || inv.line_items || [];
+      if (Array.isArray(lineItems) && lineItems.length > 0) {
+        const itemsSum = lineItems.reduce((accSum: number, item) => {
+          const itemVal = item.value ?? item.line_item_value ?? item.lineItemValue;
+          if (typeof itemVal === 'number') return accSum + itemVal;
+          
+          const qty = Number(item.qty ?? item.quantity ?? 0);
+          const price = Number(item.unitPrice ?? item.unit_price ?? 0);
+          return accSum + (qty * price);
+        }, 0);
+        return sum + itemsSum;
+      }
+      return sum;
+    }, 0);
+  }, [invoices]);
+
+  const togglePreCheck = (key: string) => {
+    setPreCheckedState(prev => {
+      const next = { ...prev, [key]: !prev[key] };
+      try {
+        localStorage.setItem(`pre_checklist_${tripId}`, JSON.stringify(next));
+      } catch (e) {
+        console.error(e);
+      }
+      return next;
+    });
+  };
+
+  const handleClearPreChecklist = () => {
+    setPreCheckedState({});
+    try {
+      localStorage.removeItem(`pre_checklist_${tripId}`);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleMarkAllPreChecked = () => {
+    const allChecked: Record<string, boolean> = {};
+    uniquePreChecklistItems.forEach(item => {
+      const key = `${item.stockCode.trim().toUpperCase()}_${item.description.trim().toUpperCase()}`;
+      allChecked[key] = true;
+    });
+    setPreCheckedState(allChecked);
+    try {
+      localStorage.setItem(`pre_checklist_${tripId}`, JSON.stringify(allChecked));
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  // Active role
+  const activeRole = searchParams.get('role') || profile?.roles?.[0] || 'Stock Counter';
+
+  // Setup Loader Items flatlist for counting/completion
+  const loaderItems = React.useMemo<LoaderChecklistItem[]>(() => {
+    if (activeRole !== 'Loader') return [];
+    const flatList: LoaderChecklistItem[] = [];
+    invoices.forEach(inv => {
+      const lineItems = (inv.lineItems || inv.line_items || []) as InvoiceLineItem[];
+      lineItems.forEach((item, idx: number) => {
+        const stockCode = item.stockCode || item.stock_code || 'N/A';
+        const description = item.description || '';
+        const qty = Number(item.qty || item.quantity || 0);
+
+        const matchingKnockdown = knockdownItems?.find(k => 
+          k.parts?.some(p => p.partCode.toLowerCase().trim() === stockCode.toLowerCase().trim())
+        );
+
+        flatList.push({
+          invoiceId: inv.id,
+          invoiceNumber: inv.invoiceNumber,
+          schoolName: inv.schoolName || inv.clientName || inv.client || inv.ship_to_details?.school_name || inv.ship_to_details?.name || 'Unknown School/Client',
+          stockCode,
+          description,
+          qty,
+          isPart: !!matchingKnockdown,
+          parentItem: matchingKnockdown ? (matchingKnockdown.stockCode || null) : null,
+          legacyIndex: idx
+        });
+      });
+    });
+    return flatList;
+  }, [invoices, activeRole, knockdownItems]);
+
+  // Assembler counting state
+  const [activeItemToCount, setActiveItemToCount] = useState<AssemblerItemToCount | null>(null);
+  const [assemblerEnteredQty, setAssemblerEnteredQty] = useState<string>('');
+
+  const handleSaveAssemblerCount = async (item: AssemblerItemToCount, enteredCountStr: string) => {
+    if (!trip) return;
+    const qtyValue = parseInt(enteredCountStr, 10);
+    if (isNaN(qtyValue) || qtyValue < 0 || qtyValue > item.qty) {
+      alert(`Please enter a valid count between 0 and ${item.qty}.`);
+      return;
+    }
+
+    const keyUnified = item.keyUnified;
+    const keyLegacy = item.keyLegacy;
+
+    setUpdatingId(keyUnified);
+
+    try {
+      const tripRef = doc(db, 'trips', trip.id);
+      const checkedItems = { ...(trip.checkedItems || {}) };
+      const partialItems = { ...(trip.partialItems || {}) };
+
+      // Set item checked status to true (we processed/counted it)
+      checkedItems[keyUnified] = true;
+      checkedItems[keyLegacy] = true;
+
+      if (qtyValue < item.qty) {
+        // Auto-flag as partially completed and do not require a reason
+        const partialData = {
+          isPartial: true,
+          actualQty: qtyValue,
+          expectedQty: item.qty,
+          reason: '', // No need to provide a reason or text
+          stockCode: item.stockCode || 'N/A',
+          description: item.description || ''
+        };
+        partialItems[keyUnified] = partialData;
+        partialItems[keyLegacy] = partialData;
+      } else {
+        // Fully complete
+        delete partialItems[keyUnified];
+        delete partialItems[keyLegacy];
+      }
+
+      await updateDoc(tripRef, {
+        checkedItems,
+        partialItems,
+        updatedAt: new Date().toISOString()
+      });
+    } catch (err) {
+      console.error("Error saving assembler count:", err);
+    } finally {
+      setUpdatingId(null);
+      setActiveItemToCount(null);
+    }
+  };
+
+  const handleClearAssemblerCount = async (item: AssemblerItemToCount) => {
+    if (!trip) return;
+
+    const keyUnified = item.keyUnified;
+    const keyLegacy = item.keyLegacy;
+
+    setUpdatingId(keyUnified);
+
+    try {
+      const tripRef = doc(db, 'trips', trip.id);
+      const checkedItems = { ...(trip.checkedItems || {}) };
+      const partialItems = { ...(trip.partialItems || {}) };
+
+      // Reset checked state to false (unprocessed)
+      checkedItems[keyUnified] = false;
+      checkedItems[keyLegacy] = false;
+
+      // Clear from partialItems
+      delete partialItems[keyUnified];
+      delete partialItems[keyLegacy];
+
+      await updateDoc(tripRef, {
+        checkedItems,
+        partialItems,
+        updatedAt: new Date().toISOString()
+      });
+    } catch (err) {
+      console.error("Error clearing assembler count:", err);
+    } finally {
+      setUpdatingId(null);
+      setActiveItemToCount(null);
+    }
+  };
 
   // Status transitions
   const [isTransitioning, setIsTransitioning] = useState(false);
@@ -69,9 +397,6 @@ export function TeamTripDetail() {
 
     return () => unsubscribeTrip();
   }, [tripId]);
-
-  // Determine current active role view
-  const activeRole = searchParams.get('role') || profile?.roles?.[0] || 'Stock Counter';
 
   // State permission calculations
   const canModify = profile?.role === 'editor';
@@ -216,19 +541,30 @@ export function TeamTripDetail() {
     );
   }
 
+
+
+  const totalItemsCount = activeRole === 'Loader' ? loaderItems.length : items.length;
+
   let checkedCount = 0;
-  items.forEach((item, idx) => {
-    const keyUnified = `${item.stockCode || 'NO_STOCK'}_${item.description}`;
-    const keyLegacy = `${item.stockCode}-${idx}`;
-    if (checkedState[keyUnified] || checkedState[keyLegacy]) {
-      checkedCount++;
-    }
-  });
+  if (activeRole === 'Loader') {
+    loaderItems.forEach((item) => {
+      const keyUnified = `${item.invoiceId}_${item.stockCode || 'NO_STOCK'}_${item.description}`;
+      const keyLegacy = `${item.invoiceId}_${item.stockCode}-${item.legacyIndex}`;
+      if (checkedState[keyUnified] || checkedState[keyLegacy]) {
+        checkedCount++;
+      }
+    });
+  } else {
+    items.forEach((item, idx) => {
+      const keyUnified = `${item.stockCode || 'NO_STOCK'}_${item.description}`;
+      const keyLegacy = `${item.stockCode}-${idx}`;
+      if (checkedState[keyUnified] || checkedState[keyLegacy]) {
+        checkedCount++;
+      }
+    });
+  }
 
-  const progressPct = items.length === 0 ? 0 : Math.round((checkedCount / items.length) * 100);
-
-  // Financial aggregates
-  const totalFinancialValue = invoices.reduce((sum, inv) => sum + (inv.totalAmount || 0), 0);
+  const progressPct = totalItemsCount === 0 ? 0 : Math.round((checkedCount / totalItemsCount) * 100);
 
   return (
     <div className="min-h-screen bg-zinc-50 flex flex-col justify-start pb-8">
@@ -261,43 +597,69 @@ export function TeamTripDetail() {
 
         {/* Dynamic Role-Based Screen Header Banner */}
         <div className={cn(
-          "rounded-3xl p-5 border shadow-sm relative overflow-hidden flex items-center gap-4 text-left",
+          "rounded-3xl p-5 border shadow-sm relative overflow-hidden flex flex-col xs:flex-row xs:items-center justify-between gap-4 text-left",
+          (activeRole === 'Loader' && preChecklistStats.isCompleted) ? 'bg-emerald-50/40 border-emerald-200 text-emerald-800' :
           activeRole === 'Stock Counter' ? 'bg-emerald-50/40 border-emerald-200 text-emerald-850' :
           activeRole === 'Assembler' ? 'bg-blue-50/40 border-blue-200 text-blue-800' :
           activeRole === 'Loader' ? 'bg-amber-50/40 border-amber-200 text-amber-800' :
           activeRole === 'Delivered Checker' ? 'bg-purple-50/40 border-purple-200 text-purple-800' :
           'bg-zinc-50 border-zinc-200'
         )}>
-          <div className={cn(
-            "w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 border shadow-xs",
-            activeRole === 'Stock Counter' ? 'bg-emerald-100 border-emerald-200/50 text-emerald-600' :
-            activeRole === 'Assembler' ? 'bg-blue-100 border-blue-200/50 text-blue-600' :
-            activeRole === 'Loader' ? 'bg-amber-100 border-amber-200/50 text-amber-600' :
-            activeRole === 'Delivered Checker' ? 'bg-purple-100 border-purple-200/50 text-purple-600' :
-            'bg-zinc-100 text-zinc-650'
-          )}>
-            {activeRole === 'Stock Counter' && <Shield className="w-5 h-5 stroke-[2.5]" />}
-            {activeRole === 'Assembler' && <Package className="w-5 h-5 stroke-[2.5]" />}
-            {activeRole === 'Loader' && <Truck className="w-5 h-5 stroke-[2.5]" />}
-            {activeRole === 'Delivered Checker' && <CheckCircle2 className="w-5 h-5 stroke-[2.5]" />}
+          <div className="flex items-center gap-4 min-w-0 flex-1">
+            <div className={cn(
+              "w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 border shadow-xs transition-colors duration-350",
+              (activeRole === 'Loader' && preChecklistStats.isCompleted) ? 'bg-emerald-100 border-emerald-200/50 text-emerald-600' :
+              activeRole === 'Stock Counter' ? 'bg-emerald-100 border-emerald-200/50 text-emerald-600' :
+              activeRole === 'Assembler' ? 'bg-blue-100 border-blue-200/50 text-blue-600' :
+              activeRole === 'Loader' ? 'bg-amber-100 border-amber-200/50 text-amber-600' :
+              activeRole === 'Delivered Checker' ? 'bg-purple-100 border-purple-200/50 text-purple-600' :
+              'bg-zinc-100 text-zinc-650'
+            )}>
+              {activeRole === 'Stock Counter' && <Shield className="w-5 h-5 stroke-[2.5]" />}
+              {activeRole === 'Assembler' && <Package className="w-5 h-5 stroke-[2.5]" />}
+              {activeRole === 'Loader' && (
+                preChecklistStats.isCompleted ? (
+                  <CheckCircle2 className="w-5 h-5 stroke-[2.5] text-emerald-600 animate-bounce" />
+                ) : (
+                  <Truck className="w-5 h-5 stroke-[2.5]" />
+                )
+              )}
+              {activeRole === 'Delivered Checker' && <CheckCircle2 className="w-5 h-5 stroke-[2.5]" />}
+            </div>
+            <div className="min-w-0">
+              <span className="text-[9px] font-black uppercase tracking-widest leading-none block text-zinc-400 mb-0.5">Role Station View</span>
+              <h3 className="font-sans text-xs font-black uppercase tracking-wider text-zinc-900 leading-tight">
+                {activeRole === 'Stock Counter' ? 'Stock Counter Station' :
+                 activeRole === 'Assembler' ? 'Assembly & Prep Dock' :
+                 activeRole === 'Loader' ? (preChecklistStats.isCompleted ? 'Staged & Loader Pier' : 'Loading & Staging Pier') :
+                 activeRole === 'Delivered Checker' ? 'Delivery Check-Off Proof' :
+                 activeRole}
+              </h3>
+              <p className="text-[10px] text-zinc-500 mt-1 leading-relaxed">
+                {activeRole === 'Stock Counter' ? 'Assessing general inventory lines & physical count tallies.' :
+                 activeRole === 'Assembler' ? 'Packaging, bundle prepping, and staging items for cargo launch.' :
+                 activeRole === 'Loader' ? (preChecklistStats.isCompleted ? 'All items fully checked off and staging is complete on the pier!' : 'Securing load balances and locking freight inside vehicles.') :
+                 activeRole === 'Delivered Checker' ? 'Recapping goods offloaded at drop-off client spots.' :
+                 'Viewing shared trip records.'}
+              </p>
+            </div>
           </div>
-          <div className="flex-grow min-w-0">
-            <span className="text-[9px] font-black uppercase tracking-widest leading-none block text-zinc-400 mb-0.5">Role Station View</span>
-            <h3 className="font-sans text-xs font-black uppercase tracking-wider text-zinc-900 leading-tight">
-              {activeRole === 'Stock Counter' ? 'Stock Counter Station' :
-               activeRole === 'Assembler' ? 'Assembly & Prep Dock' :
-               activeRole === 'Loader' ? 'Loading & Staging Pier' :
-               activeRole === 'Delivered Checker' ? 'Delivery Check-Off Proof' :
-               activeRole}
-            </h3>
-            <p className="text-[10px] text-zinc-500 mt-1 leading-relaxed">
-              {activeRole === 'Stock Counter' ? 'Assessing general inventory lines & physical count tallies.' :
-               activeRole === 'Assembler' ? 'Packaging, bundle prepping, and staging items for cargo launch.' :
-               activeRole === 'Loader' ? 'Securing load balances and locking freight inside vehicles.' :
-               activeRole === 'Delivered Checker' ? 'Recapping goods offloaded at drop-off client spots.' :
-               'Viewing shared trip records.'}
-            </p>
-          </div>
+
+          {activeRole === 'Loader' && (
+            <button
+              type="button"
+              id="preload-checklist-trigger"
+              onClick={() => setShowPreChecklist(true)}
+              className={cn(
+                "xs:self-center shrink-0 font-sans font-black tracking-wider text-[10px] uppercase px-4 py-2.5 rounded-2xl flex items-center justify-center shadow-sm transition-all active:scale-95 cursor-pointer border",
+                preChecklistStats.isCompleted
+                  ? "bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-700 hover:shadow-emerald-100"
+                  : "bg-amber-600 hover:bg-amber-700 text-white border-amber-700 hover:shadow-amber-100"
+              )}
+            >
+              <span>Pre-Checklist ({preChecklistStats.checkedCount}/{preChecklistStats.totalCount})</span>
+            </button>
+          )}
         </div>
 
         {/* Trip Core Info Header */}
@@ -365,7 +727,7 @@ export function TeamTripDetail() {
                activeRole === 'Loader' ? 'Loaded Fraction' :
                'Delivered Fraction'}
             </span>
-            <span className="font-mono text-zinc-900">{checkedCount} of {items.length} completed</span>
+            <span className="font-mono text-zinc-900">{checkedCount} of {totalItemsCount} completed</span>
           </div>
 
           {/* Mini dynamic slider */}
@@ -377,10 +739,10 @@ export function TeamTripDetail() {
           </div>
 
           {/* Pipeline Expansion Action Trigger Button */}
-          {progressPct === 100 && items.length > 0 && isWritable && activeRole !== 'Stock Counter' && (
+          {progressPct === 100 && totalItemsCount > 0 && isWritable && activeRole !== 'Stock Counter' && (
             <div className="pt-4 border-t border-zinc-150 space-y-2 animate-fade-in">
               <p className="text-[11px] text-zinc-550 text-left leading-relaxed">
-                🎉 Excellent work! All <strong>{items.length} items</strong> are checked off. Switch the dispatch stage to advance:
+                🎉 Excellent work! All <strong>{totalItemsCount} items</strong> are checked off. Switch the dispatch stage to advance:
               </p>
               <button
                 type="button"
@@ -435,11 +797,196 @@ export function TeamTripDetail() {
 
         {/* Core Checklist Item loop lists */}
         <div className="space-y-3">
-          <h3 className="text-[10px] font-black uppercase tracking-widest text-zinc-400 font-mono px-1 text-left">Manifest Items List ({items.length})</h3>
+          {activeRole === 'Loader' ? (
+            <h3 className="text-[10px] font-black uppercase tracking-widest text-zinc-400 font-mono px-1 text-left">Manifest Items Grouped by Invoice ({invoices.length})</h3>
+          ) : (
+            <h3 className="text-[10px] font-black uppercase tracking-widest text-zinc-400 font-mono px-1 text-left">Manifest Items List ({items.length})</h3>
+          )}
 
-          {items.length === 0 ? (
+          {activeRole === 'Loader' && invoices.length === 0 ? (
+            <div className="bg-white rounded-3xl py-12 border border-zinc-200 text-center text-zinc-400 text-xs">
+              <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2 text-zinc-400" />
+              Loading invoices for grouped loader view...
+            </div>
+          ) : items.length === 0 ? (
             <div className="bg-white rounded-3xl py-12 border border-zinc-200 text-center text-zinc-400 text-xs">
               No manifest items listed on this dispatch's invoices.
+            </div>
+          ) : activeRole === 'Loader' ? (
+            <div className="space-y-6">
+              {[...invoices].reverse().map((inv, index, arr) => {
+                const schoolName = inv.schoolName || inv.clientName || inv.client || inv.ship_to_details?.school_name || inv.ship_to_details?.name || 'Unknown School';
+                const currentInvoiceNumber = inv.invoiceNumber || inv.taxInvoice || inv.invoice_number || inv.number || 'N/A';
+                const lineItems = inv.lineItems || inv.line_items || [];
+                const deliveryStopNumber = arr.length - index;
+
+                return (
+                  <div key={inv.id || currentInvoiceNumber} className="border border-zinc-200 rounded-3xl p-5 bg-white shadow-xs space-y-4 text-left animate-fade-in">
+                    {/* Invoice Header Block with Loading Order Priority */}
+                    <div className="pb-3 border-b border-zinc-150 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                      <div className="space-y-1.5">
+                        <div className="flex items-center gap-2 flex-wrap mt-1">
+                          <h4 className="text-sm font-black text-zinc-950 uppercase">
+                            #{currentInvoiceNumber}
+                          </h4>
+                          {index === 0 ? (
+                            <span className="text-[9px] font-mono font-bold bg-amber-500/10 text-amber-700 border border-amber-200/50 px-2 py-0.5 rounded-full">
+                              LOAD FIRST (Deep Front)
+                            </span>
+                          ) : index === arr.length - 1 ? (
+                            <span className="text-[9px] font-mono font-bold bg-blue-500/10 text-blue-700 border border-blue-250/50 px-2 py-0.5 rounded-full">
+                              LOAD LAST (Near Door)
+                            </span>
+                          ) : (
+                            <span className="text-[9px] font-mono font-bold bg-zinc-100 text-zinc-600 px-2 py-0.5 rounded-full">
+                              LOAD STEP #{index + 1}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs font-semibold text-zinc-500">
+                          {schoolName}
+                        </p>
+                      </div>
+                      
+                      {/* Step Indicator Badge */}
+                      <div className="sm:text-right shrink-0">
+                        <span className="text-[9px] font-mono font-semibold text-zinc-400 block uppercase tracking-wider">
+                          Delivery Sequence
+                        </span>
+                        <span className="text-xs font-mono font-black text-zinc-900 block mt-0.5">
+                          Stop #{deliveryStopNumber} of {arr.length}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Invoice Products */}
+                    <div className="space-y-3">
+                      {lineItems.map((lineItem: InvoiceLineItem, idx: number) => {
+                        const stockCode = lineItem.stockCode || lineItem.stock_code || 'N/A';
+                        const description = lineItem.description || '';
+                        const qty = Number(lineItem.qty || lineItem.quantity || 0);
+
+                        const matchingKnockdown = knockdownItems?.find(k => 
+                          k.parts?.some(p => p.partCode.toLowerCase().trim() === stockCode.toLowerCase().trim())
+                        );
+                        const isPart = !!matchingKnockdown;
+                        const parentItem = matchingKnockdown ? matchingKnockdown.stockCode : null;
+
+                        const keyUnified = `${inv.id}_${stockCode || 'NO_STOCK'}_${description}`;
+                        const keyLegacy = `${inv.id}_${stockCode}-${idx}`;
+                        const isChecked = !!(checkedState[keyUnified] || checkedState[keyLegacy]);
+                        const isUpdating = updatingId === keyUnified || updatingId === keyLegacy;
+                        const canCheck = isWritable;
+
+                        return (
+                          <div
+                            key={`${inv.id}-${stockCode}-${idx}`}
+                            onClick={() => {
+                              if (!canCheck || isUpdating) return;
+                              setActiveItemToCount({ 
+                                stockCode, 
+                                description, 
+                                qty, 
+                                keyUnified, 
+                                keyLegacy,
+                                isPart,
+                                parentItem
+                              });
+                              setAssemblerEnteredQty('');
+                            }}
+                            className={cn(
+                              "bg-white rounded-2xl p-4 border transition-all flex flex-col gap-3 select-none",
+                              canCheck ? "cursor-pointer active:scale-[0.995]" : "cursor-default opacity-75",
+                              isChecked 
+                                ? "border-emerald-250 bg-emerald-50/10" 
+                                : "border-zinc-200 hover:border-zinc-300 bg-white"
+                            )}
+                          >
+                            <div className="flex items-start gap-4 w-full">
+                              {/* Visual Check Indicator */}
+                              <div className="mt-0.5 shrink-0">
+                                {isUpdating ? (
+                                  <Loader2 className="w-5 h-5 text-zinc-400 animate-spin" />
+                                ) : isChecked ? (
+                                  <div className="w-5 h-5 bg-emerald-500 rounded-lg flex items-center justify-center text-white border border-emerald-600 shadow-sm animate-scale-up">
+                                    <svg className="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor">
+                                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                    </svg>
+                                  </div>
+                                ) : (
+                                  <div className={cn(
+                                    "w-5 h-5 border-2 rounded-lg bg-zinc-50 transition-all",
+                                    canCheck ? "border-zinc-300 hover:border-zinc-400" : "border-zinc-200"
+                                  )}></div>
+                                )}
+                              </div>
+
+                              {/* Item Details */}
+                              <div className="flex-grow space-y-1 text-left min-w-0">
+                                <div className="flex justify-between items-start gap-2">
+                                  <span className="text-[10px] font-mono font-bold bg-zinc-100 text-zinc-500 border border-zinc-150 px-2 py-0.5 rounded truncate flex items-center gap-1.5 leading-none">
+                                    <span>{stockCode}</span>
+                                    {isPart && (
+                                      <span className="text-[8px] font-sans font-black uppercase bg-purple-50 text-purple-700 border border-purple-200 px-1 py-0.2 rounded shrink-0">
+                                        Part of {parentItem}
+                                      </span>
+                                    )}
+                                  </span>
+                                  <span className="text-xs font-black text-zinc-950 font-mono shrink-0">
+                                    Qty: {qty}
+                                  </span>
+                                </div>
+                                
+                                <h4 className={cn(
+                                  "text-xs font-bold leading-relaxed transition-all truncate",
+                                  isChecked ? "text-zinc-400 line-through" : "text-zinc-800"
+                                )}>
+                                  {description}
+                                </h4>
+                              </div>
+                            </div>
+
+                            {/* Rendering dynamic partially complete flags */}
+                            {(() => {
+                              const partialInfo = trip?.partialItems?.[keyUnified] || trip?.partialItems?.[keyLegacy];
+                              return (
+                                <div className="w-full mt-1" onClick={(e) => e.stopPropagation()}>
+                                  {partialInfo?.isPartial && (
+                                    <div className="p-3 bg-amber-50/70 border border-amber-200 rounded-xl space-y-2 mb-2">
+                                      <div className="flex items-center justify-between text-[11px] font-mono text-amber-850">
+                                        <span className="flex items-center gap-1 font-bold">
+                                          <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                                          PARTIALLY LOADED
+                                        </span>
+                                        <span className="bg-amber-100 text-amber-800 font-extrabold px-2 py-0.5 rounded-full text-[9px]">
+                                          {partialInfo.actualQty} / {partialInfo.expectedQty} units
+                                        </span>
+                                      </div>
+                                      
+                                      {/* Comparative Visual Bar */}
+                                      <div className="w-full bg-zinc-200/60 h-2 rounded-full overflow-hidden flex">
+                                        <div 
+                                          className="bg-emerald-500 h-full" 
+                                          style={{ width: `${(partialInfo.actualQty / partialInfo.expectedQty) * 100}%` }}
+                                        ></div>
+                                        <div className="bg-amber-500 h-full flex-1"></div>
+                                      </div>
+                                      <div className="flex justify-between text-[9px] font-mono font-bold text-amber-700">
+                                        <span>Loaded: {partialInfo.actualQty} units</span>
+                                        <span>Missing: {partialInfo.expectedQty - partialInfo.actualQty} units</span>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })()}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           ) : (
             <div className="space-y-6">
@@ -462,7 +1009,19 @@ export function TeamTripDetail() {
                       return (
                         <div
                           key={`${item.stockCode}-${item.legacyIndex}`}
-                          onClick={() => canCheck && !isUpdating && handleToggle(keyUnified, isChecked)}
+                          onClick={() => {
+                            if (!canCheck || isUpdating) return;
+                            if (activeRole === 'Assembler' || activeRole === 'Loader') {
+                              const partialInfo = trip?.partialItems?.[keyUnified] || trip?.partialItems?.[keyLegacy];
+                              const currentCount = partialInfo?.isPartial 
+                                ? partialInfo.actualQty 
+                                : (isChecked ? item.qty : item.qty);
+                              setActiveItemToCount({ ...item, keyUnified, keyLegacy });
+                              setAssemblerEnteredQty(activeRole === 'Loader' ? '' : currentCount.toString());
+                            } else {
+                              handleToggle(keyUnified, isChecked);
+                            }
+                          }}
                           className={cn(
                             "bg-white rounded-2xl p-4 border transition-all flex flex-col gap-3 select-none",
                             canCheck ? "cursor-pointer active:scale-[0.995]" : "cursor-default opacity-75",
@@ -531,9 +1090,11 @@ export function TeamTripDetail() {
                                         {partialInfo.actualQty} / {partialInfo.expectedQty} units
                                       </span>
                                     </div>
-                                    <p className="text-[10px] text-amber-800 font-medium">
-                                      <strong>Reason:</strong> {partialInfo.reason}
-                                    </p>
+                                    {partialInfo.reason && (
+                                      <p className="text-[10px] text-amber-800 font-medium font-sans">
+                                        <strong>Reason:</strong> {partialInfo.reason}
+                                      </p>
+                                    )}
                                     {/* Comparative Visual Bar */}
                                     <div className="w-full bg-zinc-200/60 h-2 rounded-full overflow-hidden flex">
                                       <div 
@@ -546,7 +1107,7 @@ export function TeamTripDetail() {
                                       <span>Present: {partialInfo.actualQty} units</span>
                                       <span>Missing: {partialInfo.expectedQty - partialInfo.actualQty} units</span>
                                     </div>
-                                    {isWritable && (
+                                    {isWritable && activeRole !== 'Assembler' && activeRole !== 'Loader' && (
                                       <div className="flex gap-2 justify-end pt-1">
                                         <button
                                           onClick={() => {
@@ -569,20 +1130,6 @@ export function TeamTripDetail() {
                                       </div>
                                     )}
                                   </div>
-                                )}
-
-                                {isWritable && (activeRole === 'Assembler' || activeRole === 'Loader') && editingPartialKey !== keyUnified && !partialInfo?.isPartial && (
-                                  <button
-                                    onClick={() => {
-                                      setEditingPartialKey(keyUnified);
-                                      setLocalActualQty(Math.max(0, item.qty - 1));
-                                      setLocalReason('');
-                                    }}
-                                    className="text-[10px] font-mono font-bold uppercase text-amber-700 hover:text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200/60 rounded-xl px-3 py-1.5 inline-flex items-center gap-1 transition-all"
-                                  >
-                                    <AlertTriangle className="w-3.5 h-3.5 text-amber-600 animate-pulse" />
-                                    Flag Partially Complete
-                                  </button>
                                 )}
 
                                 {isWritable && editingPartialKey === keyUnified && (
@@ -661,15 +1208,239 @@ export function TeamTripDetail() {
           )}
         </div>
 
-        {/* Offline Sync Informative block */}
-        <div className="bg-zinc-100 border border-zinc-200 rounded-2xl p-4 flex items-start gap-3">
-          <Info className="w-4 h-4 text-zinc-400 shrink-0 mt-0.5" />
-          <p className="text-[11px] text-zinc-500 leading-relaxed font-mono text-left">
-            <strong>OFFLINE RESILIENCY NOTICE:</strong> This screen automatically buffers count states. In case of localized network interruptions, items remain editable; changes synchronize instantly once connection lines stabilize.
-          </p>
-        </div>
+
 
       </main>
+
+      {/* Assembler counting Modal dialog */}
+      {activeItemToCount && (
+        <div className="fixed inset-0 bg-zinc-950/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in text-left" onClick={() => setActiveItemToCount(null)}>
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-4 border border-zinc-200 shadow-2xl animate-scale-up" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-start justify-between">
+              <div>
+                <span className="font-mono text-[9px] font-black uppercase tracking-wider bg-zinc-100 text-zinc-700 px-2 py-0.5 rounded border border-zinc-200 select-all">
+                  {activeItemToCount.stockCode || 'N/A'}
+                </span>
+                <h3 className="font-sans font-black text-sm text-zinc-900 mt-1 uppercase leading-tight">
+                  {activeRole === 'Assembler' ? 'Define Assembled Count' : activeRole === 'Loader' ? 'Define Loaded Count' : 'Define Physical Count'}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveItemToCount(null)}
+                className="p-1 hover:bg-zinc-100 text-zinc-400 rounded-xl transition-all cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-[11px] font-medium text-zinc-500 leading-normal">
+              Enter the exact physical quantity {activeRole === 'Assembler' ? 'assembled' : activeRole === 'Loader' ? 'loaded' : 'counted'} for <strong className="text-zinc-850">{activeItemToCount.description}</strong>:
+            </p>
+
+            <div className="space-y-1">
+              <div className="flex justify-between items-center">
+                <label className="text-[10px] font-mono font-bold text-zinc-400 uppercase tracking-wider">
+                  {activeRole === 'Assembler' ? 'Assembled Quantity' : activeRole === 'Loader' ? 'Loaded Quantity' : 'Physical Quantity'}
+                </label>
+                <span className="text-[10px] font-mono text-zinc-400">Expected: {activeItemToCount.qty}</span>
+              </div>
+              <input
+                type="number"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                autoFocus
+                placeholder={`e.g. ${activeItemToCount.qty}`}
+                value={assemblerEnteredQty}
+                onChange={(e) => setAssemblerEnteredQty(e.target.value)}
+                className="w-full px-4 py-3 bg-zinc-50 border border-zinc-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 font-sans text-sm font-black text-zinc-800"
+              />
+            </div>
+
+            <div className="flex items-center gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => handleSaveAssemblerCount(activeItemToCount, assemblerEnteredQty)}
+                className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-sans font-black text-xs uppercase tracking-wider rounded-xl transition-colors cursor-pointer shadow-xs"
+              >
+                Set Count
+              </button>
+              <button
+                type="button"
+                onClick={() => handleClearAssemblerCount(activeItemToCount)}
+                className="px-3 py-3 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-sans font-black text-xs uppercase tracking-wider rounded-xl transition-colors cursor-pointer"
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Loader Pre-Checklist Modal */}
+      {showPreChecklist && trip && (
+        <div 
+          className="fixed inset-0 bg-zinc-950/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in text-left"
+          onClick={() => setShowPreChecklist(false)}
+        >
+          <div 
+            className="bg-white rounded-3xl max-w-lg w-full p-6 space-y-4 border border-zinc-200 shadow-2xl animate-scale-up flex flex-col max-h-[90vh]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="flex items-start justify-between shrink-0 font-sans">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 bg-amber-100 rounded-xl flex items-center justify-center text-amber-700 border border-amber-200">
+                  <ClipboardList className="w-5 h-5 stroke-[2] animate-pulse" />
+                </div>
+                <div>
+                  <h3 className="font-sans font-black text-sm text-zinc-900 uppercase tracking-tight">
+                    Staging Pre-Checklist
+                  </h3>
+                  <span className="text-[10px] font-mono text-zinc-400 block mt-0.5 uppercase tracking-wide">
+                    Trip: {trip.name}
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowPreChecklist(false)}
+                className="p-1.5 hover:bg-zinc-100 text-zinc-400 hover:text-zinc-700 rounded-xl transition-all cursor-pointer border border-transparent hover:border-zinc-200"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+
+
+            {/* List Group Host Area */}
+            <div className="flex-1 overflow-y-auto pr-1 space-y-2">
+              {uniquePreChecklistItems.length === 0 ? (
+                <div className="text-center py-10 text-zinc-400 text-xs font-mono">
+                  No items available for this dispatch.
+                </div>
+              ) : (
+                uniquePreChecklistItems.map((item, idx) => {
+                  const key = `${item.stockCode.trim().toUpperCase()}_${item.description.trim().toUpperCase()}`;
+                  const isChecked = !!preCheckedState[key];
+
+                  return (
+                    <div
+                      key={`pre-item-${item.stockCode}-${idx}`}
+                      onClick={() => togglePreCheck(key)}
+                      className={cn(
+                        "p-3.5 rounded-2xl border transition-all flex items-start gap-3.5 select-none cursor-pointer active:scale-[0.99]",
+                        isChecked
+                          ? "border-amber-200 bg-amber-50"
+                          : "border-zinc-200 bg-white hover:border-zinc-300"
+                      )}
+                    >
+                      {/* Custom Checked box design */}
+                      <div className="mt-0.5 shrink-0">
+                        {isChecked ? (
+                          <div className="w-4 h-4 bg-amber-600 rounded flex items-center justify-center text-white border border-amber-700 shadow-sm">
+                            <svg className="w-3 h-3 stroke-[3]" viewBox="0 0 20 20" fill="currentColor">
+                              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                            </svg>
+                          </div>
+                        ) : (
+                          <div className="w-4 h-4 border border-zinc-300 rounded bg-zinc-50/50 hover:border-zinc-400"></div>
+                        )}
+                      </div>
+
+                      <div className="flex-grow min-w-0 text-left">
+                        <div className="flex justify-between items-baseline gap-2">
+                          <span className="text-[10px] font-mono font-black text-amber-800 bg-amber-100 border border-amber-200 px-2 py-0.5 rounded truncate">
+                            {item.stockCode}
+                          </span>
+                          <span className="text-xs font-mono font-black text-zinc-900 shrink-0 bg-zinc-100/80 px-2 py-0.5 rounded-full border border-zinc-200">
+                            Qty: {item.qty}
+                          </span>
+                        </div>
+                        <p className={cn(
+                          "text-[11px] font-semibold text-zinc-700 leading-snug mt-1.5",
+                          isChecked && "text-zinc-400 line-through"
+                        )}>
+                          {item.description}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Modal Footer Progress bar */}
+            {uniquePreChecklistItems.length > 0 && (
+              <div className="border-t border-zinc-150 pt-4 space-y-3 bg-white shrink-0">
+                {/* Stats row & percentage */}
+                <div className="flex items-center justify-between text-xs font-sans">
+                  <span className="font-black text-zinc-500 uppercase text-[9px] tracking-wide">Staging Progress</span>
+                  <span className="font-bold text-amber-800 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-full text-[10px]">
+                    {(() => {
+                      let checkedCount = 0;
+                      uniquePreChecklistItems.forEach(item => {
+                        const key = `${item.stockCode.trim().toUpperCase()}_${item.description.trim().toUpperCase()}`;
+                        if (preCheckedState[key]) {
+                          checkedCount++;
+                        }
+                      });
+                      const totalCount = uniquePreChecklistItems.length;
+                      const pct = totalCount === 0 ? 0 : Math.round((checkedCount / totalCount) * 100);
+                      return `${checkedCount} / ${totalCount} items (${pct}%)`;
+                    })()}
+                  </span>
+                </div>
+
+                {/* Progress bar line */}
+                <div className="w-full bg-zinc-100 h-2 rounded-full overflow-hidden">
+                  <div 
+                    className="bg-amber-500 h-full transition-all duration-300"
+                    style={{
+                      width: `${(() => {
+                        let checkedCount = 0;
+                        uniquePreChecklistItems.forEach(item => {
+                          const key = `${item.stockCode.trim().toUpperCase()}_${item.description.trim().toUpperCase()}`;
+                          if (preCheckedState[key]) {
+                            checkedCount++;
+                          }
+                        });
+                        const totalCount = uniquePreChecklistItems.length;
+                        return totalCount === 0 ? 0 : (checkedCount / totalCount) * 100;
+                      })()}%`
+                    }}
+                  ></div>
+                </div>
+
+                {/* Actions Row */}
+                <div className="flex gap-2.5 pt-2 flex-wrap items-center">
+                  <button
+                    type="button"
+                    onClick={handleClearPreChecklist}
+                    className="px-3.5 py-2 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 text-[10px] font-black uppercase tracking-wider rounded-xl transition-colors cursor-pointer"
+                  >
+                    Reset List
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleMarkAllPreChecked}
+                    className="px-3.5 py-2 bg-amber-100 hover:bg-amber-205 text-amber-800 border border-amber-250 text-[10px] font-black uppercase tracking-wider rounded-xl transition-colors cursor-pointer"
+                  >
+                    Check All
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowPreChecklist(false)}
+                    className="flex-1 py-2 bg-zinc-900 hover:bg-zinc-805 text-white text-[10px] font-black uppercase tracking-wider rounded-xl transition-colors cursor-pointer text-center"
+                  >
+                    Done & Staged
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

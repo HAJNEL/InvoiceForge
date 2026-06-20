@@ -72,6 +72,7 @@ export enum TripStatus {
   ON_ROUTE = 'on-route',
   PARTIALLY_COMPLETED = 'partially-completed',
   COMPLETED = 'completed',
+  DELIVERED = 'delivered',
   INVOICED = 'invoiced'
 }
 
@@ -155,6 +156,7 @@ export interface TeamMember {
   inviteCode: string;
   status: 'pending' | 'active' | 'deleted';
   userId?: string | null;
+  pushoverUserKey?: string;
   createdAt: string;
   updatedAt: string;
   roles?: string[];

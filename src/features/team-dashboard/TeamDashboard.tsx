@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { 
   Search, Calendar, ChevronRight, LogOut, Loader2, Shield, Info, AlertTriangle, Truck, RefreshCw,
-  Package, ClipboardList, ChevronDown, X
+  Package, ClipboardList, ChevronDown, X, Menu
 } from 'lucide-react';
 import { useTeamDashboard } from './useTeamDashboard';
 import { auth, db } from '../../lib/firebase';
@@ -101,12 +101,27 @@ export function TeamDashboard() {
   // Search & Filter state
   const [searchQuery, setSearchQuery] = useState('');
   const [showLogoutMenu, setShowLogoutMenu] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   // Extract roles assigned to current team member with a safe fallback
   const rolesWithFallback = React.useMemo(() => {
-    return profile?.roles && profile.roles.length > 0
+    const rawRoles = profile?.roles && profile.roles.length > 0
       ? profile.roles
       : ['Stock Counter', 'Assembler', 'Loader', 'Delivered Checker'];
+
+    // Specific requested order: Assembler, Loader, Delivered checker, Stock counter
+    const orderMap: Record<string, number> = {
+      'Assembler': 1,
+      'Loader': 2,
+      'Delivered Checker': 3,
+      'Stock Counter': 4
+    };
+
+    return [...rawRoles].sort((a, b) => {
+      const orderA = orderMap[a] || 99;
+      const orderB = orderMap[b] || 99;
+      return orderA - orderB;
+    });
   }, [profile?.roles]);
 
   // Initialize selected tab from search query param, or fallback to first assigned role
@@ -389,9 +404,20 @@ export function TeamDashboard() {
       
       {/* Sticky Top Mobile Navigation Bar */}
       <header className="sticky top-0 z-40 bg-white border-b border-zinc-200 h-16 px-4 flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 animate-fade-in">
+          {/* Burger button to open roles sidebar */}
+          <button
+            type="button"
+            onClick={() => setIsSidebarOpen(true)}
+            className="p-2 -ml-2 rounded-xl text-zinc-700 hover:bg-zinc-100 transition-all cursor-pointer relative"
+            title="Open Workstation Roles"
+          >
+            <Menu className="w-5 h-5 stroke-[2.5]" />
+            <span className="absolute top-1 right-1 w-2 h-2 bg-brand-accent rounded-full animate-ping" />
+          </button>
+
           {/* Default responsive logo badge */}
-          <div className="w-8 h-8 rounded-lg bg-zinc-900 flex items-center justify-center p-0.5 select-none shrink-0">
+          <div className="w-8 h-8 rounded-lg bg-zinc-900 flex items-center justify-center p-0.5 select-none shrink-0 ml-1">
             <NRLogo className="w-6 h-6" variant="light" />
           </div>
           <span className="font-mono text-[10px] font-black tracking-widest text-zinc-400 leading-none">NR PORTAL</span>
@@ -432,58 +458,51 @@ export function TeamDashboard() {
       {/* Main viewport block scaled to thumb-centered width limit */}
       <main className="flex-grow w-full max-w-xl mx-auto px-4 py-6 space-y-6">
         
+        {/* Display the role selected at the top of the screen in a card professionally */}
+        <div className="bg-white rounded-3xl p-6 border border-zinc-200/80 shadow-sm relative overflow-hidden flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-left animate-fade-in">
+          <div className="space-y-1.5">
+            <span className="text-[10px] text-zinc-400 font-extrabold uppercase tracking-widest font-mono">ACTIVE WORKSERSTATION ROLE</span>
+            <div className="flex items-center gap-2.5">
+              <span className={`w-3 h-3 rounded-full animate-pulse shrink-0 ${
+                currentRole === 'Stock Counter' ? 'bg-emerald-500' :
+                currentRole === 'Assembler' ? 'bg-blue-500' :
+                currentRole === 'Loader' ? 'bg-orange-500' :
+                'bg-purple-500'
+              }`} />
+              <h2 className="text-base font-black text-zinc-950 uppercase tracking-tight font-sans">
+                {currentRole}
+              </h2>
+            </div>
+            <p className="text-xs text-zinc-500 leading-relaxed max-w-sm">
+              {currentRole === 'Stock Counter' ? 'Verify and submit physical shelter stock take counts back to central ledger pending owner sign off.' :
+               currentRole === 'Assembler' ? 'Assemble flat-pack items, components check sheets, and track modular KD parts breakdown.' :
+               currentRole === 'Loader' ? 'Monitor load priority, check vehicle staging schedules, and verify loaded cargo.' :
+               'Perform destination check-lists, drop logs, and complete physical deliveries on site.'}
+            </p>
+          </div>
+          
+          <button
+            type="button"
+            onClick={() => setIsSidebarOpen(true)}
+            className="sm:self-center shrink-0 inline-flex items-center gap-1.5 px-4.5 py-2.5 bg-zinc-900 hover:bg-zinc-800 text-white rounded-2xl text-xs font-black uppercase tracking-wider transition-all shadow-xs cursor-pointer"
+          >
+            <Shield className="w-4 h-4 text-white" />
+            Switch Role
+          </button>
+        </div>
+
         {loading ? (
           <div className="flex flex-col items-center justify-center py-20 text-center">
             <Loader2 className="w-10 h-10 text-brand-primary animate-spin mb-4" />
             <span className="text-xs font-semibold text-zinc-400 font-mono tracking-widest uppercase">Fetching Fleet Dispatches...</span>
           </div>
         ) : errorWord ? (
-          <div className="bg-red-50 text-red-600 rounded-3xl border border-red-150 p-6 flex flex-col items-center text-center space-y-3">
+          <div className="bg-red-50 text-red-650 rounded-3xl border border-red-150 p-6 flex flex-col items-center text-center space-y-3 animate-fade-in">
             <AlertTriangle className="w-10 h-10 text-red-500 stroke-[2]" />
             <p className="text-xs font-bold leading-relaxed">{errorWord}</p>
           </div>
         ) : invoicesCount === 0 ? (
           <div className="space-y-6 animate-in fade-in duration-500">
-            {/* Header / Hello card banner */}
-            <div className="bg-white rounded-3xl p-6 border border-zinc-200 shadow-sm relative overflow-hidden flex items-center justify-between">
-              <div className="space-y-1 text-left">
-                <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest font-mono">Welcome back</p>
-                <h2 className="text-xl font-black text-zinc-950 truncate capitalize leading-tight">
-                  Hello, {profile?.firstName}!
-                </h2>
-                <p className="text-[11px] text-zinc-500 leading-snug">Review your portal status.</p>
-              </div>
-
-              <div className="flex flex-wrap gap-1.5 items-center justify-end shrink-0 max-w-[50%]">
-                {profile?.roles && profile.roles.length > 0 ? (
-                  profile.roles.map(r => (
-                    <span 
-                      key={r} 
-                      className={`inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-wider px-2.5 py-1.5 rounded-full border shadow-xs whitespace-nowrap ${
-                        r === 'Stock Counter' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                        r === 'Assembler' ? 'bg-blue-50 text-blue-700 border-blue-200' :
-                        r === 'Loader' ? 'bg-orange-50 text-orange-700 border-orange-200' :
-                        r === 'Delivered Checker' ? 'bg-purple-50 text-purple-700 border-purple-200' :
-                        'bg-zinc-50 text-zinc-700 border-zinc-200'
-                      }`}
-                    >
-                      <Shield className="w-2.5 h-2.5 stroke-[2.5]" />
-                      {r}
-                    </span>
-                  ))
-                ) : (
-                  <span className={`inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider px-3 py-1.5 rounded-full border shrink-0 shadow-xs ${
-                    profile?.role === 'editor' 
-                      ? 'bg-amber-50 text-amber-700 border-amber-200' 
-                      : 'bg-blue-50 text-blue-700 border-blue-200'
-                  }`}>
-                    <Shield className="w-3 h-3 stroke-[2.5]" />
-                    {profile?.role}
-                  </span>
-                )}
-              </div>
-            </div>
-
             <div className="bg-white rounded-3xl p-8 border border-zinc-200 text-center space-y-4 shadow-sm text-left">
               <div className="w-12 h-12 bg-amber-50 rounded-full flex items-center justify-center text-amber-600 mx-auto">
                 <Info className="w-6 h-6" />
@@ -506,48 +525,8 @@ export function TeamDashboard() {
           </div>
         ) : (
           <>
-            {/* Header / Hello card banner */}
-            <div className="bg-white rounded-3xl p-6 border border-zinc-200 shadow-sm relative overflow-hidden flex items-center justify-between">
-              <div className="space-y-1 text-left">
-                <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest font-mono font-black">Welcome back</p>
-                <h2 className="text-xl font-black text-zinc-950 truncate capitalize leading-tight">
-                  Hello, {profile?.firstName}!
-                </h2>
-                <p className="text-[11px] text-zinc-500 leading-snug">You have active dispatches matching your fleet schedule.</p>
-              </div>
-
-              <div className="flex flex-wrap gap-1.5 items-center justify-end shrink-0 max-w-[50%]">
-                {profile?.roles && profile.roles.length > 0 ? (
-                  profile.roles.map(r => (
-                    <span 
-                      key={r} 
-                      className={`inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-wider px-2.5 py-1.5 rounded-full border shadow-xs whitespace-nowrap ${
-                        r === 'Stock Counter' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                        r === 'Assembler' ? 'bg-blue-50 text-blue-700 border-blue-200' :
-                        r === 'Loader' ? 'bg-orange-50 text-orange-700 border-orange-200' :
-                        r === 'Delivered Checker' ? 'bg-purple-50 text-purple-700 border-purple-200' :
-                        'bg-zinc-50 text-zinc-700 border-zinc-200'
-                      }`}
-                    >
-                      <Shield className="w-2.5 h-2.5 stroke-[2.5]" />
-                      {r}
-                    </span>
-                  ))
-                ) : (
-                  <span className={`inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider px-3 py-1.5 rounded-full border shrink-0 shadow-xs ${
-                    profile?.role === 'editor' 
-                      ? 'bg-amber-50 text-amber-700 border-amber-200' 
-                      : 'bg-blue-50 text-blue-700 border-blue-200'
-                  }`}>
-                    <Shield className="w-3 h-3 stroke-[2.5]" />
-                    {profile?.role}
-                  </span>
-                )}
-              </div>
-            </div>
-
             {/* Search Input Panels */}
-            <div className="relative">
+            <div className="relative animate-fade-in">
               <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
               <input
                 type="text"
@@ -556,30 +535,6 @@ export function TeamDashboard() {
                 placeholder="Search by Dispatch Name, Truck, or Stops..."
                 className="w-full pl-10 pr-4 py-3 border border-zinc-200 rounded-2xl text-xs bg-white focus:outline-none focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent transition-all placeholder:text-zinc-400 text-left"
               />
-            </div>
-
-            {/* Flat thumb-centered segmented filter tabs replaced with Roles */}
-            <div 
-              className="grid gap-1.5 p-1.5 bg-zinc-100 border border-zinc-200 rounded-2xl select-none"
-              style={{ gridTemplateColumns: `repeat(${rolesWithFallback.length}, minmax(0, 1fr))` }}
-            >
-              {rolesWithFallback.map((roleOpt) => {
-                const isActive = currentRole === roleOpt;
-                return (
-                  <button
-                    key={roleOpt}
-                    type="button"
-                    onClick={() => handleSelectRole(roleOpt)}
-                    className={`py-2 px-1 text-[10px] font-black uppercase tracking-wider transition-all rounded-xl border truncate cursor-pointer ${
-                      isActive
-                        ? 'bg-white text-zinc-950 shadow-xs border-zinc-200'
-                        : 'text-zinc-500 border-transparent hover:text-zinc-700 bg-transparent'
-                    }`}
-                  >
-                    {roleOpt}
-                  </button>
-                );
-              })}
             </div>
 
             {/* Loop Shared Trip list Cards */}
@@ -806,7 +761,7 @@ export function TeamDashboard() {
                           <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-full border shrink-0 ${
                             trip.status === TripStatus.ON_ROUTE 
                               ? 'bg-amber-50 text-amber-700 border-amber-200' 
-                              : trip.status === TripStatus.COMPLETED || trip.status === TripStatus.INVOICED
+                              : trip.status === TripStatus.DELIVERED || trip.status === TripStatus.COMPLETED || trip.status === TripStatus.INVOICED
                               ? 'bg-emerald-50 text-emerald-700 border-emerald-250'
                               : 'bg-zinc-50 text-zinc-500 border-zinc-200'
                           }`}>
@@ -991,6 +946,125 @@ export function TeamDashboard() {
               >
                 Clear
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Professional slide-drawer Sidebar for changing roles */}
+      {isSidebarOpen && (
+        <div className="fixed inset-0 z-50 overflow-hidden">
+          {/* Backdrop mask with fade/blur effect */}
+          <div 
+            className="absolute inset-0 bg-zinc-950/40 backdrop-blur-xs transition-opacity duration-300 animate-fade-in"
+            onClick={() => setIsSidebarOpen(false)}
+          />
+
+          {/* Side Drawer container */}
+          <div className="absolute inset-y-0 left-0 max-w-full flex pr-10">
+            <div className="w-80 max-w-[85vw] bg-white h-full shadow-2xl border-r border-zinc-200 flex flex-col justify-between animate-slide-in-left">
+              
+              {/* Header */}
+              <div className="p-5 border-b border-zinc-150 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-zinc-950 flex items-center justify-center p-0.5 select-none shrink-0">
+                    <NRLogo className="w-5 h-5" variant="light" />
+                  </div>
+                  <h3 className="text-[11px] font-black uppercase text-zinc-900 tracking-wider">
+                    Workstation Roles
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsSidebarOpen(false)}
+                  className="p-1.5 hover:bg-zinc-100 rounded-xl text-zinc-400 hover:text-zinc-600 transition-all cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* User Bio Details Banner */}
+              <div className="px-5 py-4 bg-zinc-50 border-b border-zinc-200/60 flex items-center gap-3">
+                <div className="w-9 h-9 rounded-full bg-zinc-900 text-white font-sans font-black flex items-center justify-center text-xs uppercase shadow-sm">
+                  {profile?.firstName?.charAt(0) || auth.currentUser?.email?.charAt(0).toUpperCase()}
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-black text-zinc-900 leading-snug truncate">
+                    {profile?.firstName} {profile?.lastName}
+                  </p>
+                  <p className="text-[9px] text-zinc-400 font-mono font-bold uppercase tracking-widest leading-none">
+                    Active Team Member
+                  </p>
+                </div>
+              </div>
+
+              {/* Role Selection List */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-2.5">
+                <p className="text-[9px] text-zinc-400 font-extrabold uppercase tracking-widest font-mono px-1.5 mb-2">
+                  Select Workstation Mission
+                </p>
+
+                {rolesWithFallback.map((roleOpt) => {
+                  const isActive = currentRole === roleOpt;
+                  return (
+                    <button
+                      key={roleOpt}
+                      type="button"
+                      onClick={() => {
+                        handleSelectRole(roleOpt);
+                        setIsSidebarOpen(false);
+                      }}
+                      className={`w-full p-4 rounded-2xl flex flex-col text-left transition-all border cursor-pointer select-none ${
+                        isActive
+                          ? 'bg-zinc-950 text-white border-zinc-950 shadow-md scale-[1.01]'
+                          : 'bg-white hover:bg-zinc-50/80 text-zinc-850 border-zinc-200/70 hover:border-zinc-350'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className={`w-20px w-2 h-2 rounded-full shrink-0 ${
+                          roleOpt === 'Stock Counter' ? 'bg-emerald-500' :
+                          roleOpt === 'Assembler' ? 'bg-blue-500' :
+                          roleOpt === 'Loader' ? 'bg-orange-500' :
+                          'bg-purple-500'
+                        }`} />
+                        <span className="text-xs font-black uppercase tracking-tight">
+                          {roleOpt}
+                        </span>
+                        {isActive && (
+                          <span className="ml-auto text-[8px] font-mono font-bold bg-white/20 text-white px-2 py-0.5 rounded-full uppercase leading-none">
+                            Active
+                          </span>
+                        )}
+                      </div>
+                      
+                      <p className={`text-[10px] mt-1.5 leading-relaxed ${
+                        isActive ? 'text-zinc-300' : 'text-zinc-500'
+                      }`}>
+                        {roleOpt === 'Stock Counter' ? 'Take shelf snapshots, key aggregated item metrics and approve pending stock takes.' :
+                         roleOpt === 'Assembler' ? 'Assess warehouse custom assemblies, components status checklist, and KD parts lists.' :
+                         roleOpt === 'Loader' ? 'Optimize vehicle weights, check staging dispatches, and verify trailer cargo loader priority.' :
+                         'Coordinate route sequences, log digital drop receipts status and capture client delivery signatures.'}
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Logout Exit */}
+              <div className="p-4 border-t border-zinc-150 bg-zinc-50/45">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsSidebarOpen(false);
+                    handleLogout();
+                  }}
+                  className="w-full py-3 bg-red-50 hover:bg-red-100 text-red-650 font-sans font-black text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer flex items-center justify-center gap-2"
+                >
+                  <LogOut className="w-4 h-4" />
+                  Sign Out / Exit
+                </button>
+              </div>
+
             </div>
           </div>
         </div>

@@ -26,3 +26,37 @@
 .saas-card {
   @apply bg-white rounded-xl border border-zinc-200/60 shadow-sm hover:shadow-md transition-shadow duration-200;
 }
+
+/* Prevent auto-zooming on focus of input elements on mobile browsers */
+@media (max-width: 767px) {
+  input, select, textarea, [contenteditable] {
+    font-size: 16px !important;
+  }
+}
+
+@keyframes slideInLeft {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes fadeInColors {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.animate-slide-in-left {
+  animation: slideInLeft 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-fade-in {
+  animation: fadeInColors 0.2s ease-out forwards;
+}
+
