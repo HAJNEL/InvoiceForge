@@ -6,14 +6,10 @@ export function StatusBadge({ status }: { status: string }) {
   const styles: Record<string, string> = {
     invoiced: "bg-emerald-50 text-emerald-600 border-emerald-100",
     delivered: "bg-indigo-50 text-indigo-600 border-indigo-100",
-    completed: "bg-indigo-50 text-indigo-600 border-indigo-100",
     complete: "bg-indigo-50 text-indigo-600 border-indigo-100",
-    loaded: "bg-amber-50 text-amber-600 border-amber-100",
     'partially_complete': "bg-amber-50 text-amber-600 border-amber-100",
-    'partially complete': "bg-amber-50 text-amber-600 border-amber-100",
-    assembly: "bg-blue-50 text-blue-600 border-blue-100",
+    assembled: "bg-blue-50 text-blue-600 border-blue-100",
     draft: "bg-zinc-100 text-zinc-600 border-zinc-200",
-    darft: "bg-zinc-100 text-zinc-600 border-zinc-200",
   };
 
   const label = STATUS_DISPLAY_MAP[norm] || status;

@@ -61,7 +61,7 @@
         "swift": { "type": "string" },
         "page": { "type": "string" },
         "userId": { "type": "string" },
-        "status": { "type": "string", "enum": ["draft", "darft", "proposed", "assembled", "assembly", "on-route", "on route", "on_route", "delivered", "completed", "complete", "partially_complete", "partially complete"] },
+        "status": { "type": "string", "enum": ["draft", "proposed", "assembled", "on-route", "on_route", "delivered", "complete", "invoiced", "partially_complete"] },
         "deliveredDate": { "type": "string" },
         "createdAt": { "type": "string", "format": "date-time" }
       },

@@ -28,19 +28,12 @@ import { motion, AnimatePresence } from 'motion/react';
 
 const STATUS_DISPLAY_MAP: Record<string, string> = {
   'partially_complete': 'Partially Complete',
-  'partially complete': 'Partially Complete',
-  'partiallycomplete': 'Partially Complete',
-  loaded: 'Partially Complete',
   draft: 'Draft',
-  darft: 'Draft',
   proposed: 'Proposed',
   assembled: 'Assembled',
-  assembly: 'Assembled',
   'on-route': 'On Route',
-  'on route': 'On Route',
   'on_route': 'On Route',
   delivered: 'Delivered',
-  completed: 'Complete',
   complete: 'Complete',
   invoiced: 'Complete'
 };
@@ -834,18 +827,12 @@ function StatusBadge({ status, deliveredDate }: { status: string; deliveredDate?
   const norm = status.toLowerCase();
   const styles: Record<string, string> = {
     'partially_complete': "bg-rose-50 text-rose-600 border-rose-100",
-    'partially complete': "bg-rose-50 text-rose-600 border-rose-100",
-    loaded: "bg-rose-50 text-rose-600 border-rose-100",
     draft: "bg-zinc-100 text-zinc-600 border-zinc-200",
-    darft: "bg-zinc-100 text-zinc-600 border-zinc-200",
     proposed: "bg-amber-50 text-amber-600 border-amber-100",
     assembled: "bg-blue-50 text-blue-600 border-blue-100",
-    assembly: "bg-blue-50 text-blue-600 border-blue-100",
     'on-route': "bg-sky-50 text-sky-600 border-sky-100",
-    'on route': "bg-sky-50 text-sky-600 border-sky-100",
     'on_route': "bg-sky-50 text-sky-600 border-sky-100",
     delivered: "bg-teal-50 text-teal-600 border-teal-100",
-    completed: "bg-emerald-50 text-emerald-600 border-emerald-100",
     complete: "bg-emerald-50 text-emerald-600 border-emerald-100",
     invoiced: "bg-emerald-50 text-emerald-600 border-emerald-100"
   };
