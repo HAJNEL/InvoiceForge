@@ -50,8 +50,9 @@ export function InvoiceForm() {
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <Link 
-            to="/invoices" 
+          <Link
+            to="/invoices"
+            aria-label="Back to invoices"
             className="p-2 hover:bg-white rounded-lg border border-transparent hover:border-zinc-200 transition-all text-zinc-500"
           >
             <ArrowLeft className="w-5 h-5" />
@@ -119,7 +120,7 @@ export function InvoiceForm() {
                 <div className="space-y-4">
                   <div className="relative">
                     <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
-                    <select className="w-full pl-10 pr-4 py-2.5 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent focus:outline-none transition-all appearance-none cursor-pointer">
+                    <select title='client' className="w-full pl-10 pr-4 py-2.5 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent focus:outline-none transition-all appearance-none cursor-pointer">
                       <option value="">Select a Client</option>
                       <option value="plus">+ Add New Client</option>
                     </select>
@@ -160,6 +161,7 @@ export function InvoiceForm() {
                          </td>
                          <td className="py-3">
                            <input 
+                           placeholder='qty'
                              type="number" 
                              value={item.quantity}
                              onChange={(e) => updateLineItem(item.id, 'quantity', parseFloat(e.target.value))}
@@ -168,6 +170,7 @@ export function InvoiceForm() {
                          </td>
                          <td className="py-3">
                            <input 
+                            placeholder='number'
                              type="number" 
                              value={item.unitPrice}
                              onChange={(e) => updateLineItem(item.id, 'unitPrice', parseFloat(e.target.value))}
@@ -179,6 +182,7 @@ export function InvoiceForm() {
                          </td>
                          <td className="py-3 text-right">
                            <button 
+                             title='item'
                              type="button"
                              onClick={() => removeLineItem(item.id)}
                              className="p-1.5 text-zinc-300 hover:text-red-500 hover:bg-red-50 rounded transition-all"

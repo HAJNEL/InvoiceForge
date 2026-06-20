@@ -319,6 +319,7 @@ export function TruckList() {
                             <Edit2 className="w-4 h-4" />
                           </button>
                           <button 
+                            title='Delete'
                             onClick={() => handleDelete(truck.id)}
                             className="p-2 hover:bg-red-50 border-transparent hover:border-red-100 border rounded-lg text-red-500 transition-all"
                           >
@@ -414,7 +415,7 @@ export function TruckList() {
                     <p className="text-xs font-bold text-zinc-500 uppercase tracking-widest mt-0.5">Comprehensive Fleet Management</p>
                   </div>
                 </div>
-                <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-zinc-100 rounded-xl text-zinc-400 transition-all">
+                <button title='Comprehensive Fleet Management' onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-zinc-100 rounded-xl text-zinc-400 transition-all">
                   <X className="w-5 h-5" />
                 </button>
               </div>
@@ -451,7 +452,7 @@ export function TruckList() {
                     </div>
                     <div className="space-y-1.5">
                       <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500 ml-1">Fleet Status</label>
-                      <select 
+                      <select aria-label="Fleet Status" 
                         value={formData.status}
                         onChange={(e) => setFormData({ ...formData, status: e.target.value })}
                         className="w-full px-4 py-3 bg-zinc-50 border border-zinc-200 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-brand-accent/20 transition-all shadow-sm appearance-none"
@@ -530,7 +531,7 @@ export function TruckList() {
                         <label className="text-[10px] font-black uppercase tracking-widest text-zinc-900">License Renewal</label>
                         <Calendar className="w-3.5 h-3.5 text-brand-primary" />
                       </div>
-                      <input 
+                      <input aria-label="License Renewal" 
                         type="date" 
                         value={formData.licenseRenewalDate} 
                         onChange={(e) => setFormData({ ...formData, licenseRenewalDate: e.target.value })} 
@@ -542,7 +543,7 @@ export function TruckList() {
                         <label className="text-[10px] font-black uppercase tracking-widest text-zinc-900">Insurance Expiry</label>
                         <Shield className="w-3.5 h-3.5 text-indigo-500" />
                       </div>
-                      <input 
+                      <input aria-label="Insurance Expiry" 
                         type="date" 
                         value={formData.insuranceExpiryDate} 
                         onChange={(e) => setFormData({ ...formData, insuranceExpiryDate: e.target.value })} 
@@ -761,7 +762,7 @@ function ServiceHistoryModal({ truck, isOpen, onClose }: { truck: Truck | null, 
                    <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Total Maintenance Cost</p>
                    <p className="text-lg font-black text-emerald-600">{formatCurrency(totalSpent)}</p>
                 </div>
-                <button onClick={onClose} className="p-3 hover:bg-zinc-100 rounded-2xl text-zinc-400 transition-all">
+                <button onClick={onClose} aria-label="Close" className="p-3 hover:bg-zinc-100 rounded-2xl text-zinc-400 transition-all">
                   <X className="w-6 h-6" />
                 </button>
               </div>
@@ -828,8 +829,8 @@ function ServiceHistoryModal({ truck, isOpen, onClose }: { truck: Truck | null, 
                           <div className="text-right">
                              <p className="text-sm font-black text-zinc-900 mb-2">{formatCurrency(record.cost)}</p>
                              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all justify-end">
-                                <button onClick={() => handleEdit(record)} className="p-2 hover:bg-zinc-100 rounded-lg text-zinc-500"><Edit2 className="w-3.5 h-3.5" /></button>
-                                <button onClick={() => handleDelete(record.id)} className="p-2 hover:bg-red-50 rounded-lg text-red-500"><Trash2 className="w-3.5 h-3.5" /></button>
+                                <button title='Edit' onClick={() => handleEdit(record)} className="p-2 hover:bg-zinc-100 rounded-lg text-zinc-500"><Edit2 className="w-3.5 h-3.5" /></button>
+                                <button title='Trash' onClick={() => handleDelete(record.id)} className="p-2 hover:bg-red-50 rounded-lg text-red-500"><Trash2 className="w-3.5 h-3.5" /></button>
                              </div>
                           </div>
                         </div>
@@ -859,14 +860,14 @@ function ServiceHistoryModal({ truck, isOpen, onClose }: { truck: Truck | null, 
                       <h3 className="text-xs font-black uppercase tracking-[0.2em] text-zinc-900">
                         {editingRecord ? 'Update Record' : 'New Service Log'}
                       </h3>
-                      <button onClick={resetForm} className="p-2 hover:bg-zinc-100 rounded-xl text-zinc-400"><X className="w-5 h-5" /></button>
+                      <button onClick={resetForm} aria-label="Close" className="p-2 hover:bg-zinc-100 rounded-xl text-zinc-400"><X className="w-5 h-5" /></button>
                     </div>
 
                     <form onSubmit={handleSubmit} className="p-8 space-y-6 overflow-y-auto flex-1 scroller-hide">
                       <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-1.5">
                           <label className="text-[10px] font-black uppercase tracking-widest text-zinc-400 ml-1">Service Date</label>
-                          <input type="date" required value={formData.date} onChange={(e) => setFormData({...formData, date: e.target.value})} className="modal-input" />
+                          <input aria-label="Service date" type="date" required value={formData.date} onChange={(e) => setFormData({...formData, date: e.target.value})} className="modal-input" />
                         </div>
                         <div className="space-y-1.5">
                           <label className="text-[10px] font-black uppercase tracking-widest text-zinc-400 ml-1">Current KM</label>
@@ -876,7 +877,7 @@ function ServiceHistoryModal({ truck, isOpen, onClose }: { truck: Truck | null, 
 
                       <div className="space-y-1.5">
                         <label className="text-[10px] font-black uppercase tracking-widest text-zinc-400 ml-1">Service Category</label>
-                        <select value={formData.type} onChange={(e) => setFormData({...formData, type: e.target.value})} className="modal-input appearance-none">
+                        <select aria-label="Service category" value={formData.type} onChange={(e) => setFormData({...formData, type: e.target.value})} className="modal-input appearance-none">
                           <option>Scheduled Maintenance</option>
                           <option>Engine Repair</option>
                           <option>Tire Service</option>
@@ -926,7 +927,7 @@ function ServiceHistoryModal({ truck, isOpen, onClose }: { truck: Truck | null, 
                         </div>
                         <div className="space-y-1.5">
                           <label className="text-[10px] font-black uppercase tracking-widest text-zinc-400 ml-1">Expected Date</label>
-                          <input type="date" value={formData.nextServiceDate} onChange={(e) => setFormData({...formData, nextServiceDate: e.target.value})} className="modal-input" />
+                          <input placeholder='next Service Date' type="date" value={formData.nextServiceDate} onChange={(e) => setFormData({...formData, nextServiceDate: e.target.value})} className="modal-input" />
                         </div>
                       </div>
 

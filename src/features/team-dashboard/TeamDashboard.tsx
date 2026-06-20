@@ -556,7 +556,7 @@ export function TeamDashboard() {
                   <div className="relative shrink-0 flex items-center gap-1.5 self-start sm:self-center">
                     <span className="text-[10px] uppercase font-bold tracking-wider text-zinc-400 font-mono">Status:</span>
                     <div className="relative">
-                      <select
+                      <select aria-label="Stock status"
                         value={selectedStockStatus}
                         onChange={(e) => setSelectedStockStatus(e.target.value)}
                         className="appearance-none bg-zinc-50 hover:bg-zinc-100 border border-zinc-200 text-zinc-800 text-[11px] font-black uppercase tracking-wider py-1.5 pl-3 pr-8 rounded-xl cursor-pointer focus:outline-none focus:ring-1 focus:ring-brand-accent focus:border-brand-accent transition-all"

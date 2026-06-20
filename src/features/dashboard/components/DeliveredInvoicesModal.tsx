@@ -40,7 +40,7 @@ export function DeliveredInvoicesModal({ invoices, onClose, onUpdateStatus }: {
               <h2 className="text-lg font-bold">Delivered Invoices</h2>
               <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest mt-0.5">In Completed Status ({invoices.length})</p>
             </div>
-            <button onClick={onClose} className="p-2 hover:bg-zinc-100 rounded-lg text-zinc-400">
+            <button onClick={onClose} aria-label="Close" className="p-2 hover:bg-zinc-100 rounded-lg text-zinc-400">
               <X className="w-4 h-4" />
             </button>
           </div>
@@ -119,6 +119,7 @@ export function DeliveredInvoicesModal({ invoices, onClose, onUpdateStatus }: {
                 <p className="text-[10px] text-zinc-400 mt-0.5 font-mono">{selectedInvoice.number}</p>
               </div>
               <button
+              title='Selected Invoice'
                 onClick={() => setSelectedInvoice(null)}
                 className="p-1 hover:bg-zinc-250 rounded text-zinc-400"
               >

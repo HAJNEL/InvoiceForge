@@ -323,7 +323,7 @@ function SidebarLogoCustomizer({
               : 'border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50/50 bg-zinc-50/20'
           }`}
         >
-          <input
+          <input aria-label="Upload logo"
             ref={fileInputRef}
             type="file"
             accept="image/*"

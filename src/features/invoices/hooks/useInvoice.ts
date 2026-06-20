@@ -13,6 +13,10 @@ export interface FirestoreInvoice extends DetailedInvoice {
   clientName?: string;
   clientAddress?: string;
   totalAmount?: number;
+  deliveredDate?: string;
+  vatPercentage?: number;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export function useInvoice(id: string | undefined) {

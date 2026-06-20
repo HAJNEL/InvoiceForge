@@ -62,7 +62,7 @@ export function RecurringList() {
                 <td className="px-6 py-4 text-sm font-bold text-right tabular-nums">R {item.amount.toFixed(2)}</td>
                 <td className="px-6 py-4 text-xs font-mono italic text-zinc-500">{item.nextDate}</td>
                 <td className="px-6 py-4 text-right">
-                  <button className="p-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button aria-label="More options" className="p-2 opacity-0 group-hover:opacity-100 transition-opacity">
                     <MoreVertical className="w-4 h-4 text-zinc-400" />
                   </button>
                 </td>

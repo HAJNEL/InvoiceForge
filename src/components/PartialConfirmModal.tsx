@@ -211,8 +211,9 @@ export function PartialConfirmModal({ isOpen, onClose, invoice, trip, itemKeys, 
             <AlertTriangle className="w-5 h-5 stroke-[2.5]" />
             <h3 className="font-sans font-black text-sm uppercase tracking-wider">Confirm Invoice Partial Completion</h3>
           </div>
-          <button 
+          <button
             onClick={onClose}
+            aria-label="Close"
             className="p-1 px-1.5 bg-zinc-100 hover:bg-zinc-200 rounded-xl transition-all"
             disabled={isProcessing}
           >
@@ -267,7 +268,7 @@ export function PartialConfirmModal({ isOpen, onClose, invoice, trip, itemKeys, 
                   <div className="space-y-1.5 pt-2 border-t border-amber-200/50">
                     <label className="text-[10px] font-black uppercase text-zinc-500 block">Confirm actual amount there:</label>
                     <div className="flex items-center gap-3">
-                      <input
+                      <input aria-label="Confirm actual amount there"
                         type="number"
                         min={0}
                         max={pItem.expectedQty}

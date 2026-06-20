@@ -248,7 +248,7 @@ export function InvoicesList() {
                         Sort Order
                       </p>
                       <div className="grid grid-cols-2 gap-2">
-                        <select 
+                        <select aria-label="Sort by" 
                           value={sortBy}
                           onChange={(e) => setSortBy(e.target.value as 'number' | 'date' | 'amount' | 'district')}
                           className="text-xs font-bold p-2.5 border border-zinc-200 rounded-xl bg-zinc-50 w-full focus:outline-none focus:ring-2 focus:ring-brand-accent/20"
@@ -258,7 +258,7 @@ export function InvoicesList() {
                           <option value="amount">Subtotal</option>
                           <option value="district">District</option>
                         </select>
-                        <select 
+                        <select aria-label="Sort order" 
                           value={sortOrder}
                           onChange={(e) => setSortOrder(e.target.value as 'asc' | 'desc')}
                           className="text-xs font-bold p-2.5 border border-zinc-200 rounded-xl bg-zinc-50 w-full focus:outline-none focus:ring-2 focus:ring-brand-accent/20"
@@ -719,7 +719,7 @@ export function InvoicesList() {
                       <Calendar className="w-3.5 h-3.5 text-zinc-400" />
                       Delivered Date
                     </label>
-                    <input 
+                    <input aria-label="Delivered date" 
                       type="date" 
                       value={deliveredDateInput}
                       onChange={(e) => setDeliveredDateInput(e.target.value)}

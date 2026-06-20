@@ -147,8 +147,9 @@ export function InvoiceDetail() {
     <div className="space-y-8 animate-in fade-in duration-500 pb-20">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <Link 
-            to="/invoices" 
+          <Link
+            to="/invoices"
+            aria-label="Back to invoices"
             className="p-2 hover:bg-white rounded-lg border border-transparent hover:border-zinc-200 transition-all text-zinc-500"
           >
             <ArrowLeft className="w-5 h-5" />
@@ -329,8 +330,9 @@ export function InvoiceDetail() {
             {showDeliveredPrompt && (
               <div className="mt-4 p-4 bg-zinc-50 rounded-xl border border-zinc-200 space-y-3">
                 <p className="text-xs font-bold text-zinc-700">Specify Delivered Date:</p>
-                <input 
+                <input
                   type="date"
+                  aria-label="Delivered date"
                   value={deliveredDateInput}
                   onChange={(e) => setDeliveredDateInput(e.target.value)}
                   className="w-full text-xs font-mono font-bold p-2 bg-white border border-zinc-200 rounded-lg focus:outline-none"

@@ -285,7 +285,7 @@ export function ExtractionReview() {
 
             const geocodedItem = {
               id: id,
-              number: invoice.taxInvoice || invoice.invoice_number || `TEMP-${Date.now()}`,
+              number: invoice.taxInvoice || `TEMP-${Date.now()}`,
               client: invoice.schoolName || invoice.deliveryCustomerName || invoice.customerName || 'Unknown Client',
               status: isEditing ? currentStatus || status : status,
               address: geocodeResult.formatted_address || targetAddress,
@@ -723,7 +723,7 @@ function ReviewField({ label, value, onChange }: { label: string; value: string;
   return (
     <div className="space-y-1.5 group">
       <label className="block text-[9px] font-bold uppercase tracking-widest text-zinc-400 group-hover:text-brand-accent transition-colors">{label}</label>
-      <input 
+      <input aria-label={label} 
         type="text" 
         value={value || ''}
         onChange={(e) => onChange(e.target.value)}

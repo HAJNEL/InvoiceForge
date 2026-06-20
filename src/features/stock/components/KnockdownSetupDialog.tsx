@@ -185,9 +185,10 @@ export function KnockdownSetupDialog({ isOpen, onClose, onSaveSuccess, defaultTy
               <p className="text-[11px] text-zinc-500 font-medium font-mono uppercase">Setup a knockdown stock item & define its linked parts</p>
             </div>
           </div>
-          <button 
-            type="button" 
-            onClick={onClose} 
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
             className="p-1.5 hover:bg-zinc-150 border border-zinc-200 text-zinc-500 rounded-xl cursor-pointer transition-all"
           >
             <X className="w-4 h-4" />
@@ -252,9 +253,10 @@ export function KnockdownSetupDialog({ isOpen, onClose, onSaveSuccess, defaultTy
                 />
                 
                 {searchQuery && (
-                  <button 
-                    type="button" 
-                    onClick={() => { setSearchQuery(''); setShowSearchResults(false); }} 
+                  <button
+                    type="button"
+                    onClick={() => { setSearchQuery(''); setShowSearchResults(false); }}
+                    aria-label="Clear search"
                     className="absolute right-3.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-650"
                   >
                     <X className="w-3.5 h-3.5" />

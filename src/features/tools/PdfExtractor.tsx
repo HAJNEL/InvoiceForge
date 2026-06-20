@@ -62,7 +62,6 @@ export function PdfExtractorTool() {
     }
   }, []);
 
-  // @ts-expect-error - Dropzone typing mismatch in this environment
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     accept: { 'application/pdf': ['.pdf'] },
@@ -124,7 +123,7 @@ export function PdfExtractorTool() {
             isDragActive ? "border-brand-accent bg-brand-accent/5 ring-8 ring-brand-accent/5" : "border-zinc-200 hover:border-brand-accent hover:bg-zinc-50/50"
           )}
         >
-          <input {...getInputProps()} />
+          <input {...getInputProps()} aria-label="Upload PDF" />
           <div className="w-20 h-20 rounded-full bg-zinc-100 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
             <Upload className="w-10 h-10 text-zinc-400 group-hover:text-brand-accent transition-colors" />
           </div>
@@ -184,8 +183,9 @@ export function PdfExtractorTool() {
                 {copied ? <CheckCircle2 className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
                 {copied ? 'Copied' : 'Copy Text'}
               </button>
-              <button 
+              <button
                 onClick={reset}
+                aria-label="Clear"
                 className="p-2 hover:bg-red-50 hover:text-red-500 rounded-lg text-zinc-400 transition-colors"
               >
                 <X className="w-4 h-4" />
@@ -199,7 +199,8 @@ export function PdfExtractorTool() {
                <div className="flex-1"></div>
                <div className="px-3 py-1.5 text-[10px] font-medium italic text-zinc-400">Total Length: {extractedText.length} characters</div>
             </div>
-            <textarea 
+            <textarea
+            placeholder='extracted text' 
               readOnly
               value={extractedText}
               className="w-full h-[500px] p-8 text-sm font-mono text-zinc-700 bg-transparent focus:outline-none resize-none leading-relaxed"

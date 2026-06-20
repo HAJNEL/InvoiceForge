@@ -207,8 +207,9 @@ export function EditInvoiceModal({ isOpen, onClose, invoice, trips = [], onSucce
             <h3 className="font-sans font-black text-sm uppercase tracking-wider text-brand-primary">Edit Invoice Information</h3>
             <p className="text-[10px] text-zinc-400 font-mono mt-0.5 uppercase">ID: {invoice.id}</p>
           </div>
-          <button 
+          <button
             onClick={onClose}
+            aria-label="Close"
             className="p-1 px-1.5 bg-zinc-100 hover:bg-zinc-200 rounded-xl transition-all"
             disabled={isSaving}
           >
@@ -271,7 +272,7 @@ export function EditInvoiceModal({ isOpen, onClose, invoice, trips = [], onSucce
 
               <div className="space-y-1">
                 <label className="text-[10px] font-black uppercase text-zinc-500 block">Type</label>
-                <select
+                <select aria-label="Type"
                   value={stopType}
                   onChange={(e) => setStopType(e.target.value)}
                   className="w-full p-2.5 bg-zinc-50 border border-zinc-200 rounded-xl font-bold focus:ring-2 focus:ring-brand-accent/20 text-xs text-zinc-900 cursor-pointer"
@@ -287,7 +288,7 @@ export function EditInvoiceModal({ isOpen, onClose, invoice, trips = [], onSucce
 
               <div className="space-y-1">
                 <label className="text-[10px] font-black uppercase text-zinc-500 block">Start Date & Time</label>
-                <input
+                <input aria-label="Start Date and Time"
                   type="datetime-local"
                   value={stopStartTime}
                   onChange={(e) => setStopStartTime(e.target.value)}
@@ -297,7 +298,7 @@ export function EditInvoiceModal({ isOpen, onClose, invoice, trips = [], onSucce
 
               <div className="space-y-1">
                 <label className="text-[10px] font-black uppercase text-zinc-500 block">End Date & Time</label>
-                <input
+                <input aria-label="End Date and Time"
                   type="datetime-local"
                   value={stopEndTime}
                   onChange={(e) => setStopEndTime(e.target.value)}
@@ -342,7 +343,7 @@ export function EditInvoiceModal({ isOpen, onClose, invoice, trips = [], onSucce
               <label className="text-[10px] font-black uppercase text-zinc-500 block flex items-center gap-1">
                 <Calendar className="w-3.5 h-3.5" /> Date
               </label>
-              <input
+              <input aria-label="Date"
                 type="date"
                 value={invoiceDate}
                 onChange={(e) => setInvoiceDate(e.target.value)}
@@ -352,7 +353,7 @@ export function EditInvoiceModal({ isOpen, onClose, invoice, trips = [], onSucce
 
             <div className="space-y-1">
               <label className="text-[10px] font-black uppercase text-zinc-500 block">Current Status</label>
-              <select
+              <select aria-label="Current Status"
                 value={status}
                 onChange={(e) => setStatus(e.target.value)}
                 className="w-full p-2.5 bg-zinc-50 border border-zinc-200 rounded-xl font-black focus:ring-2 focus:ring-brand-accent/20 focus:bg-white cursor-pointer"
@@ -454,7 +455,7 @@ export function EditInvoiceModal({ isOpen, onClose, invoice, trips = [], onSucce
                       return (
                         <tr key={idx} className={`hover:bg-zinc-50/50 transition-colors ${itemFlagged ? 'bg-amber-50/20' : ''}`}>
                           <td className="p-2 w-28">
-                            <input
+                            <input aria-label="Stock code"
                               type="text"
                               value={item.stockCode}
                               onChange={(e) => handleUpdateLineItem(idx, 'stockCode', e.target.value)}
@@ -467,7 +468,7 @@ export function EditInvoiceModal({ isOpen, onClose, invoice, trips = [], onSucce
                             )}
                           </td>
                           <td className="p-2">
-                            <input
+                            <input aria-label="Description"
                               type="text"
                               value={item.description}
                               onChange={(e) => handleUpdateLineItem(idx, 'description', e.target.value)}
@@ -475,7 +476,7 @@ export function EditInvoiceModal({ isOpen, onClose, invoice, trips = [], onSucce
                             />
                           </td>
                           <td className="p-2 w-20">
-                            <input
+                            <input aria-label="Quantity"
                               type="number"
                               min={0}
                               value={item.qty}
@@ -484,7 +485,7 @@ export function EditInvoiceModal({ isOpen, onClose, invoice, trips = [], onSucce
                             />
                           </td>
                           <td className="p-2 w-28">
-                            <input
+                            <input aria-label="Unit price"
                               type="number"
                               min={0}
                               step="any"
@@ -498,6 +499,7 @@ export function EditInvoiceModal({ isOpen, onClose, invoice, trips = [], onSucce
                           </td>
                           <td className="p-2 w-12 text-center">
                             <button
+                              title='Remove'
                               type="button"
                               onClick={() => handleRemoveLineItem(idx)}
                               className="p-1 text-zinc-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors"

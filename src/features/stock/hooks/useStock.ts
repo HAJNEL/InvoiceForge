@@ -29,7 +29,7 @@ export function useStock() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const saveStockItem = useCallback(async (item: Omit<KnockdownItem, 'userId' | 'createdAt'> & { id?: string }) => {
+  const saveStockItem = useCallback(async (item: Omit<KnockdownItem, 'id' | 'userId' | 'createdAt'> & { id?: string }) => {
     if (!user) return null;
     
     const itemId = item.id || doc(collection(db, 'knockdown_items')).id;

@@ -17,9 +17,8 @@ export function NRLogo({ className = "w-8 h-8", variant = "dark" }: LogoProps) {
       <svg 
         viewBox="0 0 100 100" 
         className={className} 
-        fill="none" 
+        fill="none"
         xmlns="http://www.w3.org/2000/svg"
-        referrerPolicy="no-referrer"
       >
         {/* Red container background with rounded corners */}
         <rect width="100" height="100" rx="16" fill="#E5001A" />
@@ -74,9 +73,8 @@ export function NRLogo({ className = "w-8 h-8", variant = "dark" }: LogoProps) {
     <svg 
       viewBox="0 0 100 100" 
       className={className} 
-      fill="none" 
+      fill="none"
       xmlns="http://www.w3.org/2000/svg"
-      referrerPolicy="no-referrer"
     >
       {/* Navy/Light Left "N" Shape */}
       <path 

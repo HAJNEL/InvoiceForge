@@ -71,7 +71,7 @@ export function BusinessIntelligencePanel({
         return (
           <div className="flex items-center gap-2">
             <span className="text-[10px] font-black text-zinc-400 uppercase tracking-wider">Timeframe:</span>
-            <select
+            <select aria-label="Timeframe"
               value={totalsTimeframe}
               onChange={(e) => setTotalsTimeframe(e.target.value as 'last_7_days' | 'last_30_days' | 'last_12_months')}
               className="text-xs bg-zinc-50 border border-zinc-200 rounded px-2.5 py-1 font-bold text-zinc-700 outline-none hover:bg-zinc-100 cursor-pointer transition-all"
@@ -113,7 +113,7 @@ export function BusinessIntelligencePanel({
 
             <div className="flex items-center gap-1.5">
               <span className="text-[10px] font-black text-zinc-400 uppercase tracking-wider">Limit:</span>
-              <select
+              <select aria-label="Top customers limit"
                 value={customersLimit}
                 onChange={(e) => setCustomersLimit(Number(e.target.value))}
                 className="text-xs bg-zinc-50 border border-zinc-200 rounded px-2 py-0.5 font-bold text-zinc-700 outline-none cursor-pointer hover:bg-zinc-100 transition-all"
@@ -240,7 +240,7 @@ export function BusinessIntelligencePanel({
 
             <div className="flex items-center gap-1.5">
               <span className="text-[10px] font-black text-zinc-400 uppercase tracking-wider">Limit:</span>
-              <select
+              <select aria-label="Top products limit"
                 value={productsLimit}
                 onChange={(e) => setProductsLimit(Number(e.target.value))}
                 className="text-xs bg-zinc-50 border border-zinc-200 rounded px-2 py-0.5 font-bold text-zinc-700 outline-none cursor-pointer hover:bg-zinc-100 transition-all font-sans"

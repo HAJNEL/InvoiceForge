@@ -373,8 +373,7 @@ export function BulkImport() {
     setFiles(prev => prev.filter(f => f.id !== id));
   };
 
-  // @ts-expect-error - Dropzone typing mismatch in this environment
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({ 
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     multiple: true,
     accept: {
@@ -424,7 +423,7 @@ export function BulkImport() {
           isDragActive ? "border-brand-accent bg-brand-accent/5 ring-4 ring-brand-accent/10" : "border-zinc-200 hover:border-brand-accent hover:bg-zinc-50"
         )}
       >
-        <input {...getInputProps()} />
+        <input {...getInputProps()} aria-label="Upload files" />
         <div className="w-16 h-16 rounded-full bg-zinc-100 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
           <Upload className="w-8 h-8 text-zinc-400 group-hover:text-brand-accent transition-colors" />
         </div>

@@ -207,7 +207,8 @@ export function TeamRegister() {
                 <label className="block text-[10px] font-black uppercase tracking-wider text-zinc-400 mb-1">Email Address</label>
                 <div className="relative">
                   <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
-                  <input 
+                  <input
+                  placeholder='email' 
                     type="email" 
                     value={invitation.email}
                     disabled

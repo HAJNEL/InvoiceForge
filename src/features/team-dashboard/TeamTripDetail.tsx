@@ -21,6 +21,18 @@ interface InvoiceLineItem {
   parentItem?: string | null;
 }
 
+// Invoice documents loaded from Firestore can carry legacy/snake_case fields
+// that aren't part of the canonical Invoice type. This loosens those accesses.
+type RawInvoice = Invoice & {
+  schoolName?: string;
+  client?: string;
+  taxInvoice?: string;
+  invoice_number?: string;
+  number?: string;
+  line_items?: InvoiceLineItem[];
+  ship_to_details?: { school_name?: string; name?: string };
+};
+
 interface LoaderChecklistItem {
   invoiceId: string;
   invoiceNumber: string;
@@ -63,7 +75,7 @@ export function TeamTripDetail() {
 
   // Load state for this specific trip
   const [trip, setTrip] = useState<Trip | null>(null);
-  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [invoices, setInvoices] = useState<RawInvoice[]>([]);
   const [loadingTrip, setLoadingTrip] = useState(true);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
 
@@ -413,7 +425,7 @@ export function TeamTripDetail() {
   const isStatusCorrect = activeRole === 'Stock Counter' || 
     !reqStatus || 
     trip?.status === reqStatus.required ||
-    (activeRole === 'Delivered Checker' && (trip?.status === 'partially-completed' || trip?.status === 'partially_completed'));
+    (activeRole === 'Delivered Checker' && trip?.status === 'partially-completed');
   const isWritable = canModify && isStatusCorrect;
 
   // Handle checking off an item
@@ -1142,7 +1154,7 @@ export function TeamTripDetail() {
                                     </div>
                                     <div className="space-y-1">
                                       <label className="text-[10px] font-bold text-zinc-500 uppercase block">Actual Qty there:</label>
-                                      <input
+                                      <input aria-label="Actual Qty there"
                                         type="number"
                                         min={0}
                                         max={item.qty - 1}

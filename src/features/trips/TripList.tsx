@@ -258,7 +258,7 @@ export function TripList() {
           <div className="text-left text-sm bg-white p-4 rounded-lg border border-zinc-200">
             <p className="font-semibold mb-2">Steps:</p>
             <ol className="list-decimal list-inside space-y-1 text-zinc-600">
-              <li>Get a key from <a href="https://console.cloud.google.com/google/maps-apis/start" target="_blank" className="text-brand-accent hover:underline">Google Cloud Console</a></li>
+              <li>Get a key from <a href="https://console.cloud.google.com/google/maps-apis/start" target="_blank" rel="noopener noreferrer" className="text-brand-accent hover:underline">Google Cloud Console</a></li>
               <li>Open <strong>Settings</strong> → <strong>Secrets</strong></li>
               <li>Add <code>GOOGLE_MAPS_PLATFORM_KEY</code></li>
             </ol>
@@ -350,6 +350,7 @@ export function TripList() {
                     <ExternalLink className="w-3 h-3 opacity-50 group-hover:opacity-100 transition-opacity" />
                   </button>
                   <button 
+                    title='Select Invoice'
                     onClick={() => setSelectedInvoice(null)}
                     className="p-2 hover:bg-zinc-100 rounded-xl text-zinc-400 transition-all border border-transparent hover:border-zinc-200"
                   >
@@ -460,17 +461,18 @@ export function TripList() {
                                 <div className="flex flex-col sm:flex-row sm:items-center gap-2">
                                   <span className="font-bold text-zinc-900">{trip.name}</span>
                                   {(() => {
-                                    const tripPartialKeys = trip.partialItems 
-                                      ? Object.keys(trip.partialItems).filter(k => trip.partialItems[k]?.isPartial)
+                                    const partialItems = trip.partialItems;
+                                    const tripPartialKeys = partialItems
+                                      ? Object.keys(partialItems).filter(k => partialItems[k]?.isPartial)
                                       : [];
-                                    if (tripPartialKeys.length === 0) return null;
+                                    if (!partialItems || tripPartialKeys.length === 0) return null;
 
                                     return (
                                       <button
                                         onClick={(e) => {
                                           e.stopPropagation();
                                           const firstKey = tripPartialKeys[0];
-                                          const pi = trip.partialItems[firstKey];
+                                          const pi = partialItems[firstKey];
                                           const matchedInv = invoices.find(inv => 
                                             inv.lineItems?.some(li => 
                                               String(li.stockCode).trim().toLowerCase() === String(pi.stockCode).trim().toLowerCase() &&
@@ -479,7 +481,7 @@ export function TripList() {
                                           );
                                           if (matchedInv) {
                                             const keys = tripPartialKeys.filter(k => {
-                                              const item = trip.partialItems[k];
+                                              const item = partialItems[k];
                                               return matchedInv.lineItems?.some(li => 
                                                 String(li.stockCode).trim().toLowerCase() === String(item.stockCode).trim().toLowerCase() &&
                                                 String(li.description).trim().toLowerCase() === String(item.description).trim().toLowerCase()
@@ -665,6 +667,7 @@ export function TripList() {
                                     <Navigation className="w-4 h-4" />
                                   </button>
                                   <button
+                                    title='Edit'
                                     onClick={() => navigate(`/trips/edit/${trip.id}`)}
                                     className="p-2 text-zinc-400 hover:text-brand-primary hover:bg-white rounded-lg border border-transparent hover:border-zinc-200 transition-all"
                                   >
@@ -844,8 +847,9 @@ function StockModal({ invoice, onClose }: { invoice: UIInvoice; onClose: () => v
               {invoice.number} • {invoice.client}
             </p>
           </div>
-          <button 
+          <button
             onClick={onClose}
+            aria-label="Close"
             className="p-2 hover:bg-zinc-100 rounded-xl text-zinc-400 transition-all border border-transparent hover:border-zinc-200"
           >
             <X className="w-5 h-5" />

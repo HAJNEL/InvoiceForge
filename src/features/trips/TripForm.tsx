@@ -1,3 +1,4 @@
+/// <reference types="google.maps" />
 import React, { useState, useEffect, useRef, useMemo, Dispatch, SetStateAction } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { 
@@ -654,7 +655,7 @@ export function TripForm() {
               </div>
 
               {/* District Dropdown */}
-              <select
+              <select aria-label="District"
                 value={selectedDistrict}
                 onChange={(e) => setSelectedDistrict(e.target.value)}
                 className="text-xs bg-white border border-zinc-200 rounded-xl px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-brand-accent/20 w-fit"
@@ -666,7 +667,7 @@ export function TripForm() {
               </select>
 
               {/* Status Dropdown */}
-              <select
+              <select aria-label="Status"
                 value={selectedStatus}
                 onChange={(e) => setSelectedStatus(e.target.value)}
                 className="text-xs bg-white border border-zinc-200 rounded-xl px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-brand-accent/20 w-fit"
@@ -781,6 +782,7 @@ export function TripForm() {
                     Inspect Stock List
                   </button>
                   <button 
+                    title='Select Invoice'
                     type="button"
                     onClick={() => setSelectedInvoice(null)}
                     className="p-2 hover:bg-zinc-100 rounded-xl text-zinc-450 transition-all border border-transparent hover:border-zinc-200"
@@ -912,8 +914,9 @@ export function TripForm() {
                               ) : `Scheduled Stop: Custom Waypoint`}
                               {isInvoice && (() => {
                                 for (const t of trips) {
-                                  if (t.invoiceIds?.includes(stop.invoiceId) && t.partialItems) {
-                                    const tripPartialKeys = Object.keys(t.partialItems).filter(k => t.partialItems[k]?.isPartial);
+                                  if (stop.invoiceId && t.invoiceIds?.includes(stop.invoiceId) && t.partialItems) {
+                                    const partialItems = t.partialItems;
+                                    const tripPartialKeys = Object.keys(partialItems).filter(k => partialItems[k]?.isPartial);
                                     if (tripPartialKeys.length > 0) {
                                       return (
                                         <span className="ml-1 p-0.5 px-1 bg-amber-50 border border-amber-200 text-amber-700 font-mono text-[8px] font-black uppercase rounded flex items-center gap-0.5 animate-pulse">
@@ -1088,6 +1091,7 @@ export function TripForm() {
                   <div className="relative">
                     <CalendarIcon className="w-4 h-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
                     <input
+                      placeholder='From date'
                       type="date"
                       required
                       value={formData.date}
@@ -1103,6 +1107,7 @@ export function TripForm() {
                   <div className="relative">
                     <Truck className="w-4 h-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
                     <select
+                      title='Truck'
                       value={formData.truckId}
                       required
                       onChange={(e) => setFormData({ ...formData, truckId: e.target.value })}
@@ -1122,6 +1127,7 @@ export function TripForm() {
                 <div className="space-y-1">
                   <label className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Trip Stage</label>
                   <select
+                    title='Status'
                     value={formData.status}
                     required
                     onChange={(e) => setFormData({ ...formData, status: e.target.value as TripStatus })}
@@ -1345,7 +1351,7 @@ export function TripForm() {
               <span className="text-[10px] uppercase font-black text-zinc-400 tracking-wider">Load Accounting</span>
               <p className="font-bold text-xs text-zinc-800 mt-1">R {currentSelectionTotal.toLocaleString()}</p>
               <p className="text-[10px] font-semibold text-zinc-500 mt-0.5">
-                Util: {selectedTruck ? `${Math.round((currentSelectionTotal / selectedTruck.maxValue) * 100)}%` : '0%'}
+                Util: {selectedTruck?.maxValue ? `${Math.round((currentSelectionTotal / selectedTruck.maxValue) * 100)}%` : '0%'}
               </p>
             </div>
             <div>
@@ -1495,9 +1501,10 @@ function StockModal({ invoice, onClose }: { invoice: GeocodedInvoice; onClose: (
               {invoice.number} • {invoice.client}
             </p>
           </div>
-          <button 
+          <button
             type="button"
             onClick={onClose}
+            aria-label="Close"
             className="p-2 hover:bg-zinc-100 rounded-xl text-zinc-400 transition-all border border-transparent hover:border-zinc-200"
           >
             <X className="w-5 h-5" />
@@ -2116,9 +2123,10 @@ export function CustomStopModal({ isOpen, onClose, stop, onSave }: CustomStopMod
             </h3>
             <p className="text-[10px] text-zinc-400 font-mono mt-0.5 uppercase">Specify waypoint parameters</p>
           </div>
-          <button 
+          <button
             type="button"
             onClick={onClose}
+            aria-label="Close"
             className="p-1 px-1.5 bg-zinc-100 hover:bg-zinc-200 rounded-xl transition-all cursor-pointer"
           >
             <X className="w-4 h-4 text-zinc-500" />
@@ -2138,7 +2146,7 @@ export function CustomStopModal({ isOpen, onClose, stop, onSave }: CustomStopMod
 
           <div className="space-y-1">
             <label className="text-[10px] font-black uppercase text-zinc-500 block">Stop Category / Type</label>
-            <select
+            <select aria-label="Stop Category / Type"
               value={type}
               onChange={(e) => setType(e.target.value)}
               className="w-full p-2.5 bg-zinc-50 border border-zinc-200 rounded-xl font-bold focus:ring-2 focus:ring-brand-accent/20 text-xs text-zinc-900 cursor-pointer"
@@ -2155,7 +2163,7 @@ export function CustomStopModal({ isOpen, onClose, stop, onSave }: CustomStopMod
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1">
               <label className="text-[10px] font-black uppercase text-zinc-500 block">Start Date & Time</label>
-              <input
+              <input aria-label="Start Date and Time"
                 type="datetime-local"
                 value={startTime}
                 onChange={(e) => setStartTime(e.target.value)}
@@ -2165,7 +2173,7 @@ export function CustomStopModal({ isOpen, onClose, stop, onSave }: CustomStopMod
 
             <div className="space-y-1">
               <label className="text-[10px] font-black uppercase text-zinc-500 block">End Date & Time</label>
-              <input
+              <input aria-label="End Date and Time"
                 type="datetime-local"
                 value={endTime}
                 onChange={(e) => setEndTime(e.target.value)}

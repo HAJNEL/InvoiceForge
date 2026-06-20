@@ -36,7 +36,7 @@ export function DispatchTripsModal({
             <h2 className="text-lg font-bold">Trips for {truck?.name || 'Truck'}</h2>
             <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest mt-0.5">{dateFormatted}</p>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-zinc-100 rounded-lg text-zinc-400">
+          <button onClick={onClose} aria-label="Close" className="p-2 hover:bg-zinc-100 rounded-lg text-zinc-400">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -72,6 +72,7 @@ export function DispatchTripsModal({
                     {/* Status Select inside dialog to edit status immediately! */}
                     <div className="flex flex-col items-end gap-1.5">
                       <select
+                      title='trip status'
                         value={trip.status}
                         onChange={async (e) => {
                           const nextStatus = e.target.value as TripStatus;

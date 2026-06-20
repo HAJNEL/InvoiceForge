@@ -512,7 +512,7 @@ export function StockScreen() {
         id: inv.id,
         invoiceNumber: inv.taxInvoice || inv.invoiceNumber || inv.invoice_number || inv.number || 'N/A',
         invoiceDate: inv.invoice_date || inv.invoiceDate || inv.date || inv.issueDate || 'N/A',
-        clientName: inv.schoolName || inv.customerName || inv.clientName || inv.client || inv.ship_to_details?.school_name || inv.ship_to_details?.name || inv.shipToDetails?.schoolName || inv.shipToDetails?.school_name || inv.bill_to_details?.name || inv.billToDetails?.name || 'Unknown Client',
+        clientName: inv.schoolName || inv.customerName || inv.clientName || inv.client || inv.ship_to_details?.school_name || inv.ship_to_details?.name || inv.shipToDetails?.schoolName || inv.bill_to_details?.name || inv.billToDetails?.name || 'Unknown Client',
         requirements: details,
         canComplete: allMet && details.length > 0
       };
@@ -881,7 +881,7 @@ export function StockScreen() {
                               <div>
                                 {editingInvId === item.id ? (
                                   <div className="flex items-center gap-1 bg-zinc-50 p-1 rounded-xl border border-zinc-205">
-                                    <input
+                                    <input aria-label="Quantity"
                                       type="number"
                                       min="0"
                                       value={editInvQtyValue}
@@ -1244,7 +1244,7 @@ export function StockScreen() {
                         <div>
                           {editingInvId === item.id ? (
                             <div className="flex items-center gap-1 bg-zinc-50 p-1 rounded-xl border border-zinc-205">
-                              <input
+                              <input aria-label="Quantity"
                                 type="number"
                                 min="0"
                                 value={editInvQtyValue}
@@ -1588,7 +1588,7 @@ export function StockScreen() {
                                 <div className="flex items-center gap-2">
                                   {isEditing ? (
                                     <div className="flex items-center gap-1 bg-zinc-50 p-1 rounded-xl border border-zinc-205">
-                                      <input
+                                      <input aria-label="Quantity"
                                         type="number"
                                         min="1"
                                         value={editQtyValue}
