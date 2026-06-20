@@ -81,7 +81,9 @@ async function extractTextFromPdf(buffer: Buffer): Promise<string> {
   throw new Error("Unable to find a valid PDF parsing function/class in the loaded pdf-parse module.");
 }
 
-dotenv.config();
+// Load .env.local first (gitignored local secrets), then fall back to .env.
+// For any given key the first file that defines it wins.
+dotenv.config({ path: [".env.local", ".env"] });
 
 const app = express();
 const PORT = 3000;
