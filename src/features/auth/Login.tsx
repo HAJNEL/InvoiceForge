@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { 
-  signInWithEmailAndPassword, 
-  signInWithPopup, 
-  GoogleAuthProvider 
+import {
+  signInWithEmailAndPassword,
+  signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
+  GoogleAuthProvider,
+  type User
 } from 'firebase/auth';
 import { collection, getDocs, limit, query, where } from 'firebase/firestore';
 import { auth, db } from '../../lib/firebase';
@@ -17,6 +20,31 @@ export function Login() {
   const [loading, setLoading] = useState(false);
   const [publicLogo, setPublicLogo] = useState<string | null>(null);
   const navigate = useNavigate();
+
+  // After Google sign-in (via popup OR redirect), route the user to the right dashboard.
+  const routeAfterLogin = async (user: User) => {
+    const q = query(
+      collection(db, 'team_members'),
+      where('userId', '==', user.uid),
+      limit(1)
+    );
+    const snap = await getDocs(q);
+    navigate(snap.empty ? '/dashboard' : '/team-dashboard');
+  };
+
+  // Handle the result of a signInWithRedirect (the COOP-safe fallback path).
+  useEffect(() => {
+    getRedirectResult(auth)
+      .then((result) => {
+        if (result?.user) {
+          routeAfterLogin(result.user);
+        }
+      })
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : 'An unknown error occurred');
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     async function loadPublicLogo() {
@@ -68,29 +96,24 @@ export function Login() {
   };
 
   const handleGoogleLogin = async () => {
+    setError('');
+    const provider = new GoogleAuthProvider();
     try {
-      const provider = new GoogleAuthProvider();
       const userCredential = await signInWithPopup(auth, provider);
-      const user = userCredential.user;
-      
-      // Perform immediate team member check for navigation
-      const q = query(
-        collection(db, 'team_members'),
-        where('userId', '==', user.uid),
-        limit(1)
-      );
-      const snap = await getDocs(q);
-      if (!snap.empty) {
-        navigate('/team-dashboard');
-      } else {
-        navigate('/dashboard');
-      }
+      await routeAfterLogin(userCredential.user);
     } catch (err: unknown) {
-      if (err instanceof Error) {
-        setError(err.message);
-      } else {
-        setError('An unknown error occurred');
+      const code = (err as { code?: string })?.code;
+      // COOP/popup issues report these codes even when the user didn't close anything.
+      // Fall back to a full-page redirect, which avoids the popup entirely.
+      if (
+        code === 'auth/popup-closed-by-user' ||
+        code === 'auth/popup-blocked' ||
+        code === 'auth/cancelled-popup-request'
+      ) {
+        await signInWithRedirect(auth, provider);
+        return;
       }
+      setError(err instanceof Error ? err.message : 'An unknown error occurred');
     }
   };
 

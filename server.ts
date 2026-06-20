@@ -88,6 +88,15 @@ dotenv.config({ path: [".env.local", ".env"] });
 const app = express();
 const PORT = 3000;
 
+// Allow Firebase signInWithPopup to communicate with the auth popup.
+// A default COOP of "same-origin" blocks Firebase from polling window.closed,
+// which makes popups fail with auth/popup-closed-by-user. This relaxes it just
+// enough to permit popups opened by our own page.
+app.use((_req, res, next) => {
+  res.setHeader("Cross-Origin-Opener-Policy", "same-origin-allow-popups");
+  next();
+});
+
 // Set high buffer/body limit for base64 file uploads
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
@@ -973,7 +982,7 @@ async function startServer() {
   }
 
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`[FULLSTACK SERVER] listening on http://0.0.0.0:${PORT}`);
+    console.log(`[FULLSTACK SERVER] listening on http://localhost:${PORT}`);
   });
 }
 
