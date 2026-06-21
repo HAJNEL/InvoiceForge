@@ -10,3 +10,8 @@ coverage/
 
 # graphify knowledge graph (regenerable; run `graphify update .`)
 graphify-out/
+
+# Firebase Admin service-account keys for local dev (NEVER commit)
+*serviceaccount*.json
+service-account*.json
+*-firebase-adminsdk-*.json

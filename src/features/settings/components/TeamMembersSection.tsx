@@ -1,12 +1,17 @@
 import React, { useState, useMemo } from 'react';
-import { 
-  Users, Plus, Mail, Copy, Check, RefreshCw, Edit, Trash2, 
+import {
+  Users, Plus, Mail, Copy, Check, RefreshCw, Edit, Trash2,
   X, Lock, Shield, User, MessageSquare, AlertCircle, Loader2,
-  ChevronLeft, ChevronRight
+  ChevronLeft, ChevronRight, Bell, Send
 } from 'lucide-react';
 import { useTeamMembers } from '../hooks/useTeamMembers';
+import { auth } from '../../../lib/firebase';
 import { TeamMember } from '../../../types';
 import { cn } from '../../../lib/utils';
+
+// Pushover user keys are typically 30 alphanumeric characters. Used for a soft
+// (non-blocking) format warning — Pushover's API remains the source of truth.
+const PUSHOVER_KEY_PATTERN = /^[a-zA-Z0-9]{30}$/;
 
 export function TeamMembersSection() {
   const { 
@@ -46,9 +51,11 @@ export function TeamMembersSection() {
     lastName: '',
     email: '',
     role: 'viewer' as 'viewer' | 'editor',
-    note: ''
+    note: '',
+    pushoverUserKey: ''
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isTestingPushover, setIsTestingPushover] = useState(false);
   const [rolesModalMember, setRolesModalMember] = useState<TeamMember | null>(null);
   const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
 
@@ -70,7 +77,8 @@ export function TeamMembersSection() {
       lastName: '',
       email: '',
       role: 'viewer',
-      note: ''
+      note: '',
+      pushoverUserKey: ''
     });
     setFieldErrors({});
     setShowModal(true);
@@ -84,7 +92,8 @@ export function TeamMembersSection() {
       lastName: member.lastName,
       email: member.email,
       role: member.role,
-      note: member.note || ''
+      note: member.note || '',
+      pushoverUserKey: member.pushoverUserKey || ''
     });
     setFieldErrors({});
     setShowModal(true);
@@ -150,7 +159,8 @@ export function TeamMembersSection() {
         firstName: formValues.firstName.trim(),
         lastName: formValues.lastName.trim(),
         role: formValues.role,
-        note: formValues.note.trim()
+        note: formValues.note.trim(),
+        pushoverUserKey: formValues.pushoverUserKey.trim()
       });
       setIsSubmitting(false);
       if (success) {
@@ -166,6 +176,7 @@ export function TeamMembersSection() {
         email: formValues.email.trim().toLowerCase(),
         role: formValues.role,
         note: formValues.note.trim(),
+        pushoverUserKey: formValues.pushoverUserKey.trim(),
         inviteCode
       });
       setIsSubmitting(false);
@@ -187,6 +198,35 @@ export function TeamMembersSection() {
 
   const handleResendInvite = (member: TeamMember) => {
     showToast(`Invite resent to ${member.email}`);
+  };
+
+  // Send a test Pushover notification against the member's saved key. The app
+  // token lives server-side only; we never see or send it from the client.
+  const handleTestPushover = async () => {
+    if (!editingMember) return;
+    setIsTestingPushover(true);
+    try {
+      const idToken = await auth.currentUser?.getIdToken();
+      if (!idToken) {
+        showToast('You must be signed in to send a test.', 'info');
+        return;
+      }
+      const response = await fetch(`/api/team-members/${editingMember.id}/test-pushover`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${idToken}` }
+      });
+      const resData = await response.json().catch(() => ({}));
+      if (response.ok && resData.success) {
+        showToast('Test notification sent');
+      } else {
+        showToast(resData.error || 'Failed to send test notification.', 'info');
+      }
+    } catch (err) {
+      console.error('Test Pushover notification error:', err);
+      showToast('Failed to send test notification.', 'info');
+    } finally {
+      setIsTestingPushover(false);
+    }
   };
 
   const handleDelete = async () => {
@@ -661,6 +701,61 @@ export function TeamMembersSection() {
                     placeholder="e.g. Handles Cape Town dispatch trucks"
                   />
                 </div>
+
+                {/* Pushover User Key */}
+                {(() => {
+                  const keyTrimmed = formValues.pushoverUserKey.trim();
+                  const looksInvalid = keyTrimmed.length > 0 && !PUSHOVER_KEY_PATTERN.test(keyTrimmed);
+                  const savedKey = (editingMember?.pushoverUserKey || '').trim();
+                  const isDirty = keyTrimmed !== savedKey;
+                  const canTest = !!editingMember && keyTrimmed.length > 0 && !isDirty;
+                  return (
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black uppercase tracking-wider text-zinc-400">Pushover User Key (Optional)</label>
+                      <div className="flex items-center gap-2">
+                        <div className="relative flex-1">
+                          <Bell className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
+                          <input
+                            type="text"
+                            value={formValues.pushoverUserKey}
+                            onChange={(e) => setFormValues({ ...formValues, pushoverUserKey: e.target.value })}
+                            className={cn(
+                              "w-full pl-10 pr-3.5 py-2.5 bg-zinc-50 border rounded-xl text-xs font-mono focus:ring-2 focus:ring-brand-accent/20 focus:outline-none transition-all",
+                              looksInvalid ? "border-amber-400 bg-amber-50/20" : "border-zinc-200"
+                            )}
+                            placeholder="30-character key from Pushover"
+                            autoCapitalize="none"
+                            autoCorrect="off"
+                            spellCheck={false}
+                          />
+                        </div>
+                        {editingMember && (
+                          <button
+                            type="button"
+                            onClick={handleTestPushover}
+                            disabled={!canTest || isTestingPushover}
+                            title={isDirty && keyTrimmed.length > 0 ? "Save changes before sending a test" : "Send a test notification"}
+                            className="flex shrink-0 items-center gap-1.5 bg-brand-primary text-white px-3.5 py-2.5 rounded-xl font-bold text-[10px] uppercase tracking-wider hover:bg-zinc-800 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            {isTestingPushover ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                            Test
+                          </button>
+                        )}
+                      </div>
+                      {looksInvalid ? (
+                        <p className="text-[10px] font-bold text-amber-600 mt-1 flex items-center gap-1">
+                          <AlertCircle className="w-3 h-3" /> This doesn't look like a standard 30-character Pushover key. You can still save it.
+                        </p>
+                      ) : (
+                        <p className="text-[9px] text-zinc-400 italic">
+                          {editingMember && isDirty && keyTrimmed.length > 0
+                            ? 'Save changes before sending a test notification.'
+                            : 'Used to send this member push notifications. Save, then send a test to verify.'}
+                        </p>
+                      )}
+                    </div>
+                  );
+                })()}
 
                 {/* Form Action */}
                 <div className="flex justify-end gap-3 pt-4 border-t border-zinc-50 mt-6">

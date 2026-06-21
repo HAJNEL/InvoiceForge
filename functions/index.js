@@ -16,6 +16,7 @@ const { defineSecret } = require("firebase-functions/params");
 //   firebase functions:secrets:set XAI_API_KEY
 const XAI_API_KEY = defineSecret("XAI_API_KEY");
 const LLAMA_CLOUD_API_KEY = defineSecret("LLAMA_CLOUD_API_KEY");
+const PUSHOVER_APP_TOKEN = defineSecret("PUSHOVER_APP_TOKEN");
 
 const { app } = require("./lib/server.cjs");
 
@@ -25,7 +26,7 @@ exports.api = onRequest(
     // PDF extraction / external LLM calls can be slow.
     timeoutSeconds: 300,
     memory: "512MiB",
-    secrets: [XAI_API_KEY, LLAMA_CLOUD_API_KEY],
+    secrets: [XAI_API_KEY, LLAMA_CLOUD_API_KEY, PUSHOVER_APP_TOKEN],
   },
   app
 );

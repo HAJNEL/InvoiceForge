@@ -81,7 +81,16 @@ async function requireAuth(req: Request, res: Response, next: NextFunction) {
 
   try {
     getFirebaseAdmin();
-    const decoded = await getAuth().verifyIdToken(match[1], true);
+    // checkRevoked makes a backend call that needs admin credentials. Use it in
+    // the deployed Functions runtime (or whenever a service account is wired via
+    // GOOGLE_APPLICATION_CREDENTIALS). Without credentials (typical local dev) we
+    // fall back to signature/expiry/audience verification, which needs none.
+    const useRevocationCheck = !!(
+      process.env.K_SERVICE ||
+      process.env.FUNCTION_TARGET ||
+      process.env.GOOGLE_APPLICATION_CREDENTIALS
+    );
+    const decoded = await getAuth().verifyIdToken(match[1], useRevocationCheck);
     (req as AuthedRequest).authUid = decoded.uid;
     return next();
   } catch (err) {
@@ -1032,8 +1041,96 @@ app.post("/api/team-members/delete-account", adminLimiter, requireAuth, async (r
   }
 });
 
+interface PushoverResponse {
+  status?: number;
+  errors?: string[];
+  request?: string;
+}
+
+// Send a test Pushover notification to a team member's saved user key. The app
+// token is read server-side from PUSHOVER_APP_TOKEN and is NEVER returned to the
+// client. Gated identically to the other admin team-member routes.
+app.post("/api/team-members/:id/test-pushover", adminLimiter, requireAuth, async (req, res) => {
+  const callerUid = (req as AuthedRequest).authUid;
+  const memberId = req.params.id;
+  if (!memberId) {
+    return res.status(400).json({ success: false, error: "Missing team member id." });
+  }
+
+  // Look up the member by Firestore doc id and confirm the caller owns it. We do
+  // not require status === "active": a key can be tested while still pending.
+  let member: FirebaseFirestore.DocumentData | undefined;
+  try {
+    const snap = await getAdminFirestore().collection("team_members").doc(memberId).get();
+    if (!snap.exists) {
+      return res.status(404).json({ success: false, error: "Team member not found." });
+    }
+    member = snap.data();
+  } catch (err) {
+    console.error(`[AUDIT] test-pushover lookup FAILED caller=${callerUid} target=${memberId}:`, err);
+    return res.status(500).json({ success: false, error: "Failed to look up team member." });
+  }
+
+  if (!member || member.ownerId !== callerUid) {
+    console.warn(`[AUDIT] DENIED test-pushover by caller=${callerUid} target=${memberId} (not owner)`);
+    return res.status(403).json({ success: false, error: "Not authorized to test this member." });
+  }
+
+  const userKey = typeof member.pushoverUserKey === "string" ? member.pushoverUserKey.trim() : "";
+  if (!userKey) {
+    return res.status(400).json({ success: false, error: "No Pushover user key saved for this member." });
+  }
+
+  const appToken = process.env.PUSHOVER_APP_TOKEN;
+  if (!appToken) {
+    console.error("[AUDIT] test-pushover: PUSHOVER_APP_TOKEN is not configured.");
+    return res.status(500).json({ success: false, error: "Pushover app token is not configured on the server." });
+  }
+
+  try {
+    const body = new URLSearchParams({
+      token: appToken,
+      user: userKey,
+      message: "This is a test notification from NR Portal.",
+      title: "Test Notification",
+    }).toString();
+
+    const pushoverRes = await makeRequest(
+      "https://api.pushover.net/1/messages.json",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        timeout: 15000,
+      },
+      body
+    );
+
+    const result = (await pushoverRes.json()) as PushoverResponse;
+
+    if (result.status !== 1) {
+      const message = result.errors?.[0] || "Pushover rejected the request.";
+      console.warn(`[AUDIT] test-pushover Pushover error caller=${callerUid} target=${memberId}: ${message}`);
+      return res.status(400).json({ success: false, error: message });
+    }
+
+    console.log(`[AUDIT] test-pushover OK caller=${callerUid} target=${memberId}`);
+    return res.json({ success: true, status: 1 });
+  } catch (error: unknown) {
+    const err = error as Error;
+    console.error(`[AUDIT] test-pushover FAILED caller=${callerUid} target=${memberId}:`, err);
+    return res.status(500).json({ success: false, error: err.message || "Failed to send test notification." });
+  }
+});
+
 // Vite Middleware for local hot development in sandbox
 async function startServer() {
+  // Keep the local dev server alive if an admin SDK call (e.g. Firestore without
+  // credentials) rejects in a background task that escapes a request's try/catch.
+  // The offending request still fails with a 500; the process must not die.
+  process.on("unhandledRejection", (reason) => {
+    console.error("[DEV] Unhandled promise rejection (server kept alive):", reason);
+  });
+
   if (process.env.NODE_ENV !== "production") {
     const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
