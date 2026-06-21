@@ -133,6 +133,7 @@ export interface Settings {
   warehouseLat?: number;
   warehouseLng?: number;
   sidebarLogoBase64?: string;
+  pushoverUserKey?: string;
   updatedAt: string;
 }
 

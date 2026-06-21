@@ -70,6 +70,16 @@ const adminLimiter = rateLimit({
   message: { success: false, error: "Too many requests. Please try again later." },
 });
 
+// More permissive limiter for on-demand notifications, which are triggered by
+// normal app actions rather than rare privileged operations: 60 / 15 min per IP.
+const notifyLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: "Too many notifications. Please try again later." },
+});
+
 // Verify the Firebase ID token in the Authorization header and attach the
 // caller uid to the request. Rejects revoked/disabled sessions (checkRevoked).
 async function requireAuth(req: Request, res: Response, next: NextFunction) {
@@ -1047,53 +1057,37 @@ interface PushoverResponse {
   request?: string;
 }
 
-// Send a test Pushover notification to a team member's saved user key. The app
-// token is read server-side from PUSHOVER_APP_TOKEN and is NEVER returned to the
-// client. Gated identically to the other admin team-member routes.
-app.post("/api/team-members/:id/test-pushover", adminLimiter, requireAuth, async (req, res) => {
-  const callerUid = (req as AuthedRequest).authUid;
-  const memberId = req.params.id;
-  if (!memberId) {
-    return res.status(400).json({ success: false, error: "Missing team member id." });
-  }
+type PushoverSendResult =
+  | { ok: true }
+  | { ok: false; httpStatus: number; error: string };
 
-  // Look up the member by Firestore doc id and confirm the caller owns it. We do
-  // not require status === "active": a key can be tested while still pending.
-  let member: FirebaseFirestore.DocumentData | undefined;
-  try {
-    const snap = await getAdminFirestore().collection("team_members").doc(memberId).get();
-    if (!snap.exists) {
-      return res.status(404).json({ success: false, error: "Team member not found." });
-    }
-    member = snap.data();
-  } catch (err) {
-    console.error(`[AUDIT] test-pushover lookup FAILED caller=${callerUid} target=${memberId}:`, err);
-    return res.status(500).json({ success: false, error: "Failed to look up team member." });
-  }
+interface PushoverMessage {
+  message: string;
+  title?: string;
+  url?: string;
+  priority?: number;
+}
 
-  if (!member || member.ownerId !== callerUid) {
-    console.warn(`[AUDIT] DENIED test-pushover by caller=${callerUid} target=${memberId} (not owner)`);
-    return res.status(403).json({ success: false, error: "Not authorized to test this member." });
-  }
-
-  const userKey = typeof member.pushoverUserKey === "string" ? member.pushoverUserKey.trim() : "";
-  if (!userKey) {
-    return res.status(400).json({ success: false, error: "No Pushover user key saved for this member." });
-  }
-
+// Send a Pushover notification to a single user key. The app token is read
+// server-side from PUSHOVER_APP_TOKEN and is NEVER returned to the client. Maps
+// Pushover/transport failures to the HTTP status the caller should surface.
+async function sendPushoverNotification(userKey: string, msg: PushoverMessage): Promise<PushoverSendResult> {
   const appToken = process.env.PUSHOVER_APP_TOKEN;
   if (!appToken) {
-    console.error("[AUDIT] test-pushover: PUSHOVER_APP_TOKEN is not configured.");
-    return res.status(500).json({ success: false, error: "Pushover app token is not configured on the server." });
+    console.error("[AUDIT] notify: PUSHOVER_APP_TOKEN is not configured.");
+    return { ok: false, httpStatus: 500, error: "Pushover app token is not configured on the server." };
   }
 
   try {
-    const body = new URLSearchParams({
+    // Pushover caps message at 1024 chars and title at 250.
+    const params: Record<string, string> = {
       token: appToken,
       user: userKey,
-      message: "This is a test notification from NR Portal.",
-      title: "Test Notification",
-    }).toString();
+      message: msg.message.slice(0, 1024),
+    };
+    if (msg.title) params.title = msg.title.slice(0, 250);
+    if (msg.url) params.url = msg.url.slice(0, 512);
+    if (typeof msg.priority === "number") params.priority = String(msg.priority);
 
     const pushoverRes = await makeRequest(
       "https://api.pushover.net/1/messages.json",
@@ -1102,24 +1096,100 @@ app.post("/api/team-members/:id/test-pushover", adminLimiter, requireAuth, async
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         timeout: 15000,
       },
-      body
+      new URLSearchParams(params).toString()
     );
 
     const result = (await pushoverRes.json()) as PushoverResponse;
-
     if (result.status !== 1) {
-      const message = result.errors?.[0] || "Pushover rejected the request.";
-      console.warn(`[AUDIT] test-pushover Pushover error caller=${callerUid} target=${memberId}: ${message}`);
-      return res.status(400).json({ success: false, error: message });
+      return { ok: false, httpStatus: 400, error: result.errors?.[0] || "Pushover rejected the request." };
     }
-
-    console.log(`[AUDIT] test-pushover OK caller=${callerUid} target=${memberId}`);
-    return res.json({ success: true, status: 1 });
+    return { ok: true };
   } catch (error: unknown) {
     const err = error as Error;
-    console.error(`[AUDIT] test-pushover FAILED caller=${callerUid} target=${memberId}:`, err);
-    return res.status(500).json({ success: false, error: err.message || "Failed to send test notification." });
+    return { ok: false, httpStatus: 500, error: err.message || "Failed to send notification." };
   }
+}
+
+type ResolvedRecipient =
+  | { ok: true; userKey: string; label: string }
+  | { ok: false; httpStatus: number; error: string };
+
+// Resolve a notification recipient to a Pushover user key, enforcing the same
+// ownership model as the rest of the app: a caller may notify their own account
+// ({type:'self'}, key from settings/{uid}) or a team member they own
+// ({type:'member', id}, key from team_members/{id} where ownerId === callerUid).
+async function resolveRecipientKey(callerUid: string, to: unknown): Promise<ResolvedRecipient> {
+  const target = (to ?? {}) as { type?: string; id?: string };
+  const db = getAdminFirestore();
+
+  if (target.type === "self") {
+    const snap = await db.collection("settings").doc(callerUid).get();
+    const data = snap.exists ? snap.data() : undefined;
+    const userKey = typeof data?.pushoverUserKey === "string" ? data.pushoverUserKey.trim() : "";
+    if (!userKey) {
+      return { ok: false, httpStatus: 400, error: "No Pushover user key saved for your account." };
+    }
+    return { ok: true, userKey, label: "self" };
+  }
+
+  if (target.type === "member" && typeof target.id === "string" && target.id) {
+    const snap = await db.collection("team_members").doc(target.id).get();
+    if (!snap.exists) {
+      return { ok: false, httpStatus: 404, error: "Team member not found." };
+    }
+    const member = snap.data();
+    if (!member || member.ownerId !== callerUid) {
+      console.warn(`[AUDIT] DENIED notify by caller=${callerUid} target=member:${target.id} (not owner)`);
+      return { ok: false, httpStatus: 403, error: "Not authorized to notify this member." };
+    }
+    const userKey = typeof member.pushoverUserKey === "string" ? member.pushoverUserKey.trim() : "";
+    if (!userKey) {
+      return { ok: false, httpStatus: 400, error: "No Pushover user key saved for this member." };
+    }
+    return { ok: true, userKey, label: `member:${target.id}` };
+  }
+
+  return { ok: false, httpStatus: 400, error: "Invalid recipient." };
+}
+
+// Generic notification endpoint usable from anywhere in the app. Keeps the
+// Pushover app token server-side; the caller only specifies who and what.
+// Body: { to: {type:'self'} | {type:'member', id}, message, title?, url?, priority? }
+app.post("/api/notify", notifyLimiter, requireAuth, async (req, res) => {
+  const callerUid = (req as AuthedRequest).authUid;
+  const { to, message, title, url, priority } = (req.body ?? {}) as {
+    to?: unknown; message?: unknown; title?: unknown; url?: unknown; priority?: unknown;
+  };
+
+  const text = typeof message === "string" ? message.trim() : "";
+  if (!text) {
+    return res.status(400).json({ success: false, error: "A message is required." });
+  }
+
+  let recipient: ResolvedRecipient;
+  try {
+    recipient = await resolveRecipientKey(callerUid, to);
+  } catch (err) {
+    console.error(`[AUDIT] notify recipient lookup FAILED caller=${callerUid}:`, err);
+    return res.status(500).json({ success: false, error: "Failed to resolve recipient." });
+  }
+  if (!recipient.ok) {
+    return res.status(recipient.httpStatus).json({ success: false, error: recipient.error });
+  }
+
+  const result = await sendPushoverNotification(recipient.userKey, {
+    message: text,
+    title: typeof title === "string" && title.trim() ? title.trim() : "NR Portal",
+    url: typeof url === "string" && url.trim() ? url.trim() : undefined,
+    priority: typeof priority === "number" ? priority : undefined,
+  });
+
+  if (!result.ok) {
+    console.warn(`[AUDIT] notify FAILED caller=${callerUid} to=${recipient.label}: ${result.error}`);
+    return res.status(result.httpStatus).json({ success: false, error: result.error });
+  }
+  console.log(`[AUDIT] notify OK caller=${callerUid} to=${recipient.label}`);
+  return res.json({ success: true });
 });
 
 // Vite Middleware for local hot development in sandbox

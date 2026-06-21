@@ -835,6 +835,7 @@ export function TeamDashboard() {
                 </h3>
               </div>
               <button
+                title='setActiveGroupToCount'
                 type="button"
                 onClick={() => setActiveGroupToCount(null)}
                 className="p-1 hover:bg-zinc-100 text-zinc-400 rounded-xl transition-all cursor-pointer"
@@ -975,6 +976,7 @@ export function TeamDashboard() {
                   </h3>
                 </div>
                 <button
+                title='setIsSidebarOpen'
                   type="button"
                   onClick={() => setIsSidebarOpen(false)}
                   className="p-1.5 hover:bg-zinc-100 rounded-xl text-zinc-400 hover:text-zinc-600 transition-all cursor-pointer"

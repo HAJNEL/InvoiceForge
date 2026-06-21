@@ -5,7 +5,7 @@ import {
   ChevronLeft, ChevronRight, Bell, Send
 } from 'lucide-react';
 import { useTeamMembers } from '../hooks/useTeamMembers';
-import { auth } from '../../../lib/firebase';
+import { sendNotification, TEST_NOTIFICATION } from '../../../lib/notifications';
 import { TeamMember } from '../../../types';
 import { cn } from '../../../lib/utils';
 
@@ -200,30 +200,20 @@ export function TeamMembersSection() {
     showToast(`Invite resent to ${member.email}`);
   };
 
-  // Send a test Pushover notification against the member's saved key. The app
-  // token lives server-side only; we never see or send it from the client.
+  // Send a test Pushover notification against the member's saved key, via the
+  // shared notifications client. The app token lives server-side only.
   const handleTestPushover = async () => {
     if (!editingMember) return;
     setIsTestingPushover(true);
     try {
-      const idToken = await auth.currentUser?.getIdToken();
-      if (!idToken) {
-        showToast('You must be signed in to send a test.', 'info');
-        return;
-      }
-      const response = await fetch(`/api/team-members/${editingMember.id}/test-pushover`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${idToken}` }
+      const result = await sendNotification({
+        to: { type: 'member', id: editingMember.id },
+        ...TEST_NOTIFICATION,
       });
-      const resData = await response.json().catch(() => ({}));
-      if (response.ok && resData.success) {
-        showToast('Test notification sent');
-      } else {
-        showToast(resData.error || 'Failed to send test notification.', 'info');
-      }
-    } catch (err) {
-      console.error('Test Pushover notification error:', err);
-      showToast('Failed to send test notification.', 'info');
+      showToast(
+        result.success ? 'Test notification sent' : (result.error || 'Failed to send test notification.'),
+        result.success ? 'success' : 'info'
+      );
     } finally {
       setIsTestingPushover(false);
     }
@@ -510,6 +500,7 @@ export function TeamMembersSection() {
                 </p>
               </div>
               <button 
+              title='setShowModal'
                 onClick={() => setShowModal(false)}
                 className="p-1 px-2.5 rounded-lg text-zinc-400 hover:text-zinc-700 bg-zinc-100 hover:bg-zinc-200 text-xs transition-colors"
               >
@@ -830,7 +821,8 @@ export function TeamMembersSection() {
                   Assign active roles for <span className="font-extrabold text-zinc-800">{rolesModalMember.firstName} {rolesModalMember.lastName}</span>
                 </p>
               </div>
-              <button 
+              <button
+                title='setRolesModalMember' 
                 onClick={() => setRolesModalMember(null)}
                 className="p-1 px-2.5 rounded-lg text-zinc-400 hover:text-zinc-700 bg-zinc-100 hover:bg-zinc-200 text-xs transition-colors"
                 type="button"

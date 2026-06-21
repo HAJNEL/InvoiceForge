@@ -1,12 +1,17 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { MapPin, Save, Loader2, Warehouse, Navigation, Image as ImageIcon, Upload, Trash2, Check, AlertCircle } from 'lucide-react';
+import { MapPin, Save, Loader2, Warehouse, Navigation, Image as ImageIcon, Upload, Trash2, Check, AlertCircle, Bell, Send } from 'lucide-react';
 import { APIProvider, Map, AdvancedMarker, Pin, useMapsLibrary } from '@vis.gl/react-google-maps';
 import { useSettings } from './hooks/useSettings';
+import { sendNotification, TEST_NOTIFICATION } from '../../lib/notifications';
 import { Settings } from '../../types';
 import { NRLogo } from '../../components/Logo';
 import { TeamMembersSection } from './components/TeamMembersSection';
 
 const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_PLATFORM_KEY || '';
+
+// Pushover user keys are typically 30 alphanumeric characters. Used for a soft
+// (non-blocking) format warning — Pushover's API remains the source of truth.
+const PUSHOVER_KEY_PATTERN = /^[a-zA-Z0-9]{30}$/;
 
 export function SettingsPage() {
   const { settings, loading, saveSettings } = useSettings();
@@ -120,10 +125,140 @@ export function SettingsPage() {
           </div>
         </div>
 
+        {/* Push Notifications Card */}
+        <div className="bg-white rounded-3xl shadow-sm border border-zinc-200 overflow-hidden">
+          <div className="p-8 space-y-8">
+            <div className="flex items-start gap-4">
+              <div className="p-3 bg-brand-accent/10 rounded-2xl flex-shrink-0">
+                <Bell className="w-6 h-6 text-brand-accent" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-lg font-bold text-zinc-900 mb-1">Push Notifications</h3>
+                <p className="text-sm text-zinc-500 mb-6">Add your personal Pushover user key to receive push notifications on your own devices.</p>
+
+                <PushoverKeyCard settings={settings} onSave={saveSettings} />
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* Team Members Management Section */}
         <TeamMembersSection />
       </div>
     </APIProvider>
+  );
+}
+
+function PushoverKeyCard({
+  settings,
+  onSave
+}: {
+  settings: Settings | null;
+  onSave: (data: Partial<Settings>) => Promise<boolean>;
+}) {
+  const [keyValue, setKeyValue] = useState(settings?.pushoverUserKey || '');
+  const [isSaving, setIsSaving] = useState(false);
+  const [isTesting, setIsTesting] = useState(false);
+  const [status, setStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  useEffect(() => {
+    setKeyValue(settings?.pushoverUserKey || '');
+  }, [settings]);
+
+  const trimmed = keyValue.trim();
+  const savedKey = (settings?.pushoverUserKey || '').trim();
+  const isDirty = trimmed !== savedKey;
+  const looksInvalid = trimmed.length > 0 && !PUSHOVER_KEY_PATTERN.test(trimmed);
+  const canTest = trimmed.length > 0 && !isDirty;
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    setStatus(null);
+    const success = await onSave({ pushoverUserKey: trimmed });
+    setIsSaving(false);
+    setStatus(success
+      ? { type: 'success', message: 'Notification key saved.' }
+      : { type: 'error', message: 'Failed to save your key.' });
+    if (success) setTimeout(() => setStatus(null), 3000);
+  };
+
+  const handleTest = async () => {
+    setIsTesting(true);
+    setStatus(null);
+    const result = await sendNotification({ to: { type: 'self' }, ...TEST_NOTIFICATION });
+    setIsTesting(false);
+    setStatus(result.success
+      ? { type: 'success', message: 'Test notification sent!' }
+      : { type: 'error', message: result.error || 'Failed to send test notification.' });
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="space-y-2">
+        <label className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Your Pushover User Key</label>
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1">
+            <Bell className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
+            <input
+              type="text"
+              value={keyValue}
+              onChange={(e) => setKeyValue(e.target.value)}
+              placeholder="30-character key from pushover.net"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              className={`w-full pl-11 pr-4 py-3 border rounded-xl font-mono text-sm focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent transition-all bg-zinc-50/50 ${
+                looksInvalid ? 'border-amber-400 bg-amber-50/20' : 'border-zinc-200'
+              }`}
+            />
+          </div>
+          <button
+            type="button"
+            onClick={handleTest}
+            disabled={!canTest || isTesting}
+            title={isDirty && trimmed.length > 0 ? 'Save changes before sending a test' : 'Send a test notification'}
+            className="flex shrink-0 items-center gap-2 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 px-5 py-3 rounded-xl font-bold text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isTesting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+            Test
+          </button>
+        </div>
+        {looksInvalid ? (
+          <p className="text-xs font-bold text-amber-600 flex items-center gap-1.5">
+            <AlertCircle className="w-3.5 h-3.5" /> This doesn't look like a standard 30-character Pushover key. You can still save it.
+          </p>
+        ) : (
+          <p className="text-xs text-zinc-400">
+            {isDirty && trimmed.length > 0
+              ? 'Save your key before sending a test notification.'
+              : 'Find your user key on the pushover.net dashboard. Save, then send a test to verify.'}
+          </p>
+        )}
+      </div>
+
+      {status && (
+        <div className={`flex items-center gap-2 text-xs font-medium px-4 py-2.5 rounded-xl border ${
+          status.type === 'success'
+            ? 'text-emerald-600 bg-emerald-50/50 border-emerald-100'
+            : 'text-red-500 bg-red-50/50 border-red-100'
+        }`}>
+          {status.type === 'success' ? <Check className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
+          <span>{status.message}</span>
+        </div>
+      )}
+
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={isSaving || !isDirty}
+          className="flex items-center gap-2 bg-brand-primary text-white px-6 py-2.5 rounded-xl font-bold text-sm hover:bg-brand-primary/90 transition-all shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+          Save Key
+        </button>
+      </div>
+    </div>
   );
 }
 
