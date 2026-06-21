@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { onSnapshot, collection, query, where, doc, setDoc, updateDoc, deleteDoc } from 'firebase/firestore';
-import { db } from '../../../lib/firebase';
+import { db, auth } from '../../../lib/firebase';
 import { useAuth } from '../../../core/hooks/useAuth';
 import { handleFirestoreError, OperationType } from '../../../lib/firestore-errors';
 import { TeamMember } from '../../../types';
@@ -94,20 +94,35 @@ export function useTeamMembers() {
     const docRef = doc(db, 'team_members', member.id);
     try {
       if (member.status === 'active') {
+        // The backend admin endpoint requires a verified Firebase ID token.
+        const idToken = await auth.currentUser?.getIdToken();
+        if (!idToken) {
+          console.error("Cannot delete team member: no authenticated session.");
+          return false;
+        }
+
         const response = await fetch('/api/team-members/delete-account', {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${idToken}`
           },
           body: JSON.stringify({ userId: member.id })
         });
-        const resData = await response.json();
+        const resData = await response.json().catch(() => ({}));
+
+        // If the backend rejected the request (auth/authorization/rate limit),
+        // do NOT mark the member deleted — the Auth account still exists.
+        if (response.status === 401 || response.status === 403 || response.status === 429) {
+          console.error("Backend rejected team member deletion:", response.status, resData.error);
+          return false;
+        }
         if (!response.ok || !resData.success) {
           console.error("Failed to delete user Auth account on backend:", resData.error);
         } else {
           console.log("Successfully deleted user Auth account on backend during deletion.");
         }
-        
+
         // Update member status to deleted in Firestore to immediately revoke access
         await updateDoc(docRef, {
           status: 'deleted',

@@ -16,7 +16,7 @@ interface GroupedStockItem {
   unitPrice: number;
   totalValue: number;
   isPart?: boolean;
-  parentItem?: string;
+  parentItem?: string | null;
   sources: { invoiceNumber: string; client: string; qty: number; value: number }[];
 }
 

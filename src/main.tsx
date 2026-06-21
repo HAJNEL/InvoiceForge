@@ -2,6 +2,7 @@ import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { doc, getDocFromServer } from 'firebase/firestore';
 import { db } from './lib/firebase';
 
@@ -18,6 +19,8 @@ testConnection();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    <ErrorBoundary variant="fullscreen">
+      <App />
+    </ErrorBoundary>
   </StrictMode>,
 );

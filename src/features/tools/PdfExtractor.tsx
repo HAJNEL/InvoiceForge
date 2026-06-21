@@ -22,7 +22,7 @@ export function PdfExtractorTool() {
   const [fileName, setFileName] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
-  const onDrop: DropzoneOptions['onDrop'] = useCallback(async (acceptedFiles) => {
+  const onDrop: DropzoneOptions['onDrop'] = useCallback(async (acceptedFiles: File[]) => {
     const file = acceptedFiles[0];
     if (!file) return;
 

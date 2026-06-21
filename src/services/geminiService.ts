@@ -141,7 +141,7 @@ export async function extractDetailedInvoice(text: string): Promise<DetailedInvo
   });
 
   try {
-    const result = JSON.parse(response.text);
+    const result = JSON.parse(response.text ?? '');
     return result as DetailedInvoice;
   } catch (error) {
     console.error("Failed to parse Gemini response:", error);

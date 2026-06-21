@@ -424,11 +424,12 @@ export function InvoicesList() {
                                   // Find if this invoice is flagged as partially complete in any active, associated trips!
                                   for (const trip of trips) {
                                     if (trip.invoiceIds?.includes(invoice.id) && trip.partialItems) {
-                                      const tripPartialKeys = Object.keys(trip.partialItems).filter(k => trip.partialItems[k]?.isPartial);
+                                      const partialItems = trip.partialItems;
+                                      const tripPartialKeys = Object.keys(partialItems).filter(k => partialItems[k]?.isPartial);
                                       if (tripPartialKeys.length > 0) {
                                         // Match line items
                                         const matchedKeys = tripPartialKeys.filter(k => {
-                                          const pi = trip.partialItems[k];
+                                          const pi = partialItems[k];
                                           return (invoice.lineItems || []).some(li => 
                                             String(li.stockCode).trim().toLowerCase() === String(pi.stockCode).trim().toLowerCase() &&
                                             String(li.description).trim().toLowerCase() === String(pi.description).trim().toLowerCase()

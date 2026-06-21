@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { onSnapshot, doc, collection, query, where, getDocs, limit, updateDoc, writeBatch } from 'firebase/firestore';
+import type { FieldValue } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { useAuth } from '../../core/hooks/useAuth';
 import { TeamMember, Trip } from '../../types';
@@ -88,6 +89,7 @@ export function useTeamDashboard() {
     }
 
     async function resolveRole() {
+      if (!user) return;
       try {
         const q = query(
           collection(db, 'team_members'),
@@ -340,7 +342,7 @@ export function useTeamDashboard() {
       }
 
       // For non-delivered statuses, do a regular single document status update
-      const updateData: Record<string, unknown> = {
+      const updateData: Record<string, FieldValue | Partial<unknown> | undefined> = {
         status,
         updatedAt: new Date().toISOString()
       };

@@ -1,4 +1,6 @@
 import express from "express";
+import type { Request, Response, NextFunction } from "express";
+import rateLimit from "express-rate-limit";
 import path from "path";
 import https from "https";
 import dotenv from "dotenv";
@@ -7,6 +9,7 @@ import { LlamaCloud, toFile } from "@llamaindex/llama-cloud";
 import { createRequire } from "module";
 import { initializeApp, getApps, App } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
+import { getFirestore } from "firebase-admin/firestore";
 
 // Create a require function that is compatible with both ESM (tsx dev) and CJS (production)
 const customRequire = typeof require !== "undefined"
@@ -16,20 +19,101 @@ const customRequire = typeof require !== "undefined"
 let firebaseAdminApp: App | null = null;
 function getFirebaseAdmin(): App {
   if (!firebaseAdminApp) {
-    const firebaseConfig = customRequire("./firebase-applet-config.json");
-    if (!firebaseConfig || !firebaseConfig.projectId) {
-      throw new Error("Firebase project ID is not configured in firebase-applet-config.json.");
-    }
     const apps = getApps();
     if (apps.length > 0) {
       firebaseAdminApp = apps[0];
     } else {
-      firebaseAdminApp = initializeApp({
-        projectId: firebaseConfig.projectId,
-      });
+      // In Cloud Functions / Cloud Run the project id and credentials are
+      // auto-detected from the runtime environment. Locally we fall back to the
+      // project id declared in firebase-applet-config.json.
+      let projectId =
+        process.env.GCLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT;
+      if (!projectId) {
+        try {
+          const firebaseConfig = customRequire("./firebase-applet-config.json");
+          projectId = firebaseConfig?.projectId;
+        } catch {
+          // config file is optional in deployed environments
+        }
+      }
+      firebaseAdminApp = projectId
+        ? initializeApp({ projectId })
+        : initializeApp();
     }
   }
   return firebaseAdminApp;
+}
+
+// Admin Firestore handle. The configured database is "(default)"
+// (firebase-applet-config.json), so no named-database argument is needed.
+function getAdminFirestore() {
+  return getFirestore(getFirebaseAdmin());
+}
+
+// ---------------------------------------------------------------------------
+// Auth & authorization for privileged admin endpoints
+// ---------------------------------------------------------------------------
+
+// Request augmented with the verified caller uid by requireAuth.
+interface AuthedRequest extends Request {
+  authUid: string;
+}
+
+// Strict limiter for privileged admin routes: 10 requests / 15 min per IP.
+// NOTE: if this is ever deployed behind a proxy/load balancer, also set
+// app.set("trust proxy", 1) so req.ip reflects the real client.
+const adminLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: "Too many requests. Please try again later." },
+});
+
+// Verify the Firebase ID token in the Authorization header and attach the
+// caller uid to the request. Rejects revoked/disabled sessions (checkRevoked).
+async function requireAuth(req: Request, res: Response, next: NextFunction) {
+  const header = req.headers.authorization || "";
+  const match = header.match(/^Bearer (.+)$/);
+  if (!match) {
+    return res.status(401).json({ success: false, error: "Missing or malformed Authorization header." });
+  }
+
+  try {
+    getFirebaseAdmin();
+    const decoded = await getAuth().verifyIdToken(match[1], true);
+    (req as AuthedRequest).authUid = decoded.uid;
+    return next();
+  } catch (err) {
+    console.error("[AUTH] ID token verification failed:", err instanceof Error ? err.message : err);
+    return res.status(401).json({ success: false, error: "Invalid or expired authentication token." });
+  }
+}
+
+// Resolve the target team member and confirm the caller owns it. Returns the
+// member data only when it exists, is active, and ownerId === callerUid.
+async function authorizeTeamMemberOwner(
+  callerUid: string,
+  targetUserId: string
+): Promise<{ ownerId?: string; userId?: string; status?: string } | null> {
+  const db = getAdminFirestore();
+  const col = db.collection("team_members");
+
+  // Primary: locate by the userId field.
+  let data: FirebaseFirestore.DocumentData | undefined;
+  const byField = await col.where("userId", "==", targetUserId).limit(1).get();
+  if (!byField.empty) {
+    data = byField.docs[0].data();
+  } else {
+    // Fallback: active members are keyed by uid, so the doc id may equal it.
+    const byId = await col.doc(targetUserId).get();
+    if (byId.exists) data = byId.data();
+  }
+
+  if (!data) return null;
+  if (data.status !== "active") return null;
+  if (data.ownerId !== callerUid) return null;
+  return data;
 }
 
 async function extractTextFromPdf(buffer: Buffer): Promise<string> {
@@ -880,14 +964,20 @@ function getApiDisabledErrorDetails(err: unknown): { isApiDisabled: boolean; err
       errorUrl = "https:" + errorUrl;
     }
   } else {
-    // Try to find the project ID or number in config if we have it
-    try {
-      const firebaseConfig = customRequire("./firebase-applet-config.json");
-      if (firebaseConfig && firebaseConfig.projectId) {
-        errorUrl = `https://console.cloud.google.com/apis/api/identitytoolkit.googleapis.com/overview?project=${firebaseConfig.projectId}`;
+    // Try to find the project id from the runtime env (Cloud Functions) or,
+    // failing that, the local config file.
+    let projectId =
+      process.env.GCLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT || "";
+    if (!projectId) {
+      try {
+        const firebaseConfig = customRequire("./firebase-applet-config.json");
+        projectId = firebaseConfig?.projectId || "";
+      } catch {
+        // ignore
       }
-    } catch {
-      // ignore
+    }
+    if (projectId) {
+      errorUrl = `https://console.cloud.google.com/apis/api/identitytoolkit.googleapis.com/overview?project=${projectId}`;
     }
   }
 
@@ -898,40 +988,18 @@ function getApiDisabledErrorDetails(err: unknown): { isApiDisabled: boolean; err
   return { isApiDisabled, errorUrl };
 }
 
-app.post("/api/team-members/reset-password", async (req, res) => {
-  const { userId, newPassword } = req.body as { userId?: string; newPassword?: string };
-  if (!userId || !newPassword) {
-    return res.status(400).json({ success: false, error: "Missing userId or newPassword in request body." });
-  }
-
-  try {
-    getFirebaseAdmin();
-    const authAdmin = getAuth();
-    await authAdmin.updateUser(userId, { password: newPassword });
-    console.log(`[FIREBASE ADMIN] Password reset successfully for user: ${userId}`);
-    return res.json({ success: true, message: "Password reset completed successfully." });
-  } catch (error: unknown) {
-    const err = error as FirebaseAuthErrorLike;
-    console.error("Firebase Admin Reset Password Error:", err);
-    
-    // Leverage our extremely dynamic error evaluator to check fields and extract URLs
-    const { isApiDisabled, errorUrl } = getApiDisabledErrorDetails(err);
-    if (isApiDisabled) {
-      return res.json({ 
-        success: false, 
-        apiNotEnabled: true, 
-        errorUrl, 
-        error: "Google Cloud Identity Toolkit API is currently disabled. Server-side administrative actions (like direct password resets) cannot be executed until this API is enabled." 
-      });
-    }
-    return res.status(500).json({ success: false, error: err.message || "Failed to reset password." });
-  }
-});
-
-app.post("/api/team-members/delete-account", async (req, res) => {
+app.post("/api/team-members/delete-account", adminLimiter, requireAuth, async (req, res) => {
+  const callerUid = (req as AuthedRequest).authUid;
   const { userId } = req.body as { userId?: string };
-  if (!userId) {
+  if (!userId || typeof userId !== "string") {
     return res.status(400).json({ success: false, error: "Missing userId in request body." });
+  }
+
+  // Authorization: caller must be the owner of the active team member being deleted.
+  const member = await authorizeTeamMemberOwner(callerUid, userId);
+  if (!member) {
+    console.warn(`[AUDIT] DENIED delete-account by caller=${callerUid} target=${userId} (not an active member they own)`);
+    return res.status(403).json({ success: false, error: "Not authorized to delete this account." });
   }
 
   try {
@@ -939,16 +1007,16 @@ app.post("/api/team-members/delete-account", async (req, res) => {
     const authAdmin = getAuth();
     // Delete the user in FirebaseAuth
     await authAdmin.deleteUser(userId);
-    console.log(`[FIREBASE ADMIN] Firebase Authentication user account deleted: ${userId}`);
+    console.log(`[AUDIT] delete-account OK caller=${callerUid} target=${userId}`);
     return res.json({ success: true, message: "User authentication account deleted successfully." });
   } catch (error: unknown) {
     const err = error as FirebaseAuthErrorLike;
     // If user is not found (maybe deleting a pending user / already deleted user), we treat it as success.
     if (err.message && err.message.includes("auth/user-not-found")) {
-      console.log(`[FIREBASE ADMIN] User to delete not found in Auth, treating as success: ${userId}`);
+      console.log(`[AUDIT] delete-account OK (auth user already absent) caller=${callerUid} target=${userId}`);
       return res.json({ success: true, message: "User account not found, skipped Auth deletion." });
     }
-    console.error("Firebase Admin Delete User Error:", err);
+    console.error(`[AUDIT] delete-account FAILED caller=${callerUid} target=${userId}:`, err);
     
     // Leverage our extremely dynamic error evaluator to check fields and extract URLs
     const { isApiDisabled, errorUrl } = getApiDisabledErrorDetails(err);
@@ -986,4 +1054,16 @@ async function startServer() {
   });
 }
 
-startServer();
+// Export the Express app so it can be wrapped by a Cloud Function (see
+// functions/index.js). The standalone listener only runs for local dev
+// (`npm run dev`) and the `npm start` script -- never inside Cloud Functions,
+// which sets K_SERVICE / FUNCTION_TARGET in the environment.
+export { app };
+
+if (
+  !process.env.K_SERVICE &&
+  !process.env.FUNCTION_TARGET &&
+  !process.env.FUNCTIONS_EMULATOR
+) {
+  startServer();
+}

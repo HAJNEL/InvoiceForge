@@ -18,6 +18,7 @@ import { auth } from '../lib/firebase';
 import { cn } from '../lib/utils';
 import { motion } from 'motion/react';
 import { NRLogo } from '../components/Logo';
+import { ErrorBoundary } from '../components/ErrorBoundary';
 import { useSettings } from '../features/settings/hooks/useSettings';
 
 const navigation = [
@@ -122,7 +123,7 @@ export function Layout() {
           </div>
           
           <div className="flex items-center gap-4">
-            <button className="p-2 text-zinc-500 hover:bg-zinc-100 rounded-lg transition-colors relative">
+            <button title='ok' className="p-2 text-zinc-500 hover:bg-zinc-100 rounded-lg transition-colors relative">
               <Bell className="w-5 h-5" />
               <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border-2 border-white"></span>
             </button>
@@ -140,7 +141,9 @@ export function Layout() {
 
         <main className="flex-1 overflow-y-auto p-8">
           <div className="max-w-7xl mx-auto">
-            <Outlet />
+            <ErrorBoundary variant="page" key={location.pathname}>
+              <Outlet />
+            </ErrorBoundary>
           </div>
         </main>
       </div>

@@ -18,18 +18,6 @@ Addressing the Critical and High sections below will materially harden the app.
 
 ## 🔴 Critical
 
-### C1. Admin endpoints have no authentication or authorization
-- **Where:** `server.ts:901` (`/api/team-members/reset-password`), `server.ts:931` (`/api/team-members/delete-account`)
-- **Impact:** Any caller who can reach the server can reset **any** user's password (full account takeover) or delete **any** auth account, given only a `userId`. There is no `verifyIdToken`, no caller-identity check, and no ownership check. This is the single most serious issue.
-- **Fix:**
-  - Require an `Authorization: Bearer <idToken>` header; verify with `admin.auth().verifyIdToken()`.
-  - Authorize the action: confirm the caller is the **owner** of the team member being modified (look up `team_members/{userId}.ownerId === caller.uid`).
-  - Add rate limiting and audit logging on these routes.
-
-### C2. No React Error Boundary
-- **Where:** `src/main.tsx`, `src/App.tsx` (no `ErrorBoundary` / `componentDidCatch` anywhere in the codebase).
-- **Impact:** Any uncaught render error (e.g. a malformed invoice doc, a `.toLowerCase()` on `undefined`, a map render bug) unmounts the entire React tree and shows a blank white screen with no recovery.
-- **Fix:** Add a top-level `ErrorBoundary` around `<App />` (and ideally per-route) that renders a fallback UI with a "reload / report" action. Given the many `||` fallback chains in data mapping, partial failures are likely.
 
 ### C3. Gemini API key shipped to the browser bundle
 - **Where:** `vite.config.ts:11` (`'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY)`) consumed by `src/lib/gemini.ts:5` (`new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY })`).
