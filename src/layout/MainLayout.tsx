@@ -12,7 +12,8 @@ import {
   Truck,
   Calendar,
   Boxes,
-  Package
+  Package,
+  ListTodo
 } from 'lucide-react';
 import { auth } from '../lib/firebase';
 import { cn } from '../lib/utils';
@@ -24,6 +25,7 @@ import { useSettings } from '../features/settings/hooks/useSettings';
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { name: 'Trips', href: '/trips', icon: Calendar },
+  { name: 'Todo Lists', href: '/todos', icon: ListTodo },
   { name: 'Stock', href: '/stock', icon: Boxes },
   { name: 'Invoices', href: '/invoices', icon: FileText },
   { name: 'Products', href: '/products', icon: Package },

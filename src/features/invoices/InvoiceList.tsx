@@ -427,13 +427,21 @@ export function InvoicesList() {
                                       const partialItems = trip.partialItems;
                                       const tripPartialKeys = Object.keys(partialItems).filter(k => partialItems[k]?.isPartial);
                                       if (tripPartialKeys.length > 0) {
-                                        // Match line items
+                                        // Match line items. Match on stock code OR description
+                                        // (not both) so flagged items still surface when one field
+                                        // differs or was saved as 'N/A'.
                                         const matchedKeys = tripPartialKeys.filter(k => {
                                           const pi = partialItems[k];
-                                          return (invoice.lineItems || []).some(li => 
-                                            String(li.stockCode).trim().toLowerCase() === String(pi.stockCode).trim().toLowerCase() &&
-                                            String(li.description).trim().toLowerCase() === String(pi.description).trim().toLowerCase()
-                                          );
+                                          const piCode = String(pi.stockCode || '').trim().toLowerCase();
+                                          const piDesc = String(pi.description || '').trim().toLowerCase();
+                                          const codeUsable = piCode !== '' && piCode !== 'n/a';
+                                          return (invoice.lineItems || []).some(li => {
+                                            const liCode = String(li.stockCode || '').trim().toLowerCase();
+                                            const liDesc = String(li.description || '').trim().toLowerCase();
+                                            const codeMatch = codeUsable && liCode !== '' && liCode !== 'n/a' && liCode === piCode;
+                                            const descMatch = piDesc !== '' && liDesc === piDesc;
+                                            return codeMatch || descMatch;
+                                          });
                                         });
                                         if (matchedKeys.length > 0) {
                                           return (

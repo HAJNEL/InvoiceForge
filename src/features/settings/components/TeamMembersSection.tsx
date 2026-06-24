@@ -842,7 +842,8 @@ export function TeamMembersSection() {
                   { id: 'Stock Counter', label: 'Stock Counter', desc: 'Responsible for performing inventory and stock item count verifications.' },
                   { id: 'Assembler', label: 'Assembler', desc: 'Prepares and packages items for order and route dispatch.' },
                   { id: 'Loader', label: 'Loader', desc: 'Verifies correct inventory units are successfully loaded onboard transport trucks.' },
-                  { id: 'Delivered Checker', label: 'Delivered Checker', desc: 'Checks Off individual route components and receipt validations upon delivery.' }
+                  { id: 'Delivered Checker', label: 'Delivered Checker', desc: 'Checks Off individual route components and receipt validations upon delivery.' },
+                  { id: 'Invoice Management', label: 'Invoice Management', desc: 'Browse and filter the full invoice library by district, status, and client.' }
                 ].map((roleOption) => {
                   const isChecked = selectedRoles.includes(roleOption.id);
                   return (

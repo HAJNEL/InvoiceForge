@@ -25,6 +25,8 @@ export interface UIDashboardInvoice {
   amount: number;
   date: string;
   status: string;
+  district: string;
+  deliveryAddress: string;
   lineItems: {
     stockCode: string;
     description: string;
@@ -190,6 +192,8 @@ export function useTeamDashboard() {
           amount: d.subTotal !== undefined ? d.subTotal : (d.sub_total !== undefined ? d.sub_total : (d.summary?.sub_total !== undefined ? d.summary.sub_total : (d.summary?.subTotal !== undefined ? d.summary.subTotal : (d.totalDue || d.amountIncl || d.totalAmount || 0)))),
           date: d.invoiceDate || d.issueDate || 'N/A',
           status: d.status || 'draft',
+          district: d.district || d.region || '',
+          deliveryAddress: [d.deliveryAddressLine1, d.deliveryAddressLine2].filter(Boolean).join(', ') || d.address || '',
           lineItems: (d.line_items || d.lineItems || []).map((item: Record<string, unknown>) => ({
             stockCode: String(item.stock_code || item.stockCode || ''),
             description: String(item.description || ''),
@@ -347,8 +351,9 @@ export function useTeamDashboard() {
         updatedAt: new Date().toISOString()
       };
 
-      // Reset checklist state for the next role phase so they don't inherit previous selections
-      if (status === 'assembled' || status === 'on-route') {
+      // Reset checklist state for the next role phase so they don't inherit previous selections.
+      // Reverting to 'proposed' also clears it so the trip re-enters the Assembler's workspace fresh.
+      if (status === 'proposed' || status === 'assembled' || status === 'on-route') {
         updateData.checkedItems = {};
         updateData.partialItems = {};
       }

@@ -1,10 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate, Link, useSearchParams } from 'react-router-dom';
-import { 
+import {
   Search, Calendar, ChevronRight, LogOut, Loader2, Shield, Info, AlertTriangle, Truck, RefreshCw,
-  Package, ClipboardList, ChevronDown, X, Menu
+  Package, ClipboardList, ChevronDown, X, Menu, ListTodo, FileText, MapPin, Filter
 } from 'lucide-react';
 import { useTeamDashboard } from './useTeamDashboard';
+import { useMyTasks } from '../todos/hooks/useMyTasks';
+import { MyTasksDrawer } from '../todos/components/MyTasksDrawer';
 import { auth, db } from '../../lib/firebase';
 import { NRLogo } from '../../components/Logo';
 import { Trip, TripStatus } from '../../types';
@@ -98,10 +100,17 @@ export function TeamDashboard() {
   const [enteredQty, setEnteredQty] = useState<string>('');
   const [isSubmittingStock, setIsSubmittingStock] = useState(false);
 
+  // Invoice Management filter state
+  const [invoiceSearch, setInvoiceSearch] = useState('');
+  const [invoiceDistrictFilter, setInvoiceDistrictFilter] = useState('');
+  const [invoiceStatusFilter, setInvoiceStatusFilter] = useState('');
+
   // Search & Filter state
   const [searchQuery, setSearchQuery] = useState('');
   const [showLogoutMenu, setShowLogoutMenu] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isTasksOpen, setIsTasksOpen] = useState(false);
+  const { openCount: openTaskCount } = useMyTasks();
 
   // Extract roles assigned to current team member with a safe fallback
   const rolesWithFallback = React.useMemo(() => {
@@ -114,7 +123,8 @@ export function TeamDashboard() {
       'Assembler': 1,
       'Loader': 2,
       'Delivered Checker': 3,
-      'Stock Counter': 4
+      'Stock Counter': 4,
+      'Invoice Management': 5
     };
 
     return [...rawRoles].sort((a, b) => {
@@ -316,6 +326,28 @@ export function TeamDashboard() {
     }
   };
 
+  // Invoice Management: derive unique district list and filtered invoices
+  const allDistricts = useMemo(() => {
+    const set = new Set<string>();
+    (invoices || []).forEach(inv => { if (inv.district) set.add(inv.district.trim().toUpperCase()); });
+    return Array.from(set).sort();
+  }, [invoices]);
+
+  const filteredInvoicesForManagement = useMemo(() => {
+    return (invoices || []).filter(inv => {
+      const q = invoiceSearch.toLowerCase().trim();
+      const matchesSearch = !q ||
+        inv.number.toLowerCase().includes(q) ||
+        inv.client.toLowerCase().includes(q) ||
+        (inv.district || '').toLowerCase().includes(q) ||
+        (inv.deliveryAddress || '').toLowerCase().includes(q);
+      const matchesDistrict = !invoiceDistrictFilter ||
+        (inv.district || '').trim().toUpperCase() === invoiceDistrictFilter;
+      const matchesStatus = !invoiceStatusFilter || (inv.status || '').toLowerCase() === invoiceStatusFilter.toLowerCase();
+      return matchesSearch && matchesDistrict && matchesStatus;
+    });
+  }, [invoices, invoiceSearch, invoiceDistrictFilter, invoiceStatusFilter]);
+
   // If user is actually an owner, gently redirect to main admin dashboard portal
   if (isOwner) {
     return (
@@ -427,9 +459,26 @@ export function TeamDashboard() {
           <span className="text-xs font-black uppercase text-zinc-950 tracking-wider">Team Dashboard</span>
         </div>
 
+        {/* Right cluster: My Tasks + user menu */}
+        <div className="flex items-center gap-2">
+        {/* My Tasks button */}
+        <button
+          type="button"
+          onClick={() => setIsTasksOpen(true)}
+          className="p-2 rounded-xl text-zinc-700 hover:bg-zinc-100 transition-all cursor-pointer relative"
+          title="My Tasks"
+        >
+          <ListTodo className="w-5 h-5 stroke-[2.5]" />
+          {openTaskCount > 0 && (
+            <span className="absolute -top-0.5 -right-0.5 min-w-4 h-4 px-1 bg-brand-accent text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+              {openTaskCount}
+            </span>
+          )}
+        </button>
+
         {/* User Info & Settings Popover Dropdown menu */}
         <div className="relative">
-          <button 
+          <button
             type="button"
             onClick={() => setShowLogoutMenu(!showLogoutMenu)}
             className="w-8 h-8 rounded-full bg-zinc-100 border border-zinc-250 flex items-center justify-center font-bold text-xs uppercase text-zinc-700 hover:bg-zinc-200 transition-all"
@@ -453,7 +502,10 @@ export function TeamDashboard() {
             </div>
           )}
         </div>
+        </div>
       </header>
+
+      <MyTasksDrawer open={isTasksOpen} onClose={() => setIsTasksOpen(false)} />
 
       {/* Main viewport block scaled to thumb-centered width limit */}
       <main className="flex-grow w-full max-w-xl mx-auto px-4 py-6 space-y-6">
@@ -467,6 +519,7 @@ export function TeamDashboard() {
                 currentRole === 'Stock Counter' ? 'bg-emerald-500' :
                 currentRole === 'Assembler' ? 'bg-blue-500' :
                 currentRole === 'Loader' ? 'bg-orange-500' :
+                currentRole === 'Invoice Management' ? 'bg-sky-500' :
                 'bg-purple-500'
               }`} />
               <h2 className="text-base font-black text-zinc-950 uppercase tracking-tight font-sans">
@@ -477,6 +530,7 @@ export function TeamDashboard() {
               {currentRole === 'Stock Counter' ? 'Verify and submit physical shelter stock take counts back to central ledger pending owner sign off.' :
                currentRole === 'Assembler' ? 'Assemble flat-pack items, components check sheets, and track modular KD parts breakdown.' :
                currentRole === 'Loader' ? 'Monitor load priority, check vehicle staging schedules, and verify loaded cargo.' :
+               currentRole === 'Invoice Management' ? 'Browse the full invoice library. Filter by district, status, or client to find what you need fast.' :
                'Perform destination check-lists, drop logs, and complete physical deliveries on site.'}
             </p>
           </div>
@@ -525,20 +579,186 @@ export function TeamDashboard() {
           </div>
         ) : (
           <>
-            {/* Search Input Panels */}
-            <div className="relative animate-fade-in">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search by Dispatch Name, Truck, or Stops..."
-                className="w-full pl-10 pr-4 py-3 border border-zinc-200 rounded-2xl text-xs bg-white focus:outline-none focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent transition-all placeholder:text-zinc-400 text-left"
-              />
-            </div>
-
             {/* Loop Shared Trip list Cards */}
-            {currentRole === 'Stock Counter' ? (
+            {currentRole === 'Invoice Management' ? (
+              <div className="space-y-4 animate-fade-in">
+                {/* Filter bar */}
+                <div className="bg-white rounded-3xl p-4 border border-zinc-200 shadow-sm space-y-3">
+                  {/* Search */}
+                  <div className="relative">
+                    <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400 pointer-events-none" />
+                    <input
+                      type="text"
+                      value={invoiceSearch}
+                      onChange={(e) => setInvoiceSearch(e.target.value)}
+                      placeholder="Search invoice #, client, or address…"
+                      className="w-full pl-10 pr-4 py-3 border border-zinc-200 rounded-2xl text-xs bg-zinc-50 focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all placeholder:text-zinc-400"
+                    />
+                  </div>
+
+                  {/* District + Status filters */}
+                  <div className="flex gap-2">
+                    {/* District filter */}
+                    <div className="relative flex-1">
+                      <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-400 pointer-events-none" />
+                      <select
+                        title="Filter by district"
+                        value={invoiceDistrictFilter}
+                        onChange={(e) => setInvoiceDistrictFilter(e.target.value)}
+                        className="w-full appearance-none pl-8 pr-7 py-2.5 bg-zinc-50 border border-zinc-200 rounded-2xl text-xs font-bold text-zinc-700 focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all cursor-pointer"
+                      >
+                        <option value="">All Districts</option>
+                        {allDistricts.map(d => (
+                          <option key={d} value={d}>{d}</option>
+                        ))}
+                      </select>
+                      <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-400 pointer-events-none" />
+                    </div>
+
+                    {/* Status filter */}
+                    <div className="relative flex-1">
+                      <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-400 pointer-events-none" />
+                      <select
+                        title="Filter by status"
+                        value={invoiceStatusFilter}
+                        onChange={(e) => setInvoiceStatusFilter(e.target.value)}
+                        className="w-full appearance-none pl-8 pr-7 py-2.5 bg-zinc-50 border border-zinc-200 rounded-2xl text-xs font-bold text-zinc-700 focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all cursor-pointer"
+                      >
+                        <option value="">All Statuses</option>
+                        <option value="draft">Draft</option>
+                        <option value="proposed">Proposed</option>
+                        <option value="assembled">Assembled</option>
+                        <option value="on_route">On Route</option>
+                        <option value="delivered">Delivered</option>
+                        <option value="invoiced">Invoiced</option>
+                      </select>
+                      <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-400 pointer-events-none" />
+                    </div>
+                  </div>
+
+                  {/* Active filter chips + result count */}
+                  <div className="flex items-center justify-between gap-2 pt-0.5">
+                    <div className="flex flex-wrap gap-1.5">
+                      {invoiceDistrictFilter && (
+                        <button
+                          type="button"
+                          onClick={() => setInvoiceDistrictFilter('')}
+                          className="flex items-center gap-1 bg-sky-50 border border-sky-200 text-sky-700 text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full"
+                        >
+                          <MapPin className="w-3 h-3" />
+                          {invoiceDistrictFilter}
+                          <X className="w-3 h-3" />
+                        </button>
+                      )}
+                      {invoiceStatusFilter && (
+                        <button
+                          type="button"
+                          onClick={() => setInvoiceStatusFilter('')}
+                          className="flex items-center gap-1 bg-sky-50 border border-sky-200 text-sky-700 text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full"
+                        >
+                          <Filter className="w-3 h-3" />
+                          {invoiceStatusFilter}
+                          <X className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
+                    <span className="text-[10px] font-mono font-bold text-zinc-400 shrink-0">
+                      {filteredInvoicesForManagement.length} / {(invoices || []).length}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Invoice cards */}
+                {filteredInvoicesForManagement.length === 0 ? (
+                  <div className="bg-white rounded-3xl p-8 border border-zinc-200 text-center space-y-3">
+                    <FileText className="w-8 h-8 text-zinc-200 mx-auto stroke-[1.5]" />
+                    <p className="text-xs font-bold text-zinc-700">No invoices match your filters</p>
+                    <p className="text-[11px] text-zinc-400">Try adjusting the district, status, or search term.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {filteredInvoicesForManagement.map((inv) => {
+                      const statusNorm = (inv.status || 'draft').toLowerCase();
+                      const statusColor =
+                        statusNorm === 'delivered' || statusNorm === 'invoiced' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                        statusNorm === 'on_route' || statusNorm === 'on-route' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                        statusNorm === 'assembled' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                        statusNorm === 'proposed' ? 'bg-violet-50 text-violet-700 border-violet-200' :
+                        'bg-zinc-100 text-zinc-500 border-zinc-200';
+                      return (
+                        <div
+                          key={inv.id}
+                          className="bg-white rounded-3xl p-4 border border-zinc-200 shadow-sm space-y-3 text-left"
+                        >
+                          {/* Header row */}
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="text-[9px] font-mono font-bold uppercase tracking-widest text-zinc-400 flex items-center gap-1 mb-0.5">
+                                <FileText className="w-3 h-3" />
+                                {inv.number}
+                              </p>
+                              <h3 className="font-black text-sm text-zinc-900 leading-snug truncate">
+                                {inv.client}
+                              </h3>
+                            </div>
+                            <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-full border shrink-0 ${statusColor}`}>
+                              {inv.status || 'draft'}
+                            </span>
+                          </div>
+
+                          {/* Meta row */}
+                          <div className="flex flex-wrap gap-2 text-[10px] font-mono text-zinc-500">
+                            {inv.district && (
+                              <span className="flex items-center gap-1 bg-zinc-50 border border-zinc-150 px-2 py-1 rounded-lg">
+                                <MapPin className="w-3 h-3 text-sky-500" />
+                                {(inv.district || '').trim().toUpperCase()}
+                              </span>
+                            )}
+                            <span className="flex items-center gap-1 bg-zinc-50 border border-zinc-150 px-2 py-1 rounded-lg">
+                              <Calendar className="w-3 h-3 text-zinc-400" />
+                              {inv.date}
+                            </span>
+                            <span className="flex items-center gap-1 bg-zinc-50 border border-zinc-150 px-2 py-1 rounded-lg font-sans font-bold text-zinc-700">
+                              R {(inv.amount || 0).toLocaleString()}
+                            </span>
+                          </div>
+
+                          {/* Delivery address */}
+                          {inv.deliveryAddress && (
+                            <p className="text-[11px] text-zinc-500 leading-snug truncate">
+                              {inv.deliveryAddress}
+                            </p>
+                          )}
+
+                          {/* Line items summary */}
+                          {inv.lineItems && inv.lineItems.length > 0 && (
+                            <div className="bg-zinc-50 rounded-2xl border border-zinc-100 p-3 space-y-1.5">
+                              <p className="text-[9px] font-black uppercase tracking-widest text-zinc-400 mb-2">
+                                {inv.lineItems.length} Line {inv.lineItems.length === 1 ? 'Item' : 'Items'}
+                              </p>
+                              {inv.lineItems.slice(0, 4).map((item, idx) => (
+                                <div key={idx} className="flex items-center justify-between gap-2 text-[11px]">
+                                  <span className="font-mono text-[9px] font-bold bg-zinc-200/60 text-zinc-600 px-1.5 py-0.5 rounded shrink-0">
+                                    {item.stockCode || '—'}
+                                  </span>
+                                  <span className="flex-1 text-zinc-700 font-medium truncate">{item.description}</span>
+                                  <span className="font-black text-zinc-800 shrink-0">×{item.qty}</span>
+                                </div>
+                              ))}
+                              {inv.lineItems.length > 4 && (
+                                <p className="text-[9px] text-zinc-400 font-bold text-right">
+                                  +{inv.lineItems.length - 4} more
+                                </p>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            ) : currentRole === 'Stock Counter' ? (
               <div className="bg-white rounded-3xl p-6 border border-zinc-200 shadow-sm relative text-left">
                 {/* Card Header with Status Selector in Top Right Corner */}
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-zinc-100 pb-4 mb-4">
@@ -1027,6 +1247,7 @@ export function TeamDashboard() {
                           roleOpt === 'Stock Counter' ? 'bg-emerald-500' :
                           roleOpt === 'Assembler' ? 'bg-blue-500' :
                           roleOpt === 'Loader' ? 'bg-orange-500' :
+                          roleOpt === 'Invoice Management' ? 'bg-sky-500' :
                           'bg-purple-500'
                         }`} />
                         <span className="text-xs font-black uppercase tracking-tight">
@@ -1045,6 +1266,7 @@ export function TeamDashboard() {
                         {roleOpt === 'Stock Counter' ? 'Take shelf snapshots, key aggregated item metrics and approve pending stock takes.' :
                          roleOpt === 'Assembler' ? 'Assess warehouse custom assemblies, components status checklist, and KD parts lists.' :
                          roleOpt === 'Loader' ? 'Optimize vehicle weights, check staging dispatches, and verify trailer cargo loader priority.' :
+                         roleOpt === 'Invoice Management' ? 'Browse the full invoice library filtered by district, status, or client name.' :
                          'Coordinate route sequences, log digital drop receipts status and capture client delivery signatures.'}
                       </p>
                     </button>

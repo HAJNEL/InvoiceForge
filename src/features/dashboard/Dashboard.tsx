@@ -141,8 +141,10 @@ export function Dashboard() {
           dateString={selectedCellInfo.dateString}
           truck={trucks.find(t => t.id === selectedCellInfo.truckId)}
           trips={getTripsForCell(selectedCellInfo.truckId, selectedCellInfo.dateString)}
+          invoices={invoices}
           onClose={() => setSelectedCellInfo(null)}
           onUpdateStatus={updateTrip}
+          onUpdateInvoice={updateInvoice}
         />
       )}
 

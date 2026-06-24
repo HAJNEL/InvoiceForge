@@ -18,10 +18,10 @@ export function InvoicePin({
   const getStatusConfig = (statusName: string) => {
     if (isTripStop) {
       return {
-        background: '#F59E0B', // Highlight/Selected Amber
-        borderColor: '#B45309', // Dark Amber
+        background: '#10b981', // Highlight/Selected Green
+        borderColor: '#047857', // Dark Green
         icon: (
-          <div className="flex items-center justify-center w-5 h-5 rounded-full bg-white text-[#B45309] font-black text-[11px] font-mono shadow-sm">
+          <div className="flex items-center justify-center w-5 h-5 rounded-full bg-white text-[#047857] font-black text-[11px] font-mono shadow-sm">
             {stopNumber}
           </div>
         )
@@ -29,8 +29,8 @@ export function InvoicePin({
     }
     if (isHighlighted) {
       return {
-        background: '#EF4444', // Highlight Red
-        borderColor: '#991B1B', // Dark Red
+        background: 'green', // Highlight Red
+        borderColor: 'green', // Dark Red
         icon: <CheckCircle2 className="w-3.5 h-3.5 text-white" />
       };
     }

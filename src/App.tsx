@@ -27,6 +27,7 @@ import { ProductList } from './features/products/components/ProductList';
 import { TeamRegister } from './features/auth/TeamRegister';
 import { TeamDashboard } from './features/team-dashboard/TeamDashboard';
 import { TeamTripDetail } from './features/team-dashboard/TeamTripDetail';
+import { TodoBoard } from './features/todos/TodoBoard';
 
 export default function App() {
   const { user, loading, isTeamMember } = useAuth();
@@ -125,6 +126,7 @@ export default function App() {
           <Route path="/invoices/:id/review" element={<ExtractionReview />} />
           <Route path="/trucks" element={<TruckList />} />
           <Route path="/trips" element={<TripList />} />
+          <Route path="/todos" element={<TodoBoard />} />
           <Route path="/trips/new" element={<TripForm />} />
           <Route path="/trips/edit/:id" element={<TripForm />} />
           <Route path="/recurring" element={<RecurringList />} />

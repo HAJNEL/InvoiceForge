@@ -21,8 +21,6 @@ import { Link, useParams, useNavigate } from 'react-router-dom';
 import { useInvoice } from './hooks/useInvoice';
 import { useInvoices } from './hooks/useInvoices';
 import { cn, formatCurrency } from '../../lib/utils';
-import { validateAndSubtractInventory } from '../../utils/inventory';
-import { auth } from '../../lib/firebase';
 
 const STATUS_DISPLAY_MAP: Record<string, string> = {
   'partially_complete': 'Partially Complete',
@@ -84,18 +82,9 @@ export function InvoiceDetail() {
       setIsUpdatingStatus(true);
       setStatusError(null);
       try {
-        const userUid = auth.currentUser?.uid || '';
-        const invCheck = await validateAndSubtractInventory(id, userUid, bypassWarning);
-        if (!invCheck.success) {
-          setStatusError(
-            (invCheck.error || "Limited inventory stock available.") +
-            "\n\nYou can still proceed to catch up on data. Click 'Confirm Anyway' to bypass validation and record delivery."
-          );
-          setBypassWarning(true);
-          return;
-        }
-
-        await updateInvoice(id, { 
+        // Stock is now deducted at assembly (per item, when the Assembler counts it),
+        // so delivery no longer touches inventory — it only records the delivery.
+        await updateInvoice(id, {
           status: pendingStatus || 'delivered',
           deliveredDate: deliveredDateInput
         });

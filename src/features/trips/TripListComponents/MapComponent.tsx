@@ -1,6 +1,6 @@
 /// <reference types="google.maps" />
 import { useState, useEffect, useRef, Dispatch, SetStateAction } from 'react';
-import { Warehouse, CheckCircle2, Filter } from 'lucide-react';
+import { Warehouse, CheckCircle2, Filter, Loader2 } from 'lucide-react';
 import {
   Map,
   AdvancedMarker,
@@ -15,15 +15,17 @@ import { GeocodedInvoice } from './types';
 import { STATUS_COLORS } from './statusColors';
 import { InvoicePin } from './InvoicePin';
 
-export function MapComponent({ invoices, geocodedInvoices, setGeocodedInvoices, onInvoiceClick, warehouse, routedTrip, highlightedInvoiceIds, showHistory }: {
+export function MapComponent({ invoices, allInvoices, geocodedInvoices, setGeocodedInvoices, onInvoiceClick, warehouse, routedTrip, highlightedInvoiceIds, showHistory, isRefreshing }: {
   invoices: UIInvoice[],
+  allInvoices: UIInvoice[],
   geocodedInvoices: GeocodedInvoice[],
   setGeocodedInvoices: Dispatch<SetStateAction<GeocodedInvoice[]>>,
   onInvoiceClick: (inv: GeocodedInvoice) => void,
   warehouse: Settings | null,
   routedTrip: Trip | null,
   highlightedInvoiceIds: string[],
-  showHistory: boolean
+  showHistory: boolean,
+  isRefreshing?: boolean
 }) {
   const map = useMap();
   const geocodingLib = useMapsLibrary('geocoding');
@@ -114,9 +116,9 @@ export function MapComponent({ invoices, geocodedInvoices, setGeocodedInvoices, 
   }, [map, routesLib, routedTrip, warehouse, geocodedInvoices]);
 
   useEffect(() => {
-    if (!geocodingLib || !invoices.length) return;
+    if (!geocodingLib || !allInvoices.length) return;
 
-    const invoicesToGeocode = invoices.filter((inv) =>
+    const invoicesToGeocode = allInvoices.filter((inv) =>
       !geocodedInvoices.some((gi) => gi.id === inv.id) &&
       !processingIds.current.has(inv.id)
     );
@@ -146,7 +148,7 @@ export function MapComponent({ invoices, geocodedInvoices, setGeocodedInvoices, 
               address: fallbackAddress
             });
             if (fallbackResults && fallbackResults[0]) {
-               results.push({
+              results.push({
                 id: inv.id,
                 number: inv.number,
                 client: inv.client,
@@ -198,7 +200,7 @@ export function MapComponent({ invoices, geocodedInvoices, setGeocodedInvoices, 
     };
 
     geocodeInvoices();
-  }, [geocodingLib, invoices, geocodedInvoices, setGeocodedInvoices]);
+  }, [geocodingLib, allInvoices, geocodedInvoices, setGeocodedInvoices]);
 
   // Fit bounds when map or geocodedInvoices loads
   useEffect(() => {
@@ -238,6 +240,12 @@ export function MapComponent({ invoices, geocodedInvoices, setGeocodedInvoices, 
   return (
     <div className="flex flex-col h-full w-full">
       <div className="flex-1 min-h-0 relative">
+        {isRefreshing && (
+          <div className="absolute inset-0 z-20 bg-white/70 backdrop-blur-sm flex flex-col items-center justify-center gap-3 pointer-events-none">
+            <Loader2 className="w-8 h-8 text-brand-accent animate-spin" />
+            <p className="text-sm font-black uppercase tracking-widest text-zinc-600">Geocoding pins...</p>
+          </div>
+        )}
         <Map
           defaultCenter={{ lat: -25.7479, lng: 28.2293 }} // Pretoria/Centurion area
           defaultZoom={11}
@@ -266,9 +274,9 @@ export function MapComponent({ invoices, geocodedInvoices, setGeocodedInvoices, 
 
             // Legend multi-select filter logic
             const statusKey = (liveStatus === 'assembly' ? 'assembled' :
-                               (liveStatus === 'loaded' ? 'partially_complete' :
-                                (liveStatus === 'partially complete' ? 'partially_complete' :
-                                 (liveStatus === 'completed' || liveStatus === 'invoiced' ? 'complete' : liveStatus)))).toLowerCase();
+              (liveStatus === 'loaded' ? 'partially_complete' :
+                (liveStatus === 'partially complete' ? 'partially_complete' :
+                  (liveStatus === 'completed' || liveStatus === 'invoiced' ? 'complete' : liveStatus)))).toLowerCase();
 
             const isTripStop = Boolean(routedTrip && routedTrip.invoiceIds?.includes(gi.id));
             if (routedTrip) {
@@ -324,9 +332,9 @@ export function MapComponent({ invoices, geocodedInvoices, setGeocodedInvoices, 
             <AdvancedMarker
               position={{ lat: warehouse.warehouseLat, lng: warehouse.warehouseLng }}
             >
-               <Pin background="#1e1b4b" glyphColor="#fff" borderColor="#312e81" scale={1.5}>
-                  <Warehouse className="w-4 h-4 text-white" />
-               </Pin>
+              <Pin background="#1e1b4b" glyphColor="#fff" borderColor="#312e81" scale={1.5}>
+                <Warehouse className="w-4 h-4 text-white" />
+              </Pin>
             </AdvancedMarker>
           )}
         </Map>
@@ -343,8 +351,8 @@ export function MapComponent({ invoices, geocodedInvoices, setGeocodedInvoices, 
             <div
               className="px-2.5 py-1 rounded-lg border text-[10px] font-black tracking-widest uppercase flex items-center gap-1.5 shadow-sm text-white border-transparent"
               style={{
-                backgroundColor: '#F59E0B',
-                boxShadow: '0 2px 4px #F59E0B30'
+                backgroundColor: 'green',
+                boxShadow: '0 2px 4px #10b98130'
               }}
             >
               <CheckCircle2 className="w-3 h-3 text-white" />
@@ -360,44 +368,44 @@ export function MapComponent({ invoices, geocodedInvoices, setGeocodedInvoices, 
               }
             })
             .map(status => {
-            const isSelected = routedTrip
-              ? selectedLegendStatuses.includes(status)
-              : (selectedLegendStatuses.length === 0 || selectedLegendStatuses.includes(status));
-            const colorConfig = STATUS_COLORS[status] || { bg: '#71717a', border: '#3f3f46', label: status };
-            const label = colorConfig.label;
+              const isSelected = routedTrip
+                ? selectedLegendStatuses.includes(status)
+                : (selectedLegendStatuses.length === 0 || selectedLegendStatuses.includes(status));
+              const colorConfig = STATUS_COLORS[status] || { bg: '#71717a', border: '#3f3f46', label: status };
+              const label = colorConfig.label;
 
-            return (
-              <button
-                key={status}
-                type="button"
-                onClick={() => {
-                  setSelectedLegendStatuses(prev => {
-                    if (prev.includes(status)) {
-                      return prev.filter(s => s !== status);
-                    } else {
-                      return [...prev, status];
-                    }
-                  });
-                }}
-                className={cn(
-                  "px-2.5 py-1 rounded-lg border text-[10px] font-black tracking-widest uppercase flex items-center gap-1.5 transition-all cursor-pointer shadow-sm active:scale-95",
-                  isSelected
-                    ? "text-white border-transparent"
-                    : "bg-white text-zinc-400 border-zinc-200 hover:text-zinc-650 hover:border-zinc-350 opacity-60 hover:opacity-90"
-                )}
-                style={{
-                  backgroundColor: isSelected ? colorConfig.bg : undefined,
-                  boxShadow: isSelected ? `0 2px 4px ${colorConfig.bg}30` : undefined
-                }}
-              >
-                <span
-                  className="w-1.5 h-1.5 rounded-full shrink-0"
-                  style={{ backgroundColor: isSelected ? '#fff' : colorConfig.bg }}
-                />
-                {label}
-              </button>
-            );
-          })}
+              return (
+                <button
+                  key={status}
+                  type="button"
+                  onClick={() => {
+                    setSelectedLegendStatuses(prev => {
+                      if (prev.includes(status)) {
+                        return prev.filter(s => s !== status);
+                      } else {
+                        return [...prev, status];
+                      }
+                    });
+                  }}
+                  className={cn(
+                    "px-2.5 py-1 rounded-lg border text-[10px] font-black tracking-widest uppercase flex items-center gap-1.5 transition-all cursor-pointer shadow-sm active:scale-95",
+                    isSelected
+                      ? "text-white border-transparent"
+                      : "bg-white text-zinc-400 border-zinc-200 hover:text-zinc-650 hover:border-zinc-350 opacity-60 hover:opacity-90"
+                  )}
+                  style={{
+                    backgroundColor: isSelected ? colorConfig.bg : undefined,
+                    boxShadow: isSelected ? `0 2px 4px ${colorConfig.bg}30` : undefined
+                  }}
+                >
+                  <span
+                    className="w-1.5 h-1.5 rounded-full shrink-0"
+                    style={{ backgroundColor: isSelected ? '#fff' : colorConfig.bg }}
+                  />
+                  {label}
+                </button>
+              );
+            })}
         </div>
 
         {selectedLegendStatuses.length > 0 && (

@@ -1,5 +1,5 @@
-import { useState, useEffect, useMemo } from 'react';
-import { Plus, Trash2, Edit3, Loader2, AlertCircle, Calendar as CalendarIcon, Navigation, CheckCircle2, FileText, Package, X, Eye, ExternalLink, History, AlertTriangle, Check, ChevronLeft, ChevronRight } from 'lucide-react';
+import { useState, useEffect, useMemo, useRef } from 'react';
+import { Plus, Trash2, Edit3, Loader2, AlertCircle, Calendar as CalendarIcon, Navigation, CheckCircle2, FileText, Package, X, Eye, ExternalLink, History, AlertTriangle, Check, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
 import { PartialConfirmModal } from '../../components/PartialConfirmModal';
 import { APIProvider } from '@vis.gl/react-google-maps';
 import { cn } from '../../lib/utils';
@@ -7,6 +7,7 @@ import { useTrips } from './hooks/useTrips';
 import { useTrucks } from '../trucks/hooks/useTrucks';
 import { useInvoices, UIInvoice } from '../invoices/hooks/useInvoices';
 import { useSettings } from '../settings/hooks/useSettings';
+import { useAuth } from '../../core/hooks/useAuth';
 import { TripStatus, Trip } from '../../types';
 import { useNavigate } from 'react-router-dom';
 import { GeocodedInvoice } from './TripListComponents/types';
@@ -14,7 +15,7 @@ import { CapacityProgressBar } from './TripListComponents/CapacityProgressBar';
 import { StockModal } from './TripListComponents/StockModal';
 import { MapComponent } from './TripListComponents/MapComponent';
 import { StatusBadge } from './TripListComponents/StatusBadge';
-// import { auth } from '../../lib/firebase';
+import { restoreInventoryForItems } from '../../utils/inventory';
 
 const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_PLATFORM_KEY || '';
 const hasValidKey = Boolean(GOOGLE_MAPS_API_KEY);
@@ -26,8 +27,14 @@ const CYCLE_ORDER = [
   TripStatus.DELIVERED
 ];
 
+const needsInventoryRestore = (status: string) =>
+  status === TripStatus.ASSEMBLED ||
+  status === TripStatus.ON_ROUTE ||
+  status === TripStatus.DELIVERED;
+
 export function TripList() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const { trips, loading: tripsLoading, deleteTrip, updateTrip } = useTrips();
   const { trucks } = useTrucks();
   const { invoices, updateInvoice, loading: invoicesLoading } = useInvoices();
@@ -53,6 +60,23 @@ export function TripList() {
 
   const handleDeleteTrip = async (trip: Trip) => {
     try {
+      if (needsInventoryRestore(trip.status) && trip.invoiceIds?.length) {
+        const itemMap: Record<string, { stockCode: string; qty: number }> = {};
+        trip.invoiceIds.forEach(id => {
+          const inv = invoices.find(i => i.id === id);
+          inv?.lineItems?.forEach(li => {
+            const code = String(li.stockCode || '').trim().toUpperCase();
+            if (!code || code === 'N/A') return;
+            if (itemMap[code]) {
+              itemMap[code].qty += li.qty;
+            } else {
+              itemMap[code] = { stockCode: li.stockCode, qty: li.qty };
+            }
+          });
+        });
+        await restoreInventoryForItems(Object.values(itemMap), user?.uid || '');
+      }
+
       await deleteTrip(trip.id);
       
       const remainingTrips = trips.filter(t => t.id !== trip.id && t.date === trip.date && t.truckId === trip.truckId);
@@ -90,6 +114,16 @@ export function TripList() {
     return [];
   });
 
+  const [isRefreshingPins, setIsRefreshingPins] = useState(false);
+  const prevGeocodedCountRef = useRef(0);
+
+  const handleRefreshPins = () => {
+    localStorage.removeItem('geocoded_invoices');
+    setGeocodedInvoices([]);
+    setIsRefreshingPins(true);
+    prevGeocodedCountRef.current = 0;
+  };
+
   const [selectedInvoiceForStock, setSelectedInvoiceForStock] = useState<UIInvoice | null>(null);
 
   // Sync to localStorage on geocodedInvoices updates (keeping it clean of deleted invoices)
@@ -102,6 +136,24 @@ export function TripList() {
       localStorage.setItem('geocoded_invoices', JSON.stringify(toStore));
     }
   }, [geocodedInvoices, invoices, invoicesLoading]);
+
+  // Detect when a refresh-triggered geocoding batch has settled
+  const refreshSettleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (!isRefreshingPins) return;
+    if (refreshSettleTimerRef.current) clearTimeout(refreshSettleTimerRef.current);
+    // If count is still growing, reset the settle timer
+    if (geocodedInvoices.length !== prevGeocodedCountRef.current) {
+      prevGeocodedCountRef.current = geocodedInvoices.length;
+      refreshSettleTimerRef.current = setTimeout(() => {
+        // Give an extra 2 s after the last batch arrives before hiding the overlay
+        setIsRefreshingPins(false);
+      }, 2000);
+    }
+    return () => {
+      if (refreshSettleTimerRef.current) clearTimeout(refreshSettleTimerRef.current);
+    };
+  }, [geocodedInvoices.length, isRefreshingPins]);
 
   // Map state
   const [selectedInvoice, setSelectedInvoice] = useState<GeocodedInvoice | null>(null);
@@ -266,6 +318,15 @@ export function TripList() {
               </button>
             )}
             <button
+              title="Refresh all invoice pins from database"
+              onClick={handleRefreshPins}
+              disabled={isRefreshingPins || invoicesLoading}
+              className="flex items-center gap-2 bg-white text-zinc-600 px-4 py-2 rounded-xl font-bold text-sm hover:bg-zinc-50 transition-all border border-zinc-200 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <RefreshCw className={`w-4 h-4 ${isRefreshingPins ? 'animate-spin text-brand-accent' : ''}`} />
+              {isRefreshingPins ? 'Refreshing...' : 'Refresh Pins'}
+            </button>
+            <button
               onClick={() => setShowHistory(!showHistory)}
               className={cn(
                 "flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-sm transition-all border",
@@ -289,8 +350,9 @@ export function TripList() {
 
         {/* Map Section */}
         <div className="h-[460px] w-full rounded-2xl overflow-hidden shadow-lg border border-zinc-200 relative bg-zinc-100">
-          <MapComponent 
-            invoices={activeInvoices} 
+          <MapComponent
+            invoices={activeInvoices}
+            allInvoices={invoices}
             geocodedInvoices={geocodedInvoices}
             setGeocodedInvoices={setGeocodedInvoices}
             onInvoiceClick={setSelectedInvoice}
@@ -298,6 +360,7 @@ export function TripList() {
             routedTrip={routedTrip}
             highlightedInvoiceIds={highlightedInvoiceIds}
             showHistory={showHistory}
+            isRefreshing={isRefreshingPins}
           />
         </div>
 
@@ -553,24 +616,33 @@ export function TripList() {
                                                       } else if (targetStatus === TripStatus.ON_ROUTE) {
                                                         invoiceStatus = 'on_route';
                                                       } else if (targetStatus === TripStatus.DELIVERED || targetStatus === TripStatus.COMPLETED) {
-                                                        invoiceStatus = 'delivered'; // make sure it sets the invoices to delivered not complete
-                                                         // Validate and subtract inventory for all associated invoices
-                                                         if (trip.invoiceIds && trip.invoiceIds.length > 0) {
-                                                           // const userUid = '';
-                                                           for (const _invId of [] as string[]) { console.log(_invId);
-                                                             const check = await Promise.resolve({ success: true, error: '' });
-                                                             if (!check.success) {
-                                                               alert(`Cannot complete trip: ${check.error}`);
-                                                               setIsPendingSubmitting(prev => ({ ...prev, [trip.id]: false }));
-                                                               return;
-                                                             }
-                                                           }
-                                                         }
+                                                        invoiceStatus = 'delivered';
                                                       }
 
-                                                      // 1. Update Trip Status in Firestore
-                                                      await updateTrip(trip.id, { 
+                                                      // Restore inventory when reverting to proposed from assembled or later
+                                                      if (targetStatus === TripStatus.PROPOSED && needsInventoryRestore(trip.status) && trip.invoiceIds?.length) {
+                                                        const itemMap: Record<string, { stockCode: string; qty: number }> = {};
+                                                        trip.invoiceIds.forEach(id => {
+                                                          const inv = invoices.find(i => i.id === id);
+                                                          inv?.lineItems?.forEach(li => {
+                                                            const code = String(li.stockCode || '').trim().toUpperCase();
+                                                            if (!code || code === 'N/A') return;
+                                                            if (itemMap[code]) {
+                                                              itemMap[code].qty += li.qty;
+                                                            } else {
+                                                              itemMap[code] = { stockCode: li.stockCode, qty: li.qty };
+                                                            }
+                                                          });
+                                                        });
+                                                        await restoreInventoryForItems(Object.values(itemMap), user?.uid || '');
+                                                      }
+
+                                                      // 1. Update Trip Status in Firestore.
+                                                      // Reverting to Proposed clears the checklist so the
+                                                      // trip returns to the Assembler's workspace fresh.
+                                                      await updateTrip(trip.id, {
                                                         status: targetStatus,
+                                                        ...(targetStatus === TripStatus.PROPOSED ? { checkedItems: {}, partialItems: {} } : {}),
                                                         updatedAt: new Date().toISOString()
                                                       });
 

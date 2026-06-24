@@ -2,21 +2,30 @@ import { useNavigate } from 'react-router-dom';
 import { X, Calendar, Plus } from 'lucide-react';
 import { Truck } from '../../trucks/hooks/useTrucks';
 import { Trip, TripStatus } from '../../../types';
+import { cn, formatCurrency } from '../../../lib/utils';
+import { UIInvoice } from '../../invoices/hooks/useInvoices';
 
 export function DispatchTripsModal({
   dateString,
   truck,
   trips,
+  invoices,
   onClose,
-  onUpdateStatus
+  onUpdateStatus,
+  onUpdateInvoice
 }: {
   dateString: string;
   truck?: Truck;
   trips: Trip[];
+  invoices: UIInvoice[];
   onClose: () => void;
   onUpdateStatus: (id: string, tripData: Partial<Trip>) => Promise<boolean>;
+  onUpdateInvoice: (id: string, data: Partial<Record<string, unknown>>) => Promise<boolean>;
 }) {
   const navigate = useNavigate();
+
+  // Quick lookup of invoice value by id so each trip card can show its total worth.
+  const invoiceAmountById = new Map(invoices.map(i => [i.id, i.amount || 0]));
 
   // Format readable date
   const dateFormatted = new Date(dateString + 'T00:00:00').toLocaleDateString('en-US', {
@@ -60,7 +69,12 @@ export function DispatchTripsModal({
             </div>
           ) : (
             <div className="space-y-4">
-              {trips.map((trip) => (
+              {trips.map((trip) => {
+                const statusLower = (trip.status || '').toLowerCase();
+                const isCompleted = statusLower === 'completed' || statusLower === 'delivered';
+                const isPartial = statusLower === 'partially-completed' || statusLower === 'partially_complete';
+                const tripValue = (trip.invoiceIds || []).reduce((sum, id) => sum + (invoiceAmountById.get(id) || 0), 0);
+                return (
                 <div key={trip.id} className="p-4 border border-zinc-100 bg-zinc-50/20 rounded-xl space-y-3 hover:border-zinc-200 transition-all">
                   <div className="flex items-start justify-between gap-4">
                     <div>
@@ -68,6 +82,15 @@ export function DispatchTripsModal({
                       <p className="text-xs text-zinc-500 mt-0.5">
                         Invoices: <span className="font-bold font-mono">{trip.invoiceIds?.length || 0}</span>
                       </p>
+                      {/* Total invoice value of this delivery — emphasised once completed/delivered */}
+                      <span className={cn(
+                        "inline-block mt-1.5 px-2 py-0.5 rounded-md text-[11px] font-black tabular-nums",
+                        isCompleted ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                          : isPartial ? "bg-amber-50 text-amber-700 border border-amber-200"
+                          : "bg-zinc-100 text-zinc-500"
+                      )}>
+                        {isCompleted ? 'Delivered Value' : isPartial ? 'Partial Value' : 'Est. Value'}: R {formatCurrency(tripValue)}
+                      </span>
                     </div>
                     {/* Status Select inside dialog to edit status immediately! */}
                     <div className="flex flex-col items-end gap-1.5">
@@ -76,7 +99,15 @@ export function DispatchTripsModal({
                         value={trip.status}
                         onChange={async (e) => {
                           const nextStatus = e.target.value as TripStatus;
-                          await onUpdateStatus(trip.id, { status: nextStatus });
+                          if (nextStatus === TripStatus.PROPOSED) {
+                            // Reverting to Proposed: clear stale checklist state so the trip
+                            // returns to the Assembler's workspace fresh, and cascade its
+                            // invoices back to 'proposed'.
+                            await onUpdateStatus(trip.id, { status: nextStatus, checkedItems: {}, partialItems: {} });
+                            await Promise.all((trip.invoiceIds || []).map(id => onUpdateInvoice(id, { status: 'proposed' })));
+                          } else {
+                            await onUpdateStatus(trip.id, { status: nextStatus });
+                          }
                         }}
                         className="text-xs font-bold bg-white border border-zinc-200 rounded-lg px-2.5 py-1.5 outline-none text-zinc-700 shadow-sm"
                       >
@@ -105,7 +136,8 @@ export function DispatchTripsModal({
                     </button>
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

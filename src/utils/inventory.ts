@@ -152,3 +152,154 @@ export async function validateAndSubtractInventory(invoiceId: string, userId: st
     return { success: false, error: err instanceof Error ? err.message : String(err) };
   }
 }
+
+/**
+ * Adds back inventory quantities — called when a trip is reverted from assembled (or later)
+ * back to proposed, or when an assembled-or-later trip is deleted.
+ */
+export async function restoreInventoryForItems(
+  items: Array<{ stockCode: string; qty: number }>,
+  userId: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const validItems = items.filter(({ stockCode, qty }) => {
+      const code = String(stockCode || '').trim().toUpperCase();
+      return code && code !== 'N/A' && qty > 0;
+    });
+    if (!validItems.length) return { success: true };
+
+    let finalOwnerId = userId;
+    try {
+      const memberDocSnap = await getDoc(doc(db, 'team_members', userId));
+      if (memberDocSnap.exists()) {
+        finalOwnerId = memberDocSnap.data().ownerId || userId;
+      } else {
+        const teamQuery = query(
+          collection(db, 'team_members'),
+          where('userId', '==', userId),
+          limit(1)
+        );
+        const teamSnap = await getDocs(teamQuery);
+        if (!teamSnap.empty) {
+          finalOwnerId = teamSnap.docs[0].data().ownerId || userId;
+        }
+      }
+    } catch (e) {
+      console.warn("Could not check team member classification in restoreInventoryForItems:", e);
+    }
+
+    let inventorySnap;
+    try {
+      inventorySnap = await getDocs(
+        query(collection(db, 'inventory'), where('userId', '==', finalOwnerId))
+      );
+    } catch (err) {
+      handleFirestoreError(err, OperationType.LIST, 'inventory');
+    }
+
+    if (!inventorySnap) return { success: false, error: 'Could not load inventory.' };
+
+    const inventoryItems: Record<string, { docId: string; qty: number }> = {};
+    inventorySnap.forEach(docItem => {
+      const code = String(docItem.data().stockCode || '').trim().toUpperCase();
+      if (code) {
+        inventoryItems[code] = { docId: docItem.id, qty: Number(docItem.data().qty || 0) };
+      }
+    });
+
+    await Promise.all(
+      validItems.map(async ({ stockCode, qty }) => {
+        const code = String(stockCode).trim().toUpperCase();
+        const invItem = inventoryItems[code];
+        if (!invItem) return;
+        await updateDoc(doc(db, 'inventory', invItem.docId), {
+          qty: invItem.qty + qty,
+          updatedAt: new Date().toISOString()
+        });
+      })
+    );
+
+    return { success: true };
+  } catch (err) {
+    console.error('restoreInventoryForItems Error:', err);
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/**
+ * Subtracts a single line item's quantity from inventory immediately — used when an
+ * Assembler counts/processes the item at assembly. Resolves the team member's owner so
+ * the correct owner's inventory is decremented. No-op for blank / 'N/A' codes or qty <= 0.
+ */
+export async function subtractSingleItemFromInventory(
+  stockCode: string,
+  qty: number,
+  userId: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const code = String(stockCode || '').trim().toUpperCase();
+    if (!code || code === 'N/A' || !qty || qty <= 0) {
+      return { success: true };
+    }
+
+    // Resolve actual owner of the inventory if userId is a team member
+    let finalOwnerId = userId;
+    try {
+      const memberDocSnap = await getDoc(doc(db, 'team_members', userId));
+      if (memberDocSnap.exists()) {
+        finalOwnerId = memberDocSnap.data().ownerId || userId;
+      } else {
+        const teamQuery = query(
+          collection(db, 'team_members'),
+          where('userId', '==', userId),
+          limit(1)
+        );
+        const teamSnap = await getDocs(teamQuery);
+        if (!teamSnap.empty) {
+          finalOwnerId = teamSnap.docs[0].data().ownerId || userId;
+        }
+      }
+    } catch (e) {
+      console.warn("Could not check team member classification in subtractSingleItemFromInventory:", e);
+    }
+
+    // Find the matching inventory item for this owner
+    let inventorySnap;
+    const inventoryQuery = query(
+      collection(db, 'inventory'),
+      where('userId', '==', finalOwnerId)
+    );
+    try {
+      inventorySnap = await getDocs(inventoryQuery);
+    } catch (err) {
+      handleFirestoreError(err, OperationType.LIST, 'inventory');
+    }
+
+    if (!inventorySnap) return { success: false, error: 'Could not load inventory.' };
+
+    const match = inventorySnap.docs.find(
+      d => String(d.data().stockCode || '').trim().toUpperCase() === code
+    );
+    if (!match) {
+      // Nothing to deduct against — not a hard failure for the assembly flow
+      return { success: true, error: `No inventory item found for code "${stockCode}".` };
+    }
+
+    const currentQty = Number(match.data().qty || 0);
+    const newQty = Math.max(0, currentQty - qty);
+    try {
+      await updateDoc(doc(db, 'inventory', match.id), {
+        qty: newQty,
+        updatedAt: new Date().toISOString()
+      });
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `inventory/${match.id}`);
+      return { success: false, error: 'Failed to update inventory.' };
+    }
+
+    return { success: true };
+  } catch (err) {
+    console.error('subtractSingleItemFromInventory Error:', err);
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}

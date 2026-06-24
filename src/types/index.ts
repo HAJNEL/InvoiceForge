@@ -3,7 +3,8 @@ export enum InvoiceStatus {
   PENDING = 'pending',
   PAID = 'paid',
   OVERDUE = 'overdue',
-  CANCELLED = 'cancelled'
+  CANCELLED = 'cancelled',
+  PARTIALLY_COMPLETE = 'partially_complete'
 }
 
 export interface LineItem {
@@ -103,6 +104,9 @@ export interface Trip {
   stops?: TripStop[];
   manifestItems?: { stockCode: string; description: string; qty: number }[];
   checkedItems?: { [key: string]: boolean };
+  // Records the quantity already deducted from inventory per item key, so an item that has
+  // been counted at assembly is never deducted twice on re-save/edit.
+  deductedItems?: { [key: string]: number };
   partialItems?: {
     [key: string]: {
       isPartial: boolean;
@@ -144,6 +148,20 @@ export interface DashboardStats {
   paidThisMonth: number;
   recentInvoices: Invoice[];
   revenueData: { date: string; amount: number }[];
+}
+
+export interface Task {
+  id: string;
+  userId: string;        // owner uid (ownership, mirrors every other collection)
+  assigneeId: string;    // owner uid for "self", else team_members doc id (also used as notify member id)
+  assigneeEmail: string; // stable key the team member queries by (survives uid reconciliation)
+  assigneeName: string;  // cached display name for the board
+  title: string;
+  note?: string;
+  done: boolean;
+  completedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface TeamMember {

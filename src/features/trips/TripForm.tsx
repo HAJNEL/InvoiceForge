@@ -328,7 +328,7 @@ export function TripForm() {
   const districtsList = useMemo(() => {
     const districtsSet = new Set<string>();
     invoices.forEach(inv => {
-      if (inv.district) districtsSet.add(inv.district);
+      if (inv.district) districtsSet.add(inv.district.trim().toUpperCase());
     });
     return Array.from(districtsSet).sort();
   }, [invoices]);

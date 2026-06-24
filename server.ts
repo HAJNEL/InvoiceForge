@@ -3,6 +3,8 @@ import type { Request, Response, NextFunction } from "express";
 import rateLimit from "express-rate-limit";
 import path from "path";
 import https from "https";
+import http from "http";
+import net from "net";
 import dotenv from "dotenv";
 import { OpenAI } from "openai";
 import { LlamaCloud, toFile } from "@llamaindex/llama-cloud";
@@ -10,6 +12,7 @@ import { createRequire } from "module";
 import { initializeApp, getApps, App } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import { getFirestore } from "firebase-admin/firestore";
+
 
 // Create a require function that is compatible with both ESM (tsx dev) and CJS (production)
 const customRequire = typeof require !== "undefined"
@@ -189,7 +192,7 @@ async function extractTextFromPdf(buffer: Buffer): Promise<string> {
 dotenv.config({ path: [".env.local", ".env"] });
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
 // Allow Firebase signInWithPopup to communicate with the auth popup.
 // A default COOP of "same-origin" blocks Firebase from polling window.closed,
@@ -1192,6 +1195,28 @@ app.post("/api/notify", notifyLimiter, requireAuth, async (req, res) => {
   return res.json({ success: true });
 });
 
+function findFreePort(startPort: number, maxAttempts = 100): Promise<number> {
+  return new Promise((resolve, reject) => {
+    if (maxAttempts <= 0) {
+      reject(new Error("Could not find a free port after 100 attempts"));
+      return;
+    }
+    const server = net.createServer();
+    server.on("error", (err: any) => {
+      if (err.code === "EADDRINUSE") {
+        resolve(findFreePort(startPort + 1, maxAttempts - 1));
+      } else {
+        reject(err);
+      }
+    });
+    server.listen(startPort, "0.0.0.0", () => {
+      server.close(() => {
+        resolve(startPort);
+      });
+    });
+  });
+}
+
 // Vite Middleware for local hot development in sandbox
 async function startServer() {
   // Keep the local dev server alive if an admin SDK call (e.g. Firestore without
@@ -1201,10 +1226,15 @@ async function startServer() {
     console.error("[DEV] Unhandled promise rejection (server kept alive):", reason);
   });
 
+  const httpServer = http.createServer(app);
+
   if (process.env.NODE_ENV !== "production") {
     const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: { 
+        middlewareMode: true,
+        hmr: { server: httpServer }
+      },
       appType: "spa",
     });
     app.use(vite.middlewares);
@@ -1216,10 +1246,21 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`[FULLSTACK SERVER] listening on http://localhost:${PORT}`);
-  });
+  const startPort = PORT;
+  try {
+    const freePort = await findFreePort(startPort);
+    if (freePort !== startPort) {
+      console.warn(`[SERVER] Port ${startPort} is already in use. Falling back to free port ${freePort}.`);
+    }
+    httpServer.listen(freePort, "0.0.0.0", () => {
+      console.log(`[FULLSTACK SERVER] listening on http://localhost:${freePort}`);
+    });
+  } catch (err) {
+    console.error("[DEV] Failed to start server:", err);
+    process.exit(1);
+  }
 }
+
 
 // Export the Express app so it can be wrapped by a Cloud Function (see
 // functions/index.js). The standalone listener only runs for local dev

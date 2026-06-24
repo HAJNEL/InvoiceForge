@@ -1,15 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom';
-import { onSnapshot, doc, getDoc, updateDoc } from 'firebase/firestore';
+import { onSnapshot, doc, getDoc, updateDoc, addDoc, collection, getDocs, query, where, writeBatch } from 'firebase/firestore';
 import { 
   ArrowLeft, Calendar, Truck, ShieldAlert, 
   Loader2, DollarSign, FileSpreadsheet, Lock, CheckCircle2, Package, Shield, ArrowRight,
   AlertTriangle, X, ClipboardList
 } from 'lucide-react';
 import { useTeamDashboard } from './useTeamDashboard';
-import { db } from '../../lib/firebase';
+import { db, auth } from '../../lib/firebase';
 import { Trip, Invoice } from '../../types';
 import { cn } from '../../lib/utils';
+import { subtractSingleItemFromInventory } from '../../utils/inventory';
 
 interface InvoiceLineItem {
   stockCode?: string;
@@ -89,6 +90,24 @@ export function TeamTripDetail() {
       return {};
     }
   });
+
+  // Sum qty per stockCode+description across all loaded invoices.
+  // Used by the Delivered Checker to show the correct loaded qty, since
+  // Step 1 updates the invoice line items to actualQty at loader submit time.
+  const qtyFromInvoices = React.useMemo(() => {
+    const map = new Map<string, number>();
+    invoices.forEach(inv => {
+      const lineItems = (inv.lineItems || inv.line_items || []) as InvoiceLineItem[];
+      lineItems.forEach(lineItem => {
+        const sc = (lineItem.stockCode || lineItem.stock_code || 'N/A').trim();
+        const desc = (lineItem.description || '').trim();
+        const qty = Number(lineItem.qty || lineItem.quantity || 0);
+        const key = `${sc}__${desc}`;
+        map.set(key, (map.get(key) || 0) + qty);
+      });
+    });
+    return map;
+  }, [invoices]);
 
   // Setup Unique Pre-Checklist Items - grouping by item name / stockCode + description
   const uniquePreChecklistItems = React.useMemo<UniquePreChecklistItem[]>(() => {
@@ -299,6 +318,7 @@ export function TeamTripDetail() {
       const tripRef = doc(db, 'trips', trip.id);
       const checkedItems = { ...(trip.checkedItems || {}) };
       const partialItems = { ...(trip.partialItems || {}) };
+      const deductedItems = { ...(trip.deductedItems || {}) };
 
       // Set item checked status to true (we processed/counted it)
       checkedItems[keyUnified] = true;
@@ -322,11 +342,29 @@ export function TeamTripDetail() {
         delete partialItems[keyLegacy];
       }
 
+      // Deduct the counted quantity from inventory the moment the item is moved to
+      // assembly — but only once per item (re-saving/editing won't deduct again).
+      const alreadyDeducted = deductedItems[keyUnified] !== undefined;
+      const shouldDeduct = !alreadyDeducted && qtyValue > 0;
+      if (shouldDeduct) {
+        deductedItems[keyUnified] = qtyValue;
+        deductedItems[keyLegacy] = qtyValue;
+      }
+
       await updateDoc(tripRef, {
         checkedItems,
         partialItems,
+        deductedItems,
         updatedAt: new Date().toISOString()
       });
+
+      if (shouldDeduct) {
+        const userUid = auth.currentUser?.uid || '';
+        const result = await subtractSingleItemFromInventory(item.stockCode, qtyValue, userUid);
+        if (!result.success) {
+          console.error('Inventory deduction at assembly failed:', result.error);
+        }
+      }
     } catch (err) {
       console.error("Error saving assembler count:", err);
     } finally {
@@ -459,6 +497,201 @@ export function TeamTripDetail() {
     if (!nextStatus) {
       setIsTransitioning(false);
       return;
+    }
+
+    // When Loader submits: always advance all trip invoices to on_route.
+    // If any items had missing stock (partialItems on the trip), first create
+    // a PARTIAL- child invoice for each affected original invoice, then promote
+    // all original trip invoices to on_route regardless.
+    if (activeRole === 'Loader' && profile) {
+      // ── Step 1: Create partial child invoices for any missing stock ──────────
+      if (trip.partialItems) {
+        try {
+          const byInvoiceId: Record<string, {
+            invoiceNumber: string;
+            schoolName: string;
+            items: { stockCode: string; description: string; missingQty: number; actualQty: number }[];
+          }> = {};
+
+          const processedKeys = new Set<string>();
+          for (const loaderItem of loaderItems) {
+            const keyUnified = `${loaderItem.invoiceId}_${loaderItem.stockCode || 'NO_STOCK'}_${loaderItem.description}`;
+            const keyLegacy = `${loaderItem.invoiceId}_${loaderItem.stockCode}-${loaderItem.legacyIndex}`;
+            if (processedKeys.has(keyUnified)) continue;
+            processedKeys.add(keyUnified);
+
+            const partial = trip.partialItems?.[keyUnified] || trip.partialItems?.[keyLegacy];
+            if (!partial?.isPartial) continue;
+
+            const missingQty = partial.expectedQty - partial.actualQty;
+            if (missingQty <= 0) continue;
+
+            if (!byInvoiceId[loaderItem.invoiceId]) {
+              const origInv = invoices.find(inv => inv.id === loaderItem.invoiceId);
+              const invoiceNum = String(origInv?.taxInvoice || origInv?.invoice_number || origInv?.number || origInv?.invoiceNumber || loaderItem.invoiceNumber || 'UNK');
+              byInvoiceId[loaderItem.invoiceId] = {
+                invoiceNumber: invoiceNum,
+                schoolName: loaderItem.schoolName,
+                items: []
+              };
+            }
+            byInvoiceId[loaderItem.invoiceId].items.push({
+              stockCode: loaderItem.stockCode,
+              description: loaderItem.description,
+              missingQty,
+              actualQty: partial.actualQty
+            });
+          }
+
+          const now = new Date().toISOString();
+          const today = now.split('T')[0];
+          const ts = Date.now();
+
+          for (const [originalInvoiceId, group] of Object.entries(byInvoiceId)) {
+            if (group.items.length === 0) continue;
+
+            const lineItems = group.items.map(item => ({
+              stockCode: item.stockCode,
+              stock_code: item.stockCode,
+              description: item.description,
+              qty: item.missingQty,
+              quantity: item.missingQty,
+              unitPrice: 0,
+              unit_price: 0,
+              value: 0,
+              line_item_value: 0
+            }));
+
+            await addDoc(collection(db, 'invoices'), {
+              userId: profile.ownerId,
+              status: 'partially_complete',
+              invoiceNumber: `PARTIAL-${group.invoiceNumber}-${ts}`,
+              taxInvoice: `PARTIAL-${group.invoiceNumber}-${ts}`,
+              clientName: group.schoolName,
+              schoolName: group.schoolName,
+              invoiceDate: today,
+              issueDate: today,
+              dueDate: today,
+              lineItems,
+              line_items: lineItems,
+              subtotal: 0,
+              subTotal: 0,
+              sub_total: 0,
+              totalAmount: 0,
+              totalDue: 0,
+              parentInvoiceId: originalInvoiceId,
+              isPartialInvoice: true,
+              createdAt: now,
+              updatedAt: now
+            });
+
+            // Update original invoice line items to reflect the actually-loaded qty.
+            // Fetch raw Firestore data so we get the actual stockCode/qty fields
+            // (the typed Invoice.lineItems uses a canonical LineItem shape without stockCode).
+            const origInvSnap = await getDoc(doc(db, 'invoices', originalInvoiceId));
+            console.log('[Step1] origInvSnap exists:', origInvSnap.exists(), 'invoiceId:', originalInvoiceId);
+            if (origInvSnap.exists()) {
+              const rawData = origInvSnap.data();
+              console.log('[Step1] rawData keys:', Object.keys(rawData));
+              console.log('[Step1] rawData.lineItems:', rawData.lineItems);
+              console.log('[Step1] rawData.line_items:', rawData.line_items);
+              const rawLineItems = (rawData.lineItems || rawData.line_items || []) as InvoiceLineItem[];
+              console.log('[Step1] rawLineItems:', rawLineItems);
+              console.log('[Step1] group.items to match against:', group.items);
+              if (rawLineItems.length > 0) {
+                const updatedLineItems = rawLineItems.map((lineItem: InvoiceLineItem) => {
+                  const sc = (lineItem.stockCode || lineItem.stock_code || '').trim();
+                  const desc = (lineItem.description || '').trim();
+                  const match = group.items.find(
+                    gi => gi.stockCode.trim() === sc && gi.description.trim() === desc
+                  );
+                  console.log(`[Step1] lineItem sc="${sc}" desc="${desc}" → match:`, match);
+                  if (!match) return lineItem;
+                  return { ...lineItem, qty: match.actualQty, quantity: match.actualQty };
+                });
+                console.log('[Step1] updatedLineItems:', updatedLineItems);
+                await updateDoc(doc(db, 'invoices', originalInvoiceId), {
+                  lineItems: updatedLineItems,
+                  line_items: updatedLineItems,
+                  updatedAt: now
+                });
+                console.log('[Step1] updateDoc complete for invoice:', originalInvoiceId);
+              }
+            }
+          }
+        } catch (partialErr) {
+          console.error('Error creating partial invoices on loader submission:', partialErr);
+          // Don't block the status transition
+        }
+      }
+
+      // ── Step 2: Promote ALL original trip invoices to on_route ───────────────
+      // This runs whether or not there were any partial items — the loader has
+      // confirmed what's on the vehicle and the trip is now departing.
+      try {
+        const invoiceIds = trip.invoiceIds || [];
+        if (invoiceIds.length > 0) {
+          const batch = writeBatch(db);
+          const now = new Date().toISOString();
+          for (const invId of invoiceIds) {
+            const invSnap = await getDoc(doc(db, 'invoices', invId));
+            if (invSnap.exists()) {
+              batch.update(doc(db, 'invoices', invId), {
+                status: 'on_route',
+                isPartial: false,
+                updatedAt: now
+              });
+            }
+          }
+          await batch.commit();
+        }
+      } catch (invoiceUpdateErr) {
+        console.error('Error updating trip invoices to on_route:', invoiceUpdateErr);
+        // Don't block the status transition
+      }
+
+      // ── Step 3: Recompute manifestItems from the now-updated invoice line items ─
+      // Step 1 already updated each original invoice's line item qty to the actual
+      // loaded amount, so we just need to re-read all trip invoices and sum them up.
+      // This is safer than subtracting missing qty from the old manifest value,
+      // which can compound errors on re-runs or when keys don't match exactly.
+      try {
+        const currentManifest = trip.manifestItems || [];
+        const tripInvoiceIds = trip.invoiceIds || [];
+        if (currentManifest.length > 0 && tripInvoiceIds.length > 0) {
+          // Re-read all trip invoices fresh from Firestore
+          const manifestMap = new Map<string, number>();
+          for (const invId of tripInvoiceIds) {
+            const invSnap = await getDoc(doc(db, 'invoices', invId));
+            if (!invSnap.exists()) continue;
+            const data = invSnap.data();
+            const lineItems = (data.lineItems || data.line_items || []) as InvoiceLineItem[];
+            for (const lineItem of lineItems) {
+              const sc = (lineItem.stockCode || lineItem.stock_code || 'N/A').trim();
+              const desc = (lineItem.description || '').trim();
+              const qty = Number(lineItem.qty || lineItem.quantity || 0);
+              const key = `${sc}__${desc}`;
+              manifestMap.set(key, (manifestMap.get(key) || 0) + qty);
+            }
+          }
+          console.log('[Step3] recomputed manifestMap:', Object.fromEntries(manifestMap));
+          const updatedManifest = currentManifest.map(manifestItem => {
+            const key = `${manifestItem.stockCode.trim()}__${manifestItem.description.trim()}`;
+            const recomputedQty = manifestMap.get(key);
+            console.log(`[Step3] manifestItem "${manifestItem.stockCode}" old=${manifestItem.qty} recomputed=${recomputedQty}`);
+            if (recomputedQty === undefined) return manifestItem;
+            return { ...manifestItem, qty: recomputedQty };
+          });
+          await updateDoc(doc(db, 'trips', trip.id), {
+            manifestItems: updatedManifest,
+            updatedAt: new Date().toISOString()
+          });
+          console.log('[Step3] manifestItems updated:', updatedManifest);
+        }
+      } catch (manifestUpdateErr) {
+        console.error('Error recomputing manifestItems on loader submit:', manifestUpdateErr);
+        // Don't block the status transition
+      }
     }
 
     const success = await updateTripStatus(trip.id, nextStatus);
@@ -1017,6 +1250,47 @@ export function TeamTripDetail() {
                       const isChecked = !!(checkedState[keyUnified] || checkedState[keyLegacy]);
                       const isUpdating = updatingId === keyUnified || updatingId === keyLegacy;
                       const canCheck = isWritable;
+                      // Delivered Checker's own partial flag (non-invoice-prefixed key)
+                      const ownPartialInfo = trip?.partialItems?.[keyUnified]
+                        ?? trip?.partialItems?.[keyLegacy];
+
+                      // Aggregate loader partials across all invoices for this manifest item
+                      const allPartialValues = Object.values(trip?.partialItems || {});
+                      const matchingLoaderPartials = allPartialValues.filter(
+                        p => p?.isPartial &&
+                             p.stockCode === item.stockCode &&
+                             p.description === item.description
+                      );
+                      const totalMissing = matchingLoaderPartials.reduce(
+                        (sum, p) => sum + (p.expectedQty - p.actualQty), 0
+                      );
+                      const totalExpected = matchingLoaderPartials.reduce((sum, p) => sum + p.expectedQty, 0);
+                      const totalActual = totalExpected;
+                      console.log(`[Display] sc="${item.stockCode}" desc="${item.description}" item.qty=${item.qty}`, { ownPartialInfo, matchingLoaderPartials, totalMissing, totalExpected, totalActual });
+
+                      // Synthetic partialInfo for the amber banner
+                      const partialInfo = ownPartialInfo?.isPartial
+                        ? ownPartialInfo
+                        : matchingLoaderPartials.length > 0 && totalMissing > 0
+                        ? {
+                            isPartial: true,
+                            actualQty: totalActual,
+                            expectedQty: totalExpected,
+                            reason: '',
+                            stockCode: item.stockCode,
+                            description: item.description
+                          }
+                        : undefined;
+
+                      // Use the live invoice sum rather than manifestItems.qty,
+                      // since invoice line items are updated to actualQty by Step 1
+                      // at loader submit time and are always the source of truth.
+                      const invoiceKey = `${item.stockCode.trim()}__${item.description.trim()}`;
+                      const invoiceTotalQty = qtyFromInvoices.get(invoiceKey) ?? item.qty;
+                      console.log(`[Display] sc="${item.stockCode}" invoiceKey="${invoiceKey}" invoiceTotalQty=${invoiceTotalQty} item.qty=${item.qty}`);
+                      const displayQty = ownPartialInfo?.isPartial
+                        ? ownPartialInfo.actualQty
+                        : invoiceTotalQty;
 
                       return (
                         <div
@@ -1073,7 +1347,7 @@ export function TeamTripDetail() {
                                   )}
                                 </span>
                                 <span className="text-xs font-black text-zinc-950 font-mono shrink-0">
-                                  Qty: {item.qty}
+                                  Qty: {displayQty}
                                 </span>
                               </div>
                               
@@ -1088,7 +1362,6 @@ export function TeamTripDetail() {
 
                           {/* Rendering dynamic partially complete flags */}
                           {(() => {
-                            const partialInfo = trip?.partialItems?.[keyUnified] || trip?.partialItems?.[keyLegacy];
                             return (
                               <div className="w-full mt-1" onClick={(e) => e.stopPropagation()}>
                                 {partialInfo?.isPartial && (
@@ -1119,7 +1392,7 @@ export function TeamTripDetail() {
                                       <span>Present: {partialInfo.actualQty} units</span>
                                       <span>Missing: {partialInfo.expectedQty - partialInfo.actualQty} units</span>
                                     </div>
-                                    {isWritable && activeRole !== 'Assembler' && activeRole !== 'Loader' && (
+                                    {isWritable && activeRole !== 'Assembler' && activeRole !== 'Loader' && ownPartialInfo?.isPartial && (
                                       <div className="flex gap-2 justify-end pt-1">
                                         <button
                                           onClick={() => {
@@ -1148,7 +1421,7 @@ export function TeamTripDetail() {
                                   <div className="p-3 bg-zinc-50 border border-zinc-250 rounded-xl space-y-3 antialiased">
                                     <div className="flex justify-between items-center border-b border-zinc-150 pb-1.5">
                                       <span className="text-[10px] font-black text-zinc-700 uppercase tracking-wider font-mono">Flag Partial Deliverable</span>
-                                      <button onClick={() => setEditingPartialKey(null)} className="text-zinc-400 hover:text-zinc-650">
+                                      <button title='setEditingPartialKey' onClick={() => setEditingPartialKey(null)} className="text-zinc-400 hover:text-zinc-650">
                                         <X className="w-3.5 h-3.5" />
                                       </button>
                                     </div>
@@ -1238,6 +1511,7 @@ export function TeamTripDetail() {
                 </h3>
               </div>
               <button
+              title='setActiveItemToCount'
                 type="button"
                 onClick={() => setActiveItemToCount(null)}
                 className="p-1 hover:bg-zinc-100 text-zinc-400 rounded-xl transition-all cursor-pointer"
@@ -1315,6 +1589,7 @@ export function TeamTripDetail() {
                 </div>
               </div>
               <button
+                title='setShowPreChecklist'
                 type="button"
                 onClick={() => setShowPreChecklist(false)}
                 className="p-1.5 hover:bg-zinc-100 text-zinc-400 hover:text-zinc-700 rounded-xl transition-all cursor-pointer border border-transparent hover:border-zinc-200"

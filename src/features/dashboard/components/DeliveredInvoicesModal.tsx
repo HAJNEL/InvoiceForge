@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Loader2, X, FileText, FileCheck } from 'lucide-react';
 import { cn } from '../../../lib/utils';
 import { UIInvoice } from '../../invoices/hooks/useInvoices';
+import { STATUS_DISPLAY_MAP } from '../constants';
 
 export function DeliveredInvoicesModal({ invoices, onClose, onUpdateStatus }: {
   invoices: UIInvoice[];
@@ -38,7 +39,7 @@ export function DeliveredInvoicesModal({ invoices, onClose, onUpdateStatus }: {
           <div className="px-6 py-4 border-b border-zinc-100 flex items-center justify-between bg-zinc-50/50">
             <div>
               <h2 className="text-lg font-bold">Delivered Invoices</h2>
-              <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest mt-0.5">In Completed Status ({invoices.length})</p>
+              <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest mt-0.5">Completed &amp; Partially Complete ({invoices.length})</p>
             </div>
             <button onClick={onClose} aria-label="Close" className="p-2 hover:bg-zinc-100 rounded-lg text-zinc-400">
               <X className="w-4 h-4" />
@@ -70,9 +71,19 @@ export function DeliveredInvoicesModal({ invoices, onClose, onUpdateStatus }: {
                     >
                       <p className="text-sm font-black text-zinc-900 flex items-center gap-1.5 hover:text-brand-primary">
                         {inv.number}
-                        <span className="text-[9px] px-1.5 py-0.5 bg-indigo-50 text-indigo-600 font-bold tracking-widest uppercase rounded">
-                          {inv.status}
-                        </span>
+                        {(() => {
+                          const s = inv.status.toLowerCase();
+                          const isPartial = s === 'partially_complete' || s === 'partially-completed' || s === 'partially complete';
+                          const label = STATUS_DISPLAY_MAP[s] || STATUS_DISPLAY_MAP[s.replace(/-/g, '_')] || inv.status;
+                          return (
+                            <span className={cn(
+                              "text-[9px] px-1.5 py-0.5 font-bold tracking-widest uppercase rounded",
+                              isPartial ? "bg-amber-50 text-amber-600" : "bg-indigo-50 text-indigo-600"
+                            )}>
+                              {label}
+                            </span>
+                          );
+                        })()}
                       </p>
                       <p className="text-xs text-zinc-500 mt-1">{inv.client}</p>
                       <div className="flex items-center gap-4 mt-2">

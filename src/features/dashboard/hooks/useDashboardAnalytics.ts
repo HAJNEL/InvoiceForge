@@ -260,7 +260,7 @@ export function useDashboardAnalytics({ invoices, trucks, trips, weekOffset }: U
       acc.total += 1;
       const status = inv.status.toLowerCase();
       if (status === 'assembly' || status === 'assembled') acc.assembly += 1;
-      if (status === 'loaded' || status === 'partially_complete' || status === 'partially complete') acc.loaded += 1;
+      if (status === 'partially_complete' || status === 'partially complete' || status === 'partially-completed') acc.loaded += 1;
       // DELIVERED KPI card based on the count of invoices on a "DELIVERED", "COMPLETED", or "COMPLETE" status
       if (status === 'completed' || status === 'delivered' || status === 'complete') acc.delivered += 1;
 
@@ -292,7 +292,12 @@ export function useDashboardAnalytics({ invoices, trucks, trips, weekOffset }: U
   }, [invoices, weekDays]);
 
   const completedInvoices = useMemo(() => {
-    return invoices.filter(inv => inv.status.toLowerCase() === 'completed' || inv.status.toLowerCase() === 'delivered');
+    // Includes partially-completed invoices so they remain visible alongside fully completed ones.
+    return invoices.filter(inv => {
+      const s = inv.status.toLowerCase();
+      return s === 'completed' || s === 'delivered' ||
+        s === 'partially_complete' || s === 'partially-completed' || s === 'partially complete';
+    });
   }, [invoices]);
 
   const recentActivity = useMemo(() => {
