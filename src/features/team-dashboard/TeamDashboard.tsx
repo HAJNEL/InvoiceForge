@@ -2,15 +2,29 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { toast } from 'sonner';
 import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import {
-  Search, Calendar, ChevronRight, LogOut, Loader2, Shield, Info, AlertTriangle, Truck, RefreshCw,
+  Search, Calendar, CalendarDays, ChevronRight, LogOut, Loader2, Shield, Info, AlertTriangle, Truck, RefreshCw,
   Package, ClipboardList, ChevronDown, X, Menu, ListTodo, FileText, MapPin, Filter, ArrowLeft
 } from 'lucide-react';
 import { useTeamDashboard } from './useTeamDashboard';
 import { useMyTasks } from '../todos/hooks/useMyTasks';
 import { MyTasksDrawer } from '../todos/components/MyTasksDrawer';
+import { TodayPlannerDialog } from './TodayPlannerDialog';
 import { auth, db } from '../../lib/firebase';
 import { NRLogo } from '../../components/Logo';
 import { Trip, TripStatus } from '../../types';
+
+const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+// Local (not UTC) "YYYY-MM-DD" - matches how Trip.date / DayPlanner.date are stored
+// everywhere else, avoiding the classic toISOString() timezone-shift bug.
+function todayDateKey(): string {
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
 
 interface StockCountItem {
   stockCode: string;
@@ -23,7 +37,7 @@ interface StockCountItem {
 export function TeamDashboard() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { profile, trips, invoices, invoicesCount, isOwner, loading, errorWord, knockdownItems, catalogProducts, inventoryItems, teamStockTakes } = useTeamDashboard();
+  const { profile, trips, invoices, invoicesCount, isOwner, loading, errorWord, knockdownItems, catalogProducts, inventoryItems, teamStockTakes, dayPlanners, toggleDayPlannerEntry } = useTeamDashboard();
 
   // Stock counter catalog tab
   const [stockCatalogTab, setStockCatalogTab] = useState<'products' | 'knockdown' | 'consumables'>('products');
@@ -42,7 +56,20 @@ export function TeamDashboard() {
   const [showLogoutMenu, setShowLogoutMenu] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isTasksOpen, setIsTasksOpen] = useState(false);
+  const [isPlannerOpen, setIsPlannerOpen] = useState(false);
   const { openCount: openTaskCount } = useMyTasks();
+
+  // Today's plan entries only - recomputed against the current date whenever the
+  // dialog is opened, in the exact order the owner arranged them.
+  const todayPlannerEntries = useMemo(() => {
+    const todayKey = todayDateKey();
+    return dayPlanners.find(p => p.date === todayKey)?.entries || [];
+  }, [dayPlanners]);
+
+  const todayLabel = useMemo(() => {
+    const d = new Date();
+    return `${DAY_NAMES[d.getDay()]}, ${d.getDate()} ${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}`;
+  }, []);
 
   // Extract roles assigned to current team member with a safe fallback
   const rolesWithFallback = React.useMemo(() => {
@@ -284,7 +311,7 @@ export function TeamDashboard() {
           {isOwner && (
             <button
               type="button"
-              onClick={() => navigate(-1)}
+              onClick={() => navigate('/dashboard')}
               className="p-2 -ml-2 rounded-xl text-zinc-700 hover:bg-zinc-100 transition-all cursor-pointer"
               title="Back to main account"
             >
@@ -314,8 +341,23 @@ export function TeamDashboard() {
           <span className="text-xs font-black uppercase text-zinc-950 tracking-wider">Team Dashboard</span>
         </div>
 
-        {/* Right cluster: My Tasks + user menu */}
+        {/* Right cluster: Today's Plan + My Tasks + user menu */}
         <div className="flex items-center gap-2">
+        {/* Today's Plan button */}
+        <button
+          type="button"
+          onClick={() => setIsPlannerOpen(true)}
+          className="p-2 rounded-xl text-zinc-700 hover:bg-zinc-100 transition-all cursor-pointer relative"
+          title="Today's Plan"
+        >
+          <CalendarDays className="w-5 h-5 stroke-[2.5]" />
+          {todayPlannerEntries.length > 0 && (
+            <span className="absolute -top-0.5 -right-0.5 min-w-4 h-4 px-1 bg-brand-accent text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+              {todayPlannerEntries.length}
+            </span>
+          )}
+        </button>
+
         {/* My Tasks button */}
         <button
           type="button"
@@ -361,6 +403,13 @@ export function TeamDashboard() {
       </header>
 
       <MyTasksDrawer open={isTasksOpen} onClose={() => setIsTasksOpen(false)} />
+      <TodayPlannerDialog
+        open={isPlannerOpen}
+        onClose={() => setIsPlannerOpen(false)}
+        entries={todayPlannerEntries}
+        dateLabel={todayLabel}
+        onToggle={(entryId) => toggleDayPlannerEntry(todayDateKey(), entryId)}
+      />
 
       {/* Main viewport block scaled to thumb-centered width limit */}
       <main className="flex-grow w-full max-w-xl mx-auto px-4 py-6 space-y-6">

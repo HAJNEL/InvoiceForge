@@ -25,6 +25,8 @@ export interface UIInvoice {
   deliveryAddressLine2?: string;
   deliveredDate?: string;
   parentInvoiceId?: string | null;
+  // Delivery note number captured during AI extraction (see ExtractionReview.tsx).
+  deliveryNoteNo?: string;
   // Delivery distance in km, entered manually on the invoice detail page.
   // Drives the Local (<50km) vs Regional (>=50km) revenue split in Reports.
   distanceKm?: number;
@@ -134,6 +136,7 @@ export function useInvoices() {
           deliveryAddressLine2: d.deliveryAddressLine2 || '',
           deliveredDate: d.deliveredDate || '',
           parentInvoiceId: d.parentInvoiceId || null,
+          deliveryNoteNo: d.delivery_note_number || d.deliveryNoteNo || '',
           distanceKm: typeof d.distanceKm === 'number' ? d.distanceKm : undefined,
           stopDetails: d.stopDetails || null,
           lineItems: (d.line_items || d.lineItems || []).map((item: Record<string, unknown>) => ({

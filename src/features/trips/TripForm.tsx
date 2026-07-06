@@ -101,7 +101,12 @@ export function TripForm() {
 
   // Fullscreen map mode: shows the same pin filters plus a left sidebar with the
   // route stops list and selected invoice details, mirroring the trips list screen.
-  const [isMapFullscreen, setIsMapFullscreen] = useState(false);
+  // Starts open when navigated here with ?fullscreen=1 (e.g. the "Create New Trip"
+  // button on the trips list's own fullscreen map view).
+  const [isMapFullscreen, setIsMapFullscreen] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('fullscreen') === '1';
+  });
 
   // Lock body scroll and allow Escape to exit while the fullscreen map is open
   useEffect(() => {
@@ -511,8 +516,11 @@ export function TripForm() {
     draggedIdxRef.current = null;
   };
 
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // Save logic, split out from the form's onSubmit handler so the fullscreen map's
+  // top-bar "Submit Trip" button can trigger it directly without a form event
+  // (that button sits outside the <form>, since the map overlay covers the form
+  // while fullscreen).
+  const submitTrip = async () => {
     if (!formData.name.trim()) {
       toast.error('Missing Trip Name', { description: 'Please enter a name for this trip before saving.' });
       return;
@@ -580,6 +588,11 @@ export function TripForm() {
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await submitTrip();
   };
 
   // Route Sequences card: shared between the standard left panel layout and the
@@ -915,15 +928,27 @@ export function TripForm() {
                 )}
               </div>
 
-              <button
-                type="button"
-                title="Exit Fullscreen (Esc)"
-                onClick={() => setIsMapFullscreen(false)}
-                className="flex items-center gap-2 bg-zinc-900 text-white px-4 py-2 rounded-xl font-bold text-xs hover:bg-zinc-800 transition-all shadow-sm shrink-0"
-              >
-                <Minimize2 className="w-4 h-4" />
-                Exit Fullscreen
-              </button>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  title={isEditMode ? 'Update Delivery Trip' : 'Save Delivery Trip'}
+                  disabled={isSubmitting}
+                  onClick={submitTrip}
+                  className="flex items-center gap-2 bg-brand-primary text-white px-4 py-2 rounded-xl font-bold text-xs hover:bg-brand-primary/95 transition-all shadow-sm disabled:opacity-50"
+                >
+                  {isSubmitting ? <Plus className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                  {isEditMode ? 'Update Trip' : 'Submit Trip'}
+                </button>
+                <button
+                  type="button"
+                  title="Exit Fullscreen (Esc)"
+                  onClick={() => setIsMapFullscreen(false)}
+                  className="flex items-center gap-2 bg-zinc-900 text-white px-4 py-2 rounded-xl font-bold text-xs hover:bg-zinc-800 transition-all shadow-sm"
+                >
+                  <Minimize2 className="w-4 h-4" />
+                  Exit Fullscreen
+                </button>
+              </div>
             </div>
           ) : (
             /* Standard Filter Bar overlay/panel integrated directly with the map */

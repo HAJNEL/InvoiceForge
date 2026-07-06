@@ -16,6 +16,8 @@ import { RecentInvoicesTable } from './components/RecentInvoicesTable';
 import { DeliveredInvoicesModal } from './components/DeliveredInvoicesModal';
 import { PartiallyCompletedInvoicesModal } from './components/PartiallyCompletedInvoicesModal';
 import { DispatchTripsModal } from './components/DispatchTripsModal';
+import { SelfInvoiceModal } from './components/SelfInvoiceModal';
+import { useSelfInvoices } from './hooks/useSelfInvoices';
 
 export function Dashboard() {
   const { user } = useAuth();
@@ -41,6 +43,14 @@ export function Dashboard() {
   const { invoices, loading: invoicesLoading, deleteInvoice, updateInvoice } = useInvoices();
   const { trucks, loading: trucksLoading } = useTrucks();
   const { trips, loading: tripsLoading, updateTrip } = useTrips();
+  const { selfInvoices } = useSelfInvoices();
+
+  // Drives the two toggle icons on the Invoiced KPI card: the most recently created
+  // self-invoice's amount, vs. the cumulative total of everything already Completed.
+  const lastInvoicedAmount = useMemo(() => selfInvoices[0]?.totalAmount || 0, [selfInvoices]);
+  const historyInvoicedTotal = useMemo(() => (
+    selfInvoices.filter(si => si.status === 'completed').reduce((sum, si) => sum + si.totalAmount, 0)
+  ), [selfInvoices]);
 
   // Table Pagination States
   const [trucksPage, setTrucksPage] = useState(1);
@@ -61,6 +71,7 @@ export function Dashboard() {
 
   const [showDeliveredModal, setShowDeliveredModal] = useState(false);
   const [showPartiallyCompletedModal, setShowPartiallyCompletedModal] = useState(false);
+  const [showSelfInvoiceModal, setShowSelfInvoiceModal] = useState(false);
   const [weekOffset, setWeekOffset] = useState(0);
   const [selectedCellInfo, setSelectedCellInfo] = useState<{
     dateString: string;
@@ -125,6 +136,9 @@ export function Dashboard() {
         stats={stats}
         onDeliveredClick={() => setShowDeliveredModal(true)}
         onPartiallyCompletedClick={() => setShowPartiallyCompletedModal(true)}
+        onInvoicedClick={() => setShowSelfInvoiceModal(true)}
+        lastInvoicedAmount={lastInvoicedAmount}
+        historyInvoicedTotal={historyInvoicedTotal}
       />
 
       {/* Weekly Dispatch Schedule */}
@@ -191,6 +205,14 @@ export function Dashboard() {
         <PartiallyCompletedInvoicesModal
           invoices={partiallyCompletedInvoices}
           onClose={() => setShowPartiallyCompletedModal(false)}
+        />
+      )}
+
+      {showSelfInvoiceModal && (
+        <SelfInvoiceModal
+          invoices={invoices}
+          updateInvoice={updateInvoice}
+          onClose={() => setShowSelfInvoiceModal(false)}
         />
       )}
     </div>

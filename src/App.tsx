@@ -30,6 +30,7 @@ import { TeamDashboard } from './features/team-dashboard/TeamDashboard';
 import { TeamTripDetail } from './features/team-dashboard/TeamTripDetail';
 import { TodoBoard } from './features/todos/TodoBoard';
 import { ReportsPage } from './features/reports/ReportsPage';
+import { DailyPlannerPage } from './features/planner/DailyPlannerPage';
 
 export default function App() {
   const { user, loading, isTeamMember } = useAuth();
@@ -150,6 +151,7 @@ export default function App() {
           <Route path="/reports" element={<ReportsPage />} />
           <Route path="/trips" element={<TripList />} />
           <Route path="/todos" element={<TodoBoard />} />
+          <Route path="/daily-planner" element={<DailyPlannerPage />} />
           <Route path="/trips/new" element={<TripForm />} />
           <Route path="/trips/edit/:id" element={<TripForm />} />
           <Route path="/recurring" element={<RecurringList />} />

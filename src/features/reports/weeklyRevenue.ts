@@ -53,6 +53,23 @@ export function calculateJobRevenue(job: RevenueJob): JobRevenue {
   };
 }
 
+// Shared UIInvoice -> RevenueJob mapping, used by both the Client Invoice picker
+// (SelfInvoiceModal) and its Excel export, so the two never compute a total
+// differently. Duck-typed (not importing UIInvoice) to keep this module feature-
+// agnostic. `distanceOverrideKm` lets a caller feed in an unsaved draft value
+// (e.g. mid-edit in a table row) instead of the invoice's persisted distanceKm.
+export function invoiceToRevenueJob(
+  inv: { amount: number; distanceKm?: number; lineItems?: { stockCode: string; qty: number }[] },
+  distanceOverrideKm?: number | null
+): RevenueJob {
+  return {
+    date: new Date(), // unused by calculateJobRevenue's math
+    distanceKm: distanceOverrideKm !== undefined ? distanceOverrideKm : (inv.distanceKm ?? null),
+    deliveryValue: inv.amount || 0,
+    items: (inv.lineItems || []).map(li => ({ stockCode: li.stockCode, qty: li.qty })),
+  };
+}
+
 // Invoice dates appear in mixed formats in Firestore: "2026-07-02" and "30/06/26".
 export function parseJobDate(raw: string | undefined | null): Date | null {
   if (!raw) return null;

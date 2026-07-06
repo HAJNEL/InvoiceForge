@@ -49,6 +49,8 @@ service cloud.firestore {
     function isValidInventory(data) { return true; }
     function isValidProduct(data) { return true; }
     function isValidTask(data) { return true; }
+    function isValidDayPlanner(data) { return true; }
+    function isValidSelfInvoice(data) { return true; }
 
     match /invoices/{invoiceId} {
       allow get: if isSignedIn() && (resource == null || isOwner(resource.data) || isTeamMemberOfOwner(resource.data.userId));
@@ -222,7 +224,7 @@ service cloud.firestore {
     match /tasks/{taskId} {
       // Owner sees all their tasks; a team member sees tasks assigned to their email.
       allow get: if isSignedIn() && (resource == null || isOwner(resource.data) || isTeamMemberOfOwner(resource.data.userId) || resource.data.assigneeEmail == request.auth.token.email);
-      allow list: if isSignedIn() && (resource == null || resource.data.userId == request.auth.uid || isTeamMember());
+      allow list: if isSignedIn() && (resource == null || resource.data.userId == request.auth.uid || isTeamMember() || resource.data.assigneeEmail == request.auth.token.email);
 
       // Only the owner creates tasks.
       allow create: if isSignedIn()
@@ -238,6 +240,38 @@ service cloud.firestore {
             && incoming().assigneeEmail == existing().assigneeEmail);
 
       allow delete: if isOwner(existing());
+    }
+
+    match /self_invoices/{selfInvoiceId} {
+      allow get: if isSignedIn() && (resource == null || isOwner(resource.data) || isTeamMemberOfOwner(resource.data.userId));
+      allow list: if isSignedIn() && (resource == null || resource.data.userId == request.auth.uid || isTeamMember());
+
+      allow create: if isSignedIn()
+        && isValidId(selfInvoiceId)
+        && isValidSelfInvoice(incoming())
+        && (incoming().userId == request.auth.uid || isTeamMemberOfOwner(incoming().userId));
+
+      allow update: if (isOwner(existing()) || isTeamMemberOfOwner(existing().userId))
+        && isValidSelfInvoice(incoming())
+        && incoming().userId == existing().userId;
+
+      allow delete: if isOwner(existing()) || isTeamMemberOfOwner(existing().userId);
+    }
+
+    match /day_planners/{plannerId} {
+      allow get: if isSignedIn() && (resource == null || isOwner(resource.data) || isTeamMemberOfOwner(resource.data.userId));
+      allow list: if isSignedIn() && (resource == null || resource.data.userId == request.auth.uid || isTeamMember());
+
+      allow create: if isSignedIn()
+        && isValidId(plannerId)
+        && isValidDayPlanner(incoming())
+        && (incoming().userId == request.auth.uid || isTeamMemberOfOwner(incoming().userId));
+
+      allow update: if (isOwner(existing()) || isTeamMemberOfOwner(existing().userId))
+        && isValidDayPlanner(incoming())
+        && incoming().userId == existing().userId;
+
+      allow delete: if isOwner(existing()) || isTeamMemberOfOwner(existing().userId);
     }
 
     match /products/{productId} {

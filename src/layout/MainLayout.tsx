@@ -15,7 +15,8 @@ import {
   Package,
   ListTodo,
   Users,
-  BarChart3
+  BarChart3,
+  CalendarDays
 } from 'lucide-react';
 import { auth } from '../lib/firebase';
 import { cn } from '../lib/utils';
@@ -28,6 +29,7 @@ const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { name: 'Trips', href: '/trips', icon: MapPin },
   { name: 'Todo Lists', href: '/todos', icon: ListTodo },
+  { name: 'Daily Planner', href: '/daily-planner', icon: CalendarDays },
   { name: 'Stock', href: '/stock', icon: Boxes },
   { name: 'Invoices', href: '/invoices', icon: FileText },
   { name: 'Products', href: '/products', icon: Package },

@@ -1,13 +1,16 @@
 import React from 'react';
 import { cn } from '../../../lib/utils';
 
-export function StatCard({ title, value, icon: Icon, color, subtitle, onClick }: {
+export function StatCard({ title, value, icon: Icon, color, subtitle, onClick, topRightActions }: {
   title: string;
   value: string;
   icon: React.ElementType;
   color: string;
   subtitle?: string;
   onClick?: () => void;
+  // Small icon-button controls overlaid top-right (e.g. metric toggles). Rendered in
+  // its own stacking context so clicks on them don't also trigger the card's onClick.
+  topRightActions?: React.ReactNode;
 }) {
   return (
     <div
@@ -24,7 +27,7 @@ export function StatCard({ title, value, icon: Icon, color, subtitle, onClick }:
         <div className={cn("p-2.5 rounded-xl transition-all group-hover:scale-110", color)}>
           <Icon className="w-5 h-5" />
         </div>
-        <div className="h-1 w-8 bg-zinc-100 rounded-full" />
+        {topRightActions || <div className="h-1 w-8 bg-zinc-100 rounded-full" />}
       </div>
       <div className="relative z-10">
         <p className="text-[10px] font-black text-zinc-400 uppercase tracking-[0.2em]">{title}</p>

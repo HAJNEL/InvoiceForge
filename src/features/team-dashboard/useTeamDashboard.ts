@@ -3,7 +3,7 @@ import { onSnapshot, doc, collection, query, where, getDocs, limit, updateDoc, w
 import type { FieldValue } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { useAuth } from '../../core/hooks/useAuth';
-import { TeamMember, Trip } from '../../types';
+import { TeamMember, Trip, DayPlanner } from '../../types';
 import { KnockdownItem } from '../stock/hooks/useStock';
 
 export interface TeamInventoryItem {
@@ -89,6 +89,7 @@ export function useTeamDashboard() {
   const [inventoryItems, setInventoryItems] = useState<TeamInventoryItem[]>([]);
   const [teamStockSubmissions, setTeamStockSubmissions] = useState<StockTakeItem[]>([]);
   const [teamStockTakes, setTeamStockTakes] = useState<StockTakeSubmission[]>([]);
+  const [dayPlanners, setDayPlanners] = useState<DayPlanner[]>([]);
   const [isOwner, setIsOwner] = useState(false);
   const [loading, setLoading] = useState(true);
   const [errorWord, setErrorWord] = useState('');
@@ -187,6 +188,11 @@ export function useTeamDashboard() {
 
     const qInventory = query(
       collection(db, 'inventory'),
+      where('userId', '==', profile.ownerId)
+    );
+
+    const qDayPlanners = query(
+      collection(db, 'day_planners'),
       where('userId', '==', profile.ownerId)
     );
 
@@ -307,6 +313,16 @@ export function useTeamDashboard() {
       console.error("Fetch shared inventory error:", err);
     });
 
+    const unsubscribeDayPlanners = onSnapshot(qDayPlanners, (snap) => {
+      const results: DayPlanner[] = [];
+      snap.forEach((d) => {
+        results.push({ id: d.id, ...d.data() } as DayPlanner);
+      });
+      setDayPlanners(results);
+    }, (err) => {
+      console.error("Fetch shared day planners error:", err);
+    });
+
     return () => {
       unsubscribeTrips();
       unsubscribeInvoices();
@@ -315,6 +331,7 @@ export function useTeamDashboard() {
       unsubscribeStock();
       unsubscribeStockTakes();
       unsubscribeInventory();
+      unsubscribeDayPlanners();
     };
   }, [profile]);
 
@@ -458,6 +475,40 @@ export function useTeamDashboard() {
     }
   }, [profile, trips]);
 
+  // 6. Toggle a single day planner entry's completed flag (Today's Plan dialog).
+  // Writes straight to the owner's planner doc - id is deterministic (`${ownerId}_${date}`)
+  // so no query is needed to find it, matching useDayPlanners' own id scheme. Records
+  // who ticked it so the account owner can see who completed each item.
+  const toggleDayPlannerEntry = useCallback(async (date: string, entryId: string) => {
+    if (!profile || profile.role !== 'editor') return false;
+
+    const plannerDocId = `${profile.ownerId}_${date}`;
+    const planner = dayPlanners.find(p => p.id === plannerDocId);
+    if (!planner) return false;
+
+    const completedByName = `${profile.firstName} ${profile.lastName}`.trim() || profile.email;
+
+    // Firestore rejects `undefined` field values, so uncompleting must omit
+    // `completedBy` entirely rather than null/undefined it out.
+    const updatedEntries = planner.entries.map(e => {
+      if (e.id !== entryId) return e;
+      if (!e.completed) return { ...e, completed: true, completedBy: completedByName };
+      const { completedBy: _oldCompletedBy, ...rest } = e;
+      return { ...rest, completed: false };
+    });
+
+    try {
+      await updateDoc(doc(db, 'day_planners', plannerDocId), {
+        entries: updatedEntries,
+        updatedAt: new Date().toISOString()
+      });
+      return true;
+    } catch (err) {
+      console.error("Toggle day planner entry error:", err);
+      return false;
+    }
+  }, [profile, dayPlanners]);
+
   return {
     profile,
     trips,
@@ -473,6 +524,8 @@ export function useTeamDashboard() {
     catalogProducts,
     inventoryItems,
     teamStockSubmissions,
-    teamStockTakes
+    teamStockTakes,
+    dayPlanners,
+    toggleDayPlannerEntry
   };
 }

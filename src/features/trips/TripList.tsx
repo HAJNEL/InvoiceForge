@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { Plus, Trash2, Edit3, Loader2, AlertCircle, Calendar as CalendarIcon, Navigation, CheckCircle2, Package, X, History, AlertTriangle, Check, ChevronLeft, ChevronRight, RefreshCw, Search, Maximize2, Minimize2, MapPin } from 'lucide-react';
+import { Plus, Trash2, Edit3, Loader2, AlertCircle, Calendar as CalendarIcon, Navigation, CheckCircle2, Package, X, History, AlertTriangle, Check, ChevronLeft, ChevronRight, RefreshCw, Search, Maximize2, Minimize2, MapPin, ClipboardList } from 'lucide-react';
 import { toast } from 'sonner';
 import { PartialConfirmModal } from '../../components/PartialConfirmModal';
 import { APIProvider } from '@vis.gl/react-google-maps';
@@ -9,6 +9,7 @@ import { useTrucks } from '../trucks/hooks/useTrucks';
 import { useInvoices, UIInvoice } from '../invoices/hooks/useInvoices';
 import { useSettings } from '../settings/hooks/useSettings';
 import { useAuth } from '../../core/hooks/useAuth';
+import { useDayPlanners } from './hooks/useDayPlanners';
 import { TripStatus, Trip } from '../../types';
 import { useNavigate } from 'react-router-dom';
 import { GeocodedInvoice } from './TripListComponents/types';
@@ -17,6 +18,7 @@ import { StockModal } from './TripListComponents/StockModal';
 import { MapComponent } from './TripListComponents/MapComponent';
 import { StatusBadge } from './TripListComponents/StatusBadge';
 import { InvoiceDetailsPanel } from './TripListComponents/InvoiceDetailsPanel';
+import { DayPlannerModal } from './TripListComponents/DayPlannerModal';
 import { restoreInventoryForItems } from '../../utils/inventory';
 import { buildSchoolLookupAddress, buildPinSearchAddress, geocodeAddress } from '../../lib/geocoding';
 
@@ -132,6 +134,13 @@ export function TripList() {
   const { trucks } = useTrucks();
   const { invoices, updateInvoice, loading: invoicesLoading } = useInvoices();
   const { settings } = useSettings();
+  // Orphan-planner cleanup (no trips left for a date) lives centrally in useDayPlanners
+  // so it applies wherever planners are read from, not just this screen.
+  const { planners, saveEntries: savePlannerEntries } = useDayPlanners();
+  const [plannerModalDate, setPlannerModalDate] = useState<string | null>(null);
+  // Recorded on planner entries when the account owner ticks them, so it's clear who
+  // completed it even when that's the owner themselves (not just team members).
+  const ownerDisplayName = user?.displayName || user?.email?.split('@')[0] || 'Account Owner';
 
   // Inline cycling and confirmation state
   const [pendingStatuses, setPendingStatuses] = useState<{ [tripId: string]: TripStatus }>({});
@@ -360,6 +369,17 @@ export function TripList() {
     return trip?.invoiceIds || [];
   }, [trips, highlightedTripId]);
 
+  // Clicking a map pin shows its invoice details and, if that invoice belongs to a
+  // trip, selects that trip exactly like clicking its row in the table below —
+  // same toggle behavior, so all of that trip's pins highlight green on the map.
+  const handleMapInvoiceClick = (inv: GeocodedInvoice) => {
+    setSelectedInvoice(inv);
+    const trip = trips.find(t => t.invoiceIds?.includes(inv.id));
+    if (trip) {
+      setHighlightedTripId(prev => (prev === trip.id ? null : trip.id));
+    }
+  };
+
   // Unique Districts across all invoices, for the Map Pin Filters district dropdown
   const districtsList = useMemo(() => {
     const districtsSet = new Set<string>();
@@ -568,15 +588,26 @@ export function TripList() {
                 districtsList={districtsList} showHistory={showHistory}
               />
 
-              <button
-                type="button"
-                title="Exit Fullscreen (Esc)"
-                onClick={() => setIsMapFullscreen(false)}
-                className="flex items-center gap-2 bg-zinc-900 text-white px-4 py-2 rounded-xl font-bold text-xs hover:bg-zinc-800 transition-all shadow-sm shrink-0"
-              >
-                <Minimize2 className="w-4 h-4" />
-                Exit Fullscreen
-              </button>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  title="Create New Trip"
+                  onClick={() => navigate('/trips/new?fullscreen=1')}
+                  className="flex items-center gap-2 bg-brand-primary text-white px-4 py-2 rounded-xl font-bold text-xs hover:bg-brand-primary/90 transition-all shadow-sm"
+                >
+                  <Plus className="w-4 h-4" />
+                  Create New Trip
+                </button>
+                <button
+                  type="button"
+                  title="Exit Fullscreen (Esc)"
+                  onClick={() => setIsMapFullscreen(false)}
+                  className="flex items-center gap-2 bg-zinc-900 text-white px-4 py-2 rounded-xl font-bold text-xs hover:bg-zinc-800 transition-all shadow-sm"
+                >
+                  <Minimize2 className="w-4 h-4" />
+                  Exit Fullscreen
+                </button>
+              </div>
             </div>
           ) : (
             /* Standard Map Pin Filters Bar */
@@ -625,7 +656,7 @@ export function TripList() {
                 allInvoices={invoices}
                 geocodedInvoices={geocodedInvoices}
                 setGeocodedInvoices={setGeocodedInvoices}
-                onInvoiceClick={setSelectedInvoice}
+                onInvoiceClick={handleMapInvoiceClick}
                 warehouse={settings}
                 routedTrip={routedTrip}
                 highlightedInvoiceIds={highlightedInvoiceIds}
@@ -680,7 +711,9 @@ export function TripList() {
           <div className="space-y-6">
             {paginatedDateKeys.map((dateKey) => {
               const tripsInGroup = groupedTripsByDate[dateKey] || [];
-              
+              const dayPlanner = planners.find(p => p.date === dateKey);
+              const plannerEntryCount = dayPlanner?.entries?.length || 0;
+
               return (
                 <div key={dateKey} className="bg-white rounded-3xl p-6 shadow-xs border border-zinc-200 space-y-4">
                   <div className="flex justify-between items-center border-b border-zinc-100 pb-3">
@@ -688,11 +721,27 @@ export function TripList() {
                       <CalendarIcon className="w-4.5 h-4.5 text-zinc-500" />
                       {formatTripDateGroupHeader(dateKey)}
                     </h3>
-                    <span className="bg-zinc-100 text-zinc-800 font-black px-2.5 py-0.5 rounded-full text-[10px] tracking-wider font-sans uppercase border border-zinc-200">
-                      {tripsInGroup.length} {tripsInGroup.length === 1 ? 'Trip' : 'Trips'}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        title="Add Planner"
+                        onClick={() => setPlannerModalDate(dateKey)}
+                        className="flex items-center gap-1.5 bg-white text-zinc-600 border border-zinc-200 px-2.5 py-1 rounded-full font-black text-[10px] uppercase tracking-wider hover:bg-zinc-50 hover:border-zinc-300 transition-all shadow-sm"
+                      >
+                        <ClipboardList className="w-3.5 h-3.5 text-brand-accent" />
+                        Add Planner
+                        {plannerEntryCount > 0 && (
+                          <span className="bg-brand-accent/10 text-brand-accent px-1.5 rounded-full text-[9px] leading-relaxed">
+                            {plannerEntryCount}
+                          </span>
+                        )}
+                      </button>
+                      <span className="bg-zinc-100 text-zinc-800 font-black px-2.5 py-0.5 rounded-full text-[10px] tracking-wider font-sans uppercase border border-zinc-200">
+                        {tripsInGroup.length} {tripsInGroup.length === 1 ? 'Trip' : 'Trips'}
+                      </span>
+                    </div>
                   </div>
-                  
+
                   <div className="overflow-x-auto">
                     <table className="w-full text-left">
                       <thead>
@@ -1061,6 +1110,18 @@ export function TripList() {
           />
         )}
 
+        {plannerModalDate && (
+          <DayPlannerModal
+            key={plannerModalDate}
+            date={plannerModalDate}
+            dateLabel={formatTripDateGroupHeader(plannerModalDate)}
+            entries={planners.find(p => p.date === plannerModalDate)?.entries || []}
+            onClose={() => setPlannerModalDate(null)}
+            onSave={(updatedEntries) => savePlannerEntries(plannerModalDate, updatedEntries)}
+            onDateChange={(newDate) => setPlannerModalDate(newDate)}
+            completedByName={ownerDisplayName}
+          />
+        )}
 
       </div>
     </APIProvider>

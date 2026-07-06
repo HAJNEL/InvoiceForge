@@ -141,6 +141,18 @@ export interface Settings {
   updatedAt: string;
 }
 
+export interface SelfInvoice {
+  id: string;
+  userId: string;
+  invoiceNumber: string;   // e.g. "SELF-0001", sequential per account
+  invoiceIds: string[];    // ids of the underlying Invoice docs billed together
+  totalAmount: number;     // sum of included invoices' amounts, snapshotted at creation
+  status: 'open' | 'completed';
+  completedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface DashboardStats {
   totalRevenue: number;
   outstandingAmount: number;
@@ -160,6 +172,23 @@ export interface Task {
   note?: string;
   done: boolean;
   completedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DayPlannerEntry {
+  id: string;
+  time?: string;    // optional "HH:MM"; omitted/empty means no time was set and it stays hidden in the UI
+  note: string;
+  completed: boolean;
+  completedBy?: string; // display name of whoever last ticked it (owner or team member); omitted while not completed
+}
+
+export interface DayPlanner {
+  id: string;       // `${userId}_${date}` - one planner per user per date
+  userId: string;
+  date: string;      // "YYYY-MM-DD", matches Trip.date
+  entries: DayPlannerEntry[]; // array order IS the display/drag order
   createdAt: string;
   updatedAt: string;
 }
