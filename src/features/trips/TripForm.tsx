@@ -1,10 +1,12 @@
 /// <reference types="google.maps" />
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { toast } from 'sonner';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeft, Plus, AlertCircle,
   X, Package, FileText, Search, Truck, Navigation, Calendar as CalendarIcon, TrendingUp,
-  Check, RotateCcw, Share2, AlertTriangle, Clock, Fuel, Bed, Coffee, GripVertical
+  Check, RotateCcw, Share2, AlertTriangle, Clock, Fuel, Bed, Coffee, GripVertical,
+  Maximize2, Minimize2, MapPin, Trash2
 } from 'lucide-react';
 import { PartialConfirmModal } from '../../components/PartialConfirmModal';
 import { EditInvoiceModal } from '../../components/EditInvoiceModal';
@@ -18,9 +20,9 @@ import { TripStatus, TripStop } from '../../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { GeocodedInvoice } from './tripFormComponents/types';
 import { CapacityProgressBar } from './tripFormComponents/CapacityProgressBar';
-import { StockModal } from './tripFormComponents/StockModal';
 import { InteractiveTripMap } from './tripFormComponents/InteractiveTripMap';
 import { CustomStopModal } from './tripFormComponents/CustomStopModal';
+import { InvoiceDetailsPanel } from './TripListComponents/InvoiceDetailsPanel';
 
 const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_PLATFORM_KEY || '';
 const hasValidKey = Boolean(GOOGLE_MAPS_API_KEY);
@@ -95,8 +97,26 @@ export function TripForm() {
     return [];
   });
   const [selectedInvoice, setSelectedInvoice] = useState<GeocodedInvoice | null>(null);
-  const [selectedInvoiceForStock, setSelectedInvoiceForStock] = useState<GeocodedInvoice | null>(null);
   const [editingInvoice, setEditingInvoice] = useState<UIInvoice | null>(null);
+
+  // Fullscreen map mode: shows the same pin filters plus a left sidebar with the
+  // route stops list and selected invoice details, mirroring the trips list screen.
+  const [isMapFullscreen, setIsMapFullscreen] = useState(false);
+
+  // Lock body scroll and allow Escape to exit while the fullscreen map is open
+  useEffect(() => {
+    if (!isMapFullscreen) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsMapFullscreen(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [isMapFullscreen]);
 
   // Resolve the live state of selected invoice to prevent displaying stale status or details from local storage cache
   const liveSelectedInvoice = useMemo(() => {
@@ -413,7 +433,7 @@ export function TripForm() {
   // Copy share web link
   const handleCopyShareLink = () => {
     if (!id) {
-      alert("Please save this trip first before generating a shareable link.");
+      toast.warning('Save First', { description: 'Please save this trip before generating a shareable link.' });
       return;
     }
     const link = `${window.location.origin}/shared-checklist/${id}`;
@@ -422,7 +442,7 @@ export function TripForm() {
       setTimeout(() => setCopied(false), 2000);
     }).catch(err => {
       console.error("Failed to copy link:", err);
-      alert("Could not copy link to clipboard automatically. Link is: " + link);
+      toast.error('Copy Failed', { description: `Could not copy automatically. Link: ${link}` });
     });
   };
 
@@ -494,11 +514,11 @@ export function TripForm() {
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name.trim()) {
-      alert('Please enter a trip name.');
+      toast.error('Missing Trip Name', { description: 'Please enter a name for this trip before saving.' });
       return;
     }
     if (!formData.truckId) {
-      alert('Please select a truck.');
+      toast.error('No Truck Selected', { description: 'Please select a truck to assign to this trip.' });
       return;
     }
 
@@ -556,11 +576,227 @@ export function TripForm() {
       navigate('/trips');
     } catch (err) {
       console.error(err);
-      alert('An error occurred while saving the trip.');
+      toast.error('Save Failed', { description: 'An unexpected error occurred while saving the trip. Please try again.' });
     } finally {
       setIsSubmitting(false);
     }
   };
+
+  // Route Sequences card: shared between the standard left panel layout and the
+  // fullscreen map's left sidebar. `compact` tightens spacing and swaps the text
+  // action buttons for icon-only ones so the header never wraps in the narrow
+  // (380px) sidebar, while the list itself stays fully listable and manageable.
+  const renderRouteStopsCard = (compact: boolean) => (
+    <div className={cn(
+      "bg-white border border-zinc-200 shadow-sm",
+      compact ? "rounded-2xl p-4 space-y-3" : "rounded-3xl p-6 space-y-4"
+    )}>
+      <div className={cn("flex items-center justify-between gap-3 border-b border-zinc-100", compact ? "pb-3" : "pb-4")}>
+        <div className="min-w-0">
+          <h3 className={cn("font-black text-brand-primary uppercase tracking-tight truncate", compact ? "text-xs" : "text-lg")}>
+            Route Sequence
+          </h3>
+          <p className={cn("font-bold text-zinc-400 mt-0.5", compact ? "text-[10px]" : "text-zinc-500 text-xs font-medium")}>
+            {compact
+              ? `${stops.length} ${stops.length === 1 ? 'Stop' : 'Stops'} Planned`
+              : 'Use the map or drag sequence order to plan execution.'}
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
+          {compact ? (
+            <>
+              <button
+                type="button"
+                title="Add Stop"
+                onClick={() => {
+                  setEditingStop(null);
+                  setIsStopModalOpen(true);
+                }}
+                className="p-2 bg-zinc-50 border border-zinc-200 hover:bg-zinc-100 hover:border-zinc-300 rounded-xl transition-all shadow-sm cursor-pointer"
+              >
+                <Plus className="w-4 h-4 text-brand-accent" />
+              </button>
+              {stops.length > 0 && (
+                <button
+                  type="button"
+                  title="Clear All Stops"
+                  onClick={() => {
+                    setStops([]);
+                    setFormData(prev => ({ ...prev, invoiceIds: [] }));
+                  }}
+                  className="p-2 bg-white border border-red-100 text-red-500 hover:bg-red-50 rounded-xl transition-all cursor-pointer"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              )}
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingStop(null);
+                  setIsStopModalOpen(true);
+                }}
+                className="text-[10px] font-black uppercase text-zinc-650 bg-zinc-50 border border-zinc-200 hover:bg-zinc-100 hover:border-zinc-300 px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 shadow-sm cursor-pointer whitespace-nowrap"
+              >
+                <Plus className="w-3.5 h-3.5 text-brand-accent shrink-0" />
+                Add Stop
+              </button>
+              {stops.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setStops([]);
+                    setFormData(prev => ({ ...prev, invoiceIds: [] }));
+                  }}
+                  className="text-[10px] font-black uppercase text-red-500 border border-red-100 hover:bg-red-50 px-3 py-1.5 rounded-xl transition-all cursor-pointer whitespace-nowrap"
+                >
+                  Clear All
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+
+      {stops.length === 0 ? (
+        <div className={cn(
+          "text-center bg-zinc-50 rounded-2xl border border-dashed border-zinc-200",
+          compact ? "py-10 px-4" : "py-16"
+        )}>
+          <Navigation className={cn("text-zinc-300 mx-auto mb-3 animate-bounce", compact ? "w-8 h-8" : "w-10 h-10")} />
+          <p className={cn("text-zinc-500 font-bold uppercase tracking-tight", compact ? "text-xs" : "text-sm")}>No Stops Selected</p>
+          <p className={cn("text-zinc-400 mt-1 mx-auto", compact ? "text-[10px] leading-relaxed" : "text-xs max-w-sm p-2")}>
+            {compact
+              ? 'Click a pin on the map or use Add Stop to build your route.'
+              : 'Your trip stop list is empty. Map markers are available above. Simply tap any pin representing an active invoice client location to record it, or click Add Stop to create custom waypoints.'}
+          </p>
+        </div>
+      ) : (
+        <div className={cn("space-y-2.5", compact ? "" : "max-h-[500px] overflow-y-auto pr-1")}>
+          {stops.map((stop, idx) => {
+            const isInvoice = Boolean(stop.invoiceId);
+
+            return (
+              <div
+                key={`${stop.id || 'stop'}-${idx}`}
+                draggable
+                onDragStart={(e) => handleDragStart(e, idx)}
+                onDragOver={handleDragOver}
+                onDrop={(e) => handleDrop(e, idx)}
+                onClick={() => {
+                  if (isInvoice) {
+                    const matchedInv = invoices.find(inv => inv.id === stop.invoiceId);
+                    if (matchedInv) {
+                      setEditingInvoice(matchedInv);
+                    }
+                  } else {
+                    setEditingStop(stop);
+                    setIsStopModalOpen(true);
+                  }
+                }}
+                className="flex items-center gap-3 bg-white p-3.5 rounded-2xl border border-zinc-200 shadow-sm hover:border-zinc-300 hover:bg-zinc-50/40 transition-all cursor-pointer group select-none relative"
+              >
+                {/* Drag Handle Icon */}
+                <div className="text-zinc-350 group-hover:text-zinc-550 shrink-0 pr-0.5 cursor-grab active:cursor-grabbing">
+                  <GripVertical className="w-4 h-4" />
+                </div>
+
+                {/* Queue Position badge */}
+                <div className="flex items-center justify-center w-7 h-7 bg-brand-primary/10 border border-brand-primary/20 text-brand-primary font-black font-mono text-xs rounded-xl shrink-0">
+                  {idx + 1}
+                </div>
+
+                {/* Category Icon */}
+                <div className="p-2 bg-zinc-100 rounded-xl shrink-0 group-hover:bg-brand-primary/10 transition-colors">
+                  {stop.type === 'Refuel' && <Fuel className="w-4 h-4 text-amber-500" />}
+                  {stop.type === 'Sleep' && <Bed className="w-4 h-4 text-blue-500" />}
+                  {stop.type === 'Rest' && <Coffee className="w-4 h-4 text-emerald-500" />}
+                  {stop.type === 'Delivery' && <Package className="w-4 h-4 text-zinc-600" />}
+                  {stop.type === 'Pickup' && <Truck className="w-4 h-4 text-indigo-500" />}
+                  {!['Refuel', 'Sleep', 'Rest', 'Delivery', 'Pickup'].includes(stop.type || '') && <Clock className="w-4 h-4 text-purple-500" />}
+                </div>
+
+                {/* Stop details */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="font-bold text-zinc-900 text-xs truncate uppercase tracking-tight group-hover:text-brand-primary transition-colors flex items-center gap-1.5 min-w-0">
+                      {isInvoice ? (
+                        <span className="text-zinc-900 font-bold shrink-0 select-none font-mono text-xs">
+                          #{stop.number}
+                        </span>
+                      ) : (
+                        <span className="truncate">{stop.location || stop.client || stop.type}</span>
+                      )}
+                    </p>
+                    <span className="text-[10px] font-mono font-black text-brand-primary shrink-0">
+                      {isInvoice ? `R ${stop.amount?.toLocaleString() || 0}` : stop.type}
+                    </span>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1 text-[10px] text-zinc-400 justify-between">
+                    <span className="truncate flex items-center gap-1.5 font-medium">
+                      {isInvoice ? (
+                        <span className="font-semibold text-zinc-600">
+                          {invoices.find(inv => inv.id === stop.invoiceId)?.schoolName || stop.client || "Unknown School"}
+                        </span>
+                      ) : `Scheduled Stop: Custom Waypoint`}
+                      {isInvoice && (() => {
+                        for (const t of trips) {
+                          if (stop.invoiceId && t.invoiceIds?.includes(stop.invoiceId) && t.partialItems) {
+                            const partialItems = t.partialItems;
+                            const tripPartialKeys = Object.keys(partialItems).filter(k => partialItems[k]?.isPartial);
+                            if (tripPartialKeys.length > 0) {
+                              return (
+                                <span className="ml-1 p-0.5 px-1 bg-amber-50 border border-amber-200 text-amber-700 font-mono text-[8px] font-black uppercase rounded flex items-center gap-0.5 animate-pulse">
+                                  <AlertTriangle className="w-3 h-3 text-amber-600" />
+                                  FLAGGED
+                                </span>
+                              );
+                            }
+                          }
+                        }
+                        return null;
+                      })()}
+                    </span>
+                    {stop.startTime ? (
+                      <span className="shrink-0 bg-emerald-50 px-1.5 py-0.5 rounded text-[9px] font-black text-emerald-700 flex items-center gap-1 uppercase tracking-wider leading-none">
+                        <Clock className="w-3 h-3 text-emerald-650" />
+                        {stop.duration || '30m'} ({stop.startTime?.split('T')[1]} - {stop.endTime?.split('T')[1]})
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
+
+                {/* Inline Actions */}
+                <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+
+                  {/* Remove button */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (isInvoice) {
+                        handleToggleInvoice(stop.invoiceId!);
+                      } else {
+                        setStops(prev => prev.filter(s => s.id !== stop.id));
+                      }
+                    }}
+                    className="p-1.5 hover:bg-red-50 text-zinc-450 hover:text-red-500 rounded-xl transition-colors shrink-0 border border-transparent hover:border-red-100 cursor-pointer"
+                    title="Delete stop"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
 
   // Render check for valid Google Maps configuration
   if (!hasValidKey) {
@@ -610,127 +846,241 @@ export function TripForm() {
           </div>
         </div>
 
-        {/* Map panel (Full width layout at the top) */}
-        <div className="bg-white rounded-3xl border border-zinc-200 overflow-hidden shadow-lg relative">
-          {/* Filter Bar overlay/panel integrated directly with the map */}
-          <div className="bg-zinc-50 border-b border-zinc-200 px-6 py-4 flex flex-col md:flex-row items-center justify-between gap-4">
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400">Map Pin Filters</span>
-              <span className="h-4 w-px bg-zinc-200" />
-              <p className="text-xs text-zinc-500 font-medium">Select points below to add stops to this trip route.</p>
-            </div>
-            
-            <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
-              {/* Keyword Search */}
-              <div className="relative w-full md:w-48">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-400" />
-                <input 
-                  type="text"
-                  placeholder="Filter client, invoice..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full pl-9 pr-3 py-1.5 text-xs bg-white border border-zinc-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent"
-                />
+        {/* Map panel (Full width layout at the top) — becomes a fullscreen overlay
+            with a left sidebar (route stops + selected invoice details) when
+            isMapFullscreen is true, matching the trips list screen's map behavior. */}
+        <div className={cn(
+          isMapFullscreen
+            ? "fixed inset-0 z-[100] w-screen h-screen bg-zinc-50 flex flex-col"
+            : "bg-white rounded-3xl border border-zinc-200 overflow-hidden shadow-lg relative"
+        )}>
+          {isMapFullscreen ? (
+            /* Fullscreen top bar: title, filters, exit control */
+            <div className="bg-white border-b border-zinc-200 px-6 py-4 flex flex-col lg:flex-row items-center justify-between gap-4 shrink-0">
+              <div className="flex items-center gap-3 shrink-0">
+                <div className="p-2 bg-brand-primary/10 rounded-xl border border-brand-primary/20">
+                  <MapPin className="w-4 h-4 text-brand-primary" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-black text-brand-primary uppercase tracking-tight">Trip Map — Fullscreen</h2>
+                  <p className="text-[11px] text-zinc-400 font-medium">Click a pin to view invoice details and add it to this trip.</p>
+                </div>
               </div>
 
-              {/* District Dropdown */}
-              <select aria-label="District"
-                value={selectedDistrict}
-                onChange={(e) => setSelectedDistrict(e.target.value)}
-                className="text-xs bg-white border border-zinc-200 rounded-xl px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-brand-accent/20 w-fit"
-              >
-                <option value="all">All Districts</option>
-                {districtsList.map(dist => (
-                  <option key={dist} value={dist}>{dist}</option>
-                ))}
-              </select>
+              <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
+                <div className="relative w-full md:w-48">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-400" />
+                  <input
+                    type="text"
+                    placeholder="Filter client, invoice..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full pl-9 pr-3 py-1.5 text-xs bg-white border border-zinc-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent"
+                  />
+                </div>
+                <select aria-label="District"
+                  value={selectedDistrict}
+                  onChange={(e) => setSelectedDistrict(e.target.value)}
+                  className="text-xs bg-white border border-zinc-200 rounded-xl px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-brand-accent/20 w-fit"
+                >
+                  <option value="all">All Districts</option>
+                  {districtsList.map(dist => (
+                    <option key={dist} value={dist}>{dist}</option>
+                  ))}
+                </select>
+                <select aria-label="Status"
+                  value={selectedStatus}
+                  onChange={(e) => setSelectedStatus(e.target.value)}
+                  className="text-xs bg-white border border-zinc-200 rounded-xl px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-brand-accent/20 w-fit"
+                >
+                  <option value="all">All Statuses</option>
+                  <option value="partially_complete">Partially Complete</option>
+                  <option value="draft">Draft</option>
+                  <option value="proposed">Proposed</option>
+                  <option value="assembled">Assembled</option>
+                  <option value="on_route">On Route</option>
+                </select>
+                {(searchTerm || selectedDistrict !== 'all' || selectedStatus !== 'all') && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearchTerm('');
+                      setSelectedDistrict('all');
+                      setSelectedStatus('all');
+                    }}
+                    className="text-[10px] font-black uppercase text-red-500 hover:text-red-600 tracking-wider hover:underline shrink-0"
+                  >
+                    Reset
+                  </button>
+                )}
+              </div>
 
-              {/* Status Dropdown */}
-              <select aria-label="Status"
-                value={selectedStatus}
-                onChange={(e) => setSelectedStatus(e.target.value)}
-                className="text-xs bg-white border border-zinc-200 rounded-xl px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-brand-accent/20 w-fit"
+              <button
+                type="button"
+                title="Exit Fullscreen (Esc)"
+                onClick={() => setIsMapFullscreen(false)}
+                className="flex items-center gap-2 bg-zinc-900 text-white px-4 py-2 rounded-xl font-bold text-xs hover:bg-zinc-800 transition-all shadow-sm shrink-0"
               >
-                <option value="all">All Statuses</option>
-                <option value="partially_complete">Partially Complete</option>
-                <option value="draft">Draft</option>
-                <option value="proposed">Proposed</option>
-                <option value="assembled">Assembled</option>
-                <option value="on_route">On Route</option>
-              </select>
+                <Minimize2 className="w-4 h-4" />
+                Exit Fullscreen
+              </button>
+            </div>
+          ) : (
+            /* Standard Filter Bar overlay/panel integrated directly with the map */
+            <div className="bg-zinc-50 border-b border-zinc-200 px-6 py-4 flex flex-col md:flex-row items-center justify-between gap-4">
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400">Map Pin Filters</span>
+                <span className="h-4 w-px bg-zinc-200" />
+                <p className="text-xs text-zinc-500 font-medium">Select points below to add stops to this trip route.</p>
+              </div>
 
-              {/* Clear filters shortcut */}
-              {(searchTerm || selectedDistrict !== 'all' || selectedStatus !== 'all') && (
+              <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+                {/* Keyword Search */}
+                <div className="relative w-full md:w-48">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-400" />
+                  <input
+                    type="text"
+                    placeholder="Filter client, invoice..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full pl-9 pr-3 py-1.5 text-xs bg-white border border-zinc-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent"
+                  />
+                </div>
+
+                {/* District Dropdown */}
+                <select aria-label="District"
+                  value={selectedDistrict}
+                  onChange={(e) => setSelectedDistrict(e.target.value)}
+                  className="text-xs bg-white border border-zinc-200 rounded-xl px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-brand-accent/20 w-fit"
+                >
+                  <option value="all">All Districts</option>
+                  {districtsList.map(dist => (
+                    <option key={dist} value={dist}>{dist}</option>
+                  ))}
+                </select>
+
+                {/* Status Dropdown */}
+                <select aria-label="Status"
+                  value={selectedStatus}
+                  onChange={(e) => setSelectedStatus(e.target.value)}
+                  className="text-xs bg-white border border-zinc-200 rounded-xl px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-brand-accent/20 w-fit"
+                >
+                  <option value="all">All Statuses</option>
+                  <option value="partially_complete">Partially Complete</option>
+                  <option value="draft">Draft</option>
+                  <option value="proposed">Proposed</option>
+                  <option value="assembled">Assembled</option>
+                  <option value="on_route">On Route</option>
+                </select>
+
+                {/* Full Screen toggle, next to the status filter */}
                 <button
                   type="button"
-                  onClick={() => {
-                    setSearchTerm('');
-                    setSelectedDistrict('all');
-                    setSelectedStatus('all');
-                  }}
-                  className="text-[10px] font-black uppercase text-red-500 hover:text-red-600 tracking-wider hover:underline"
+                  title="Expand Map to Fullscreen"
+                  onClick={() => setIsMapFullscreen(true)}
+                  className="flex items-center gap-2 bg-zinc-900 text-white px-4 py-2 rounded-xl font-bold text-xs hover:bg-zinc-800 transition-all shadow-sm shrink-0"
                 >
-                  Reset
+                  <Maximize2 className="w-4 h-4" />
+                  Full Screen
                 </button>
-              )}
-            </div>
-          </div>
 
-          {/* Interactive Map Grid */}
-          <div className="h-[480px] w-full relative bg-zinc-100 rounded-2xl overflow-hidden border border-zinc-200 shadow-md">
-            <InteractiveTripMap 
-              invoices={availableInvoices}
-              geocodedInvoices={geocodedInvoices}
-              setGeocodedInvoices={setGeocodedInvoices}
-              onInvoiceClick={setSelectedInvoice}
-              onInvoiceToggle={handleToggleInvoice}
-              warehouse={settings}
-              filters={{ searchTerm, selectedDistrict, selectedStatus }}
-              stops={stops}
-              setStops={setStops}
-              setEditingStop={setEditingStop}
-              setIsStopModalOpen={setIsStopModalOpen}
-            />
+                {/* Clear filters shortcut */}
+                {(searchTerm || selectedDistrict !== 'all' || selectedStatus !== 'all') && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearchTerm('');
+                      setSelectedDistrict('all');
+                      setSelectedStatus('all');
+                    }}
+                    className="text-[10px] font-black uppercase text-red-500 hover:text-red-600 tracking-wider hover:underline"
+                  >
+                    Reset
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          <div className={cn(isMapFullscreen ? "flex-1 flex min-h-0" : "")}>
+            {/* Left sidebar: selected invoice details + route stops list — fullscreen only */}
+            {isMapFullscreen && (
+              <div className="w-[380px] shrink-0 border-r border-zinc-200 bg-zinc-50 overflow-y-auto p-5 space-y-5">
+                {liveSelectedInvoice ? (
+                  <div className="bg-white border border-zinc-200 rounded-2xl overflow-hidden shadow-sm">
+                    <InvoiceDetailsPanel
+                      invoice={liveSelectedInvoice}
+                      variant="sidebar"
+                      onClose={() => setSelectedInvoice(null)}
+                      onViewInvoice={() => navigate(`/invoices/${liveSelectedInvoice.id}`)}
+                      extraActions={
+                        <button
+                          type="button"
+                          title={formData.invoiceIds.includes(liveSelectedInvoice.id) ? 'Exclude from Trip' : 'Include in Trip'}
+                          onClick={() => handleToggleInvoice(liveSelectedInvoice.id)}
+                          className={cn(
+                            "flex items-center justify-center gap-2 px-3 py-2 rounded-xl font-bold text-[11px] shadow-sm transition-all border whitespace-nowrap",
+                            formData.invoiceIds.includes(liveSelectedInvoice.id)
+                              ? "bg-red-50 text-red-600 border-red-100 hover:bg-red-100"
+                              : "bg-brand-primary text-white border-transparent hover:bg-brand-primary/95"
+                          )}
+                        >
+                          {formData.invoiceIds.includes(liveSelectedInvoice.id) ? (
+                            <><X className="w-4 h-4" /> Exclude</>
+                          ) : (
+                            <><Plus className="w-4 h-4" /> Include</>
+                          )}
+                        </button>
+                      }
+                    />
+                  </div>
+                ) : (
+                  <div className="text-center p-6 bg-white border border-dashed border-zinc-200 rounded-2xl">
+                    <MapPin className="w-7 h-7 text-zinc-200 mx-auto mb-2" />
+                    <p className="text-zinc-500 font-bold text-xs uppercase tracking-tight">No Pin Selected</p>
+                    <p className="text-zinc-400 text-[11px] mt-1 leading-relaxed">Click any pin on the map to view its invoice and add it to this trip.</p>
+                  </div>
+                )}
+
+                {renderRouteStopsCard(true)}
+              </div>
+            )}
+
+            {/* Interactive Map Grid */}
+            <div className={cn(isMapFullscreen ? "flex-1 relative bg-zinc-100" : "h-[480px] w-full relative bg-zinc-100")}>
+              <InteractiveTripMap
+                invoices={availableInvoices}
+                geocodedInvoices={geocodedInvoices}
+                setGeocodedInvoices={setGeocodedInvoices}
+                onInvoiceClick={setSelectedInvoice}
+                onInvoiceToggle={handleToggleInvoice}
+                warehouse={settings}
+                filters={{ searchTerm, selectedDistrict, selectedStatus }}
+                stops={stops}
+                setStops={setStops}
+                setEditingStop={setEditingStop}
+                setIsStopModalOpen={setIsStopModalOpen}
+              />
+            </div>
           </div>
         </div>
 
-        {/* Selected Invoice information panel - ALWAYS below the Map */}
+        {/* Selected Invoice information card - ALWAYS below the Map, same pattern as the trips list screen */}
         <AnimatePresence mode="wait">
-          {liveSelectedInvoice && (
+          {!isMapFullscreen && liveSelectedInvoice && (
             <motion.div
               key={liveSelectedInvoice.id}
               initial={{ opacity: 0, y: 15 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 15 }}
-              className="bg-white p-6 rounded-2xl shadow-xl border border-zinc-200 ring-4 ring-brand-primary/5"
             >
-              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-1.5">
-                    <h4 className="text-xl font-black text-brand-primary uppercase tracking-tight flex items-center gap-2">
-                      <FileText className="w-5 h-5 text-brand-primary" strokeWidth={2.5} />
-                      Invoice {liveSelectedInvoice.number}
-                    </h4>
-                    <span className="px-2 py-0.5 bg-brand-primary/5 text-brand-primary rounded-md text-[10px] font-black uppercase tracking-widest border border-brand-primary/10">
-                      {liveSelectedInvoice.district || 'Unassigned District'}
-                    </span>
-                    <span className={cn(
-                      "px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-widest border",
-                      liveSelectedInvoice.status.toLowerCase() === 'paid' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' :
-                      liveSelectedInvoice.status.toLowerCase() === 'overdue' ? 'bg-red-50 text-red-600 border-red-100' :
-                      'bg-blue-50 text-blue-600 border-blue-100'
-                    )}>
-                      {liveSelectedInvoice.status}
-                    </span>
-                  </div>
-                  <p className="text-[11px] font-semibold text-zinc-400 flex items-center gap-1.5">
-                    <span>Delivery Address:</span>
-                    <span className="text-zinc-700 font-extrabold">{liveSelectedInvoice.address}</span>
-                  </p>
-                </div>
-
-                <div className="flex items-center gap-2 shrink-0">
-                  <button 
+              <InvoiceDetailsPanel
+                invoice={liveSelectedInvoice}
+                variant="card"
+                onClose={() => setSelectedInvoice(null)}
+                onViewInvoice={() => navigate(`/invoices/${liveSelectedInvoice.id}`)}
+                extraActions={
+                  <button
                     type="button"
                     onClick={() => handleToggleInvoice(liveSelectedInvoice.id)}
                     className={cn(
@@ -752,24 +1102,8 @@ export function TripForm() {
                       </>
                     )}
                   </button>
-                  <button 
-                    type="button"
-                    onClick={() => setSelectedInvoiceForStock(liveSelectedInvoice)}
-                    className="flex items-center gap-2 bg-zinc-50 hover:bg-zinc-100 text-zinc-700 px-3 py-2 rounded-xl font-bold text-xs transition-all border border-zinc-200"
-                  >
-                    <Package className="w-4 h-4 text-brand-accent" />
-                    Inspect Stock List
-                  </button>
-                  <button 
-                    title='Select Invoice'
-                    type="button"
-                    onClick={() => setSelectedInvoice(null)}
-                    className="p-2 hover:bg-zinc-100 rounded-xl text-zinc-450 transition-all border border-transparent hover:border-zinc-200"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
-                </div>
-              </div>
+                }
+              />
             </motion.div>
           )}
         </AnimatePresence>
@@ -778,172 +1112,7 @@ export function TripForm() {
         <form onSubmit={handleSave} className="grid grid-cols-1 lg:grid-cols-12 gap-8">
           {/* Left panel: Routing stops & queue sequence (7 Columns) */}
           <div className="lg:col-span-7 space-y-6">
-            <div className="bg-white rounded-3xl border border-zinc-200 p-6 shadow-sm space-y-4">
-              <div className="flex items-center justify-between border-b border-zinc-100 pb-4">
-                <div>
-                  <h3 className="text-lg font-black text-brand-primary uppercase tracking-tight">
-                    Route Sequences ({stops.length} stops)
-                  </h3>
-                  <p className="text-zinc-500 text-xs mt-0.5">Use the map or drag sequence order to plan execution.</p>
-                </div>
-                
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEditingStop(null);
-                      setIsStopModalOpen(true);
-                    }}
-                    className="text-[10px] font-black uppercase text-zinc-650 bg-zinc-50 border border-zinc-200 hover:bg-zinc-100 hover:border-zinc-300 px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
-                  >
-                    <Plus className="w-3.5 h-3.5 text-brand-accent shrink-0" />
-                    Add Stop
-                  </button>
-                  {stops.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setStops([]);
-                        setFormData(prev => ({ ...prev, invoiceIds: [] }));
-                      }}
-                      className="text-[10px] font-black uppercase text-red-500 border border-red-100 hover:bg-red-50 px-3 py-1.5 rounded-xl transition-all cursor-pointer"
-                    >
-                      Clear All
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {stops.length === 0 ? (
-                <div className="text-center py-16 bg-zinc-50 rounded-2xl border border-dashed border-zinc-200">
-                  <Navigation className="w-10 h-10 text-zinc-300 mx-auto mb-3 animate-bounce" />
-                  <p className="text-zinc-500 text-sm font-bold uppercase tracking-tight">No Stops Selected</p>
-                  <p className="text-zinc-400 text-xs mt-1 max-w-sm mx-auto p-2">
-                    Your trip stop list is empty. Map markers are available above. Simply tap any pin representing an active invoice client location to record it, or click Add Stop to create custom waypoints.
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-2.5 max-h-[500px] overflow-y-auto pr-1">
-                  {stops.map((stop, idx) => {
-                    const isInvoice = Boolean(stop.invoiceId);
-                    
-                    return (
-                      <div 
-                        key={`${stop.id || 'stop'}-${idx}`}
-                        draggable
-                        onDragStart={(e) => handleDragStart(e, idx)}
-                        onDragOver={handleDragOver}
-                        onDrop={(e) => handleDrop(e, idx)}
-                        onClick={() => {
-                          if (isInvoice) {
-                            const matchedInv = invoices.find(inv => inv.id === stop.invoiceId);
-                            if (matchedInv) {
-                              setEditingInvoice(matchedInv);
-                            }
-                          } else {
-                            setEditingStop(stop);
-                            setIsStopModalOpen(true);
-                          }
-                        }}
-                        className="flex items-center gap-3 bg-white p-3.5 rounded-2xl border border-zinc-200 shadow-sm hover:border-zinc-300 hover:bg-zinc-50/40 transition-all cursor-pointer group select-none relative"
-                      >
-                        {/* Drag Handle Icon */}
-                        <div className="text-zinc-350 group-hover:text-zinc-550 shrink-0 pr-0.5 cursor-grab active:cursor-grabbing">
-                          <GripVertical className="w-4 h-4" />
-                        </div>
-
-                        {/* Queue Position badge */}
-                        <div className="flex items-center justify-center w-7 h-7 bg-brand-primary/10 border border-brand-primary/20 text-brand-primary font-black font-mono text-xs rounded-xl shrink-0">
-                          {idx + 1}
-                        </div>
-
-                        {/* Category Icon */}
-                        <div className="p-2 bg-zinc-100 rounded-xl shrink-0 group-hover:bg-brand-primary/10 transition-colors">
-                          {stop.type === 'Refuel' && <Fuel className="w-4 h-4 text-amber-500" />}
-                          {stop.type === 'Sleep' && <Bed className="w-4 h-4 text-blue-500" />}
-                          {stop.type === 'Rest' && <Coffee className="w-4 h-4 text-emerald-500" />}
-                          {stop.type === 'Delivery' && <Package className="w-4 h-4 text-zinc-600" />}
-                          {stop.type === 'Pickup' && <Truck className="w-4 h-4 text-indigo-500" />}
-                          {!['Refuel', 'Sleep', 'Rest', 'Delivery', 'Pickup'].includes(stop.type || '') && <Clock className="w-4 h-4 text-purple-500" />}
-                        </div>
-
-                        {/* Stop details */}
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between gap-2">
-                            <p className="font-bold text-zinc-900 text-xs truncate uppercase tracking-tight group-hover:text-brand-primary transition-colors flex items-center gap-1.5 min-w-0">
-                              {isInvoice ? (
-                                <span className="text-zinc-900 font-bold shrink-0 select-none font-mono text-xs">
-                                  #{stop.number}
-                                </span>
-                              ) : (
-                                <span className="truncate">{stop.location || stop.client || stop.type}</span>
-                              )}
-                            </p>
-                            <span className="text-[10px] font-mono font-black text-brand-primary shrink-0">
-                              {isInvoice ? `R ${stop.amount?.toLocaleString() || 0}` : stop.type}
-                            </span>
-                          </div>
-                          
-                          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1 text-[10px] text-zinc-400 justify-between">
-                            <span className="truncate flex items-center gap-1.5 font-medium">
-                              {isInvoice ? (
-                                <span className="font-semibold text-zinc-600">
-                                  {invoices.find(inv => inv.id === stop.invoiceId)?.schoolName || stop.client || "Unknown School"}
-                                </span>
-                              ) : `Scheduled Stop: Custom Waypoint`}
-                              {isInvoice && (() => {
-                                for (const t of trips) {
-                                  if (stop.invoiceId && t.invoiceIds?.includes(stop.invoiceId) && t.partialItems) {
-                                    const partialItems = t.partialItems;
-                                    const tripPartialKeys = Object.keys(partialItems).filter(k => partialItems[k]?.isPartial);
-                                    if (tripPartialKeys.length > 0) {
-                                      return (
-                                        <span className="ml-1 p-0.5 px-1 bg-amber-50 border border-amber-200 text-amber-700 font-mono text-[8px] font-black uppercase rounded flex items-center gap-0.5 animate-pulse">
-                                          <AlertTriangle className="w-3 h-3 text-amber-600" />
-                                          FLAGGED
-                                        </span>
-                                      );
-                                    }
-                                  }
-                                }
-                                return null;
-                              })()}
-                            </span>
-                            {stop.startTime ? (
-                              <span className="shrink-0 bg-emerald-50 px-1.5 py-0.5 rounded text-[9px] font-black text-emerald-700 flex items-center gap-1 uppercase tracking-wider leading-none">
-                                <Clock className="w-3 h-3 text-emerald-650" />
-                                {stop.duration || '30m'} ({stop.startTime?.split('T')[1]} - {stop.endTime?.split('T')[1]})
-                              </span>
-                            ) : null}
-                          </div>
-                        </div>
-
-                        {/* Inline Actions */}
-                        <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-                          
-                          {/* Remove button */}
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (isInvoice) {
-                                handleToggleInvoice(stop.invoiceId!);
-                              } else {
-                                setStops(prev => prev.filter(s => s.id !== stop.id));
-                              }
-                            }}
-                            className="p-1.5 hover:bg-red-50 text-zinc-450 hover:text-red-500 rounded-xl transition-colors shrink-0 border border-transparent hover:border-red-100 cursor-pointer"
-                            title="Delete stop"
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
+            {renderRouteStopsCard(false)}
 
             {/* Consolidated Loading Manifest / Summary Card under Route Sequences */}
             <div className="bg-white rounded-3xl border border-zinc-200 p-6 shadow-sm space-y-4 relative overflow-hidden">
@@ -1172,14 +1341,6 @@ export function TripForm() {
             </div>
           </div>
         </form>
-
-        {/* Modal for viewing items manifest */}
-        {selectedInvoiceForStock && (
-          <StockModal 
-            invoice={selectedInvoiceForStock} 
-            onClose={() => setSelectedInvoiceForStock(null)} 
-          />
-        )}
 
         {partialModalData.isOpen && (
           <PartialConfirmModal

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { toast } from 'sonner';
 import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { onSnapshot, doc, getDoc, updateDoc, addDoc, collection, getDocs, query, where, writeBatch } from 'firebase/firestore';
 import { 
@@ -18,6 +19,10 @@ interface InvoiceLineItem {
   description?: string;
   qty?: number;
   quantity?: number;
+  unitPrice?: number;
+  unit_price?: number;
+  value?: number;
+  line_item_value?: number;
   isPart?: boolean;
   parentItem?: string | null;
 }
@@ -268,7 +273,7 @@ export function TeamTripDetail() {
 
   // Setup Loader Items flatlist for counting/completion
   const loaderItems = React.useMemo<LoaderChecklistItem[]>(() => {
-    if (activeRole !== 'Loader') return [];
+    if (activeRole !== 'Loader' && activeRole !== 'Assembler') return [];
     const flatList: LoaderChecklistItem[] = [];
     invoices.forEach(inv => {
       const lineItems = (inv.lineItems || inv.line_items || []) as InvoiceLineItem[];
@@ -305,7 +310,7 @@ export function TeamTripDetail() {
     if (!trip) return;
     const qtyValue = parseInt(enteredCountStr, 10);
     if (isNaN(qtyValue) || qtyValue < 0 || qtyValue > item.qty) {
-      alert(`Please enter a valid count between 0 and ${item.qty}.`);
+      toast.error('Invalid Count', { description: `Please enter a number between 0 and ${item.qty}.` });
       return;
     }
 
@@ -550,73 +555,89 @@ export function TeamTripDetail() {
           for (const [originalInvoiceId, group] of Object.entries(byInvoiceId)) {
             if (group.items.length === 0) continue;
 
-            const lineItems = group.items.map(item => ({
-              stockCode: item.stockCode,
-              stock_code: item.stockCode,
-              description: item.description,
-              qty: item.missingQty,
-              quantity: item.missingQty,
-              unitPrice: 0,
-              unit_price: 0,
-              value: 0,
-              line_item_value: 0
-            }));
+            // Fetch the original invoice's raw Firestore data FIRST, so the new
+            // partial child invoice can inherit its full delivery/contact details
+            // (address, district, email, school, stop location) and so each missing
+            // line item's unit price/value can be carried over accurately.
+            const origInvSnap = await getDoc(doc(db, 'invoices', originalInvoiceId));
+            if (!origInvSnap.exists()) continue;
+            const rawData = origInvSnap.data();
+            const rawLineItems = (rawData.lineItems || rawData.line_items || []) as InvoiceLineItem[];
+
+            const lineItems = group.items.map(item => {
+              const matchedRaw = rawLineItems.find(li =>
+                (li.stockCode || li.stock_code || '').trim() === item.stockCode.trim() &&
+                (li.description || '').trim() === item.description.trim()
+              );
+              const unitPrice = Number(matchedRaw?.unitPrice ?? matchedRaw?.unit_price ?? 0);
+              const value = unitPrice * item.missingQty;
+              return {
+                stockCode: item.stockCode,
+                stock_code: item.stockCode,
+                description: item.description,
+                qty: item.missingQty,
+                quantity: item.missingQty,
+                unitPrice,
+                unit_price: unitPrice,
+                value,
+                line_item_value: value
+              };
+            });
+
+            const subtotal = lineItems.reduce((sum, li) => sum + li.value, 0);
 
             await addDoc(collection(db, 'invoices'), {
+              // Inherit the original invoice's client/delivery/contact details so
+              // this redelivery invoice geocodes and displays exactly like its parent.
               userId: profile.ownerId,
               status: 'partially_complete',
               invoiceNumber: `PARTIAL-${group.invoiceNumber}-${ts}`,
               taxInvoice: `PARTIAL-${group.invoiceNumber}-${ts}`,
-              clientName: group.schoolName,
-              schoolName: group.schoolName,
+              clientName: rawData.clientName || rawData.customerName || group.schoolName,
+              customerName: rawData.customerName || '',
+              schoolName: rawData.schoolName || group.schoolName,
+              email: rawData.email || '',
+              customerContact: rawData.customerContact || '',
+              district: rawData.district || rawData.deliveryRegion || '',
+              deliveryRegion: rawData.deliveryRegion || '',
+              deliveryAddressLine1: rawData.deliveryAddressLine1 || '',
+              deliveryAddressLine2: rawData.deliveryAddressLine2 || '',
+              stopDetails: rawData.stopDetails || null,
+              ship_to_details: rawData.ship_to_details || null,
               invoiceDate: today,
               issueDate: today,
               dueDate: today,
               lineItems,
               line_items: lineItems,
-              subtotal: 0,
-              subTotal: 0,
-              sub_total: 0,
-              totalAmount: 0,
-              totalDue: 0,
+              subtotal,
+              subTotal: subtotal,
+              sub_total: subtotal,
+              totalAmount: subtotal,
+              totalDue: subtotal,
               parentInvoiceId: originalInvoiceId,
               isPartialInvoice: true,
               createdAt: now,
               updatedAt: now
             });
 
-            // Update original invoice line items to reflect the actually-loaded qty.
-            // Fetch raw Firestore data so we get the actual stockCode/qty fields
-            // (the typed Invoice.lineItems uses a canonical LineItem shape without stockCode).
-            const origInvSnap = await getDoc(doc(db, 'invoices', originalInvoiceId));
-            console.log('[Step1] origInvSnap exists:', origInvSnap.exists(), 'invoiceId:', originalInvoiceId);
-            if (origInvSnap.exists()) {
-              const rawData = origInvSnap.data();
-              console.log('[Step1] rawData keys:', Object.keys(rawData));
-              console.log('[Step1] rawData.lineItems:', rawData.lineItems);
-              console.log('[Step1] rawData.line_items:', rawData.line_items);
-              const rawLineItems = (rawData.lineItems || rawData.line_items || []) as InvoiceLineItem[];
-              console.log('[Step1] rawLineItems:', rawLineItems);
-              console.log('[Step1] group.items to match against:', group.items);
-              if (rawLineItems.length > 0) {
-                const updatedLineItems = rawLineItems.map((lineItem: InvoiceLineItem) => {
-                  const sc = (lineItem.stockCode || lineItem.stock_code || '').trim();
-                  const desc = (lineItem.description || '').trim();
-                  const match = group.items.find(
-                    gi => gi.stockCode.trim() === sc && gi.description.trim() === desc
-                  );
-                  console.log(`[Step1] lineItem sc="${sc}" desc="${desc}" → match:`, match);
-                  if (!match) return lineItem;
-                  return { ...lineItem, qty: match.actualQty, quantity: match.actualQty };
-                });
-                console.log('[Step1] updatedLineItems:', updatedLineItems);
-                await updateDoc(doc(db, 'invoices', originalInvoiceId), {
-                  lineItems: updatedLineItems,
-                  line_items: updatedLineItems,
-                  updatedAt: now
-                });
-                console.log('[Step1] updateDoc complete for invoice:', originalInvoiceId);
-              }
+            // Update the original invoice's line items to reflect the actually-loaded
+            // qty (down to 0 when nothing was loaded), so anything not physically
+            // placed on the truck no longer appears for the Delivered Checker to count.
+            if (rawLineItems.length > 0) {
+              const updatedLineItems = rawLineItems.map((lineItem: InvoiceLineItem) => {
+                const sc = (lineItem.stockCode || lineItem.stock_code || '').trim();
+                const desc = (lineItem.description || '').trim();
+                const match = group.items.find(
+                  gi => gi.stockCode.trim() === sc && gi.description.trim() === desc
+                );
+                if (!match) return lineItem;
+                return { ...lineItem, qty: match.actualQty, quantity: match.actualQty };
+              });
+              await updateDoc(doc(db, 'invoices', originalInvoiceId), {
+                lineItems: updatedLineItems,
+                line_items: updatedLineItems,
+                updatedAt: now
+              });
             }
           }
         } catch (partialErr) {
@@ -674,19 +695,21 @@ export function TeamTripDetail() {
               manifestMap.set(key, (manifestMap.get(key) || 0) + qty);
             }
           }
-          console.log('[Step3] recomputed manifestMap:', Object.fromEntries(manifestMap));
-          const updatedManifest = currentManifest.map(manifestItem => {
-            const key = `${manifestItem.stockCode.trim()}__${manifestItem.description.trim()}`;
-            const recomputedQty = manifestMap.get(key);
-            console.log(`[Step3] manifestItem "${manifestItem.stockCode}" old=${manifestItem.qty} recomputed=${recomputedQty}`);
-            if (recomputedQty === undefined) return manifestItem;
-            return { ...manifestItem, qty: recomputedQty };
-          });
+          const updatedManifest = currentManifest
+            .map(manifestItem => {
+              const key = `${manifestItem.stockCode.trim()}__${manifestItem.description.trim()}`;
+              const recomputedQty = manifestMap.get(key);
+              if (recomputedQty === undefined) return manifestItem;
+              return { ...manifestItem, qty: recomputedQty };
+            })
+            // Drop items that ended up with nothing loaded at all — they now live
+            // entirely on the new partial invoice, so the Delivered Checker should
+            // never see or be able to count them on this trip.
+            .filter(manifestItem => manifestItem.qty > 0);
           await updateDoc(doc(db, 'trips', trip.id), {
             manifestItems: updatedManifest,
             updatedAt: new Date().toISOString()
           });
-          console.log('[Step3] manifestItems updated:', updatedManifest);
         }
       } catch (manifestUpdateErr) {
         console.error('Error recomputing manifestItems on loader submit:', manifestUpdateErr);
@@ -705,7 +728,13 @@ export function TeamTripDetail() {
   };
 
   // Calculate stats safely (unconditionally)
-  const items = React.useMemo(() => trip?.manifestItems || [], [trip?.manifestItems]);
+  // Items that were entirely missed at loading (qty recomputed/left at 0) live on
+  // their own partial invoice now — never surface them here for the Delivered
+  // Checker (or anyone else) to count on this trip.
+  const items = React.useMemo(
+    () => (trip?.manifestItems || []).filter(item => (item.qty ?? 0) > 0),
+    [trip?.manifestItems]
+  );
   const checkedState = React.useMemo(() => trip?.checkedItems || {}, [trip?.checkedItems]);
 
   const processedItems = React.useMemo(() => {
@@ -788,10 +817,10 @@ export function TeamTripDetail() {
 
 
 
-  const totalItemsCount = activeRole === 'Loader' ? loaderItems.length : items.length;
+  const totalItemsCount = (activeRole === 'Loader' || activeRole === 'Assembler') ? loaderItems.length : items.length;
 
   let checkedCount = 0;
-  if (activeRole === 'Loader') {
+  if (activeRole === 'Loader' || activeRole === 'Assembler') {
     loaderItems.forEach((item) => {
       const keyUnified = `${item.invoiceId}_${item.stockCode || 'NO_STOCK'}_${item.description}`;
       const keyLegacy = `${item.invoiceId}_${item.stockCode}-${item.legacyIndex}`;
@@ -890,7 +919,7 @@ export function TeamTripDetail() {
             </div>
           </div>
 
-          {activeRole === 'Loader' && (
+          {(activeRole === 'Loader' || activeRole === 'Assembler') && (
             <button
               type="button"
               id="preload-checklist-trigger"
@@ -899,7 +928,9 @@ export function TeamTripDetail() {
                 "xs:self-center shrink-0 font-sans font-black tracking-wider text-[10px] uppercase px-4 py-2.5 rounded-2xl flex items-center justify-center shadow-sm transition-all active:scale-95 cursor-pointer border",
                 preChecklistStats.isCompleted
                   ? "bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-700 hover:shadow-emerald-100"
-                  : "bg-amber-600 hover:bg-amber-700 text-white border-amber-700 hover:shadow-amber-100"
+                  : activeRole === 'Assembler'
+                    ? "bg-blue-600 hover:bg-blue-700 text-white border-blue-700 hover:shadow-blue-100"
+                    : "bg-amber-600 hover:bg-amber-700 text-white border-amber-700 hover:shadow-amber-100"
               )}
             >
               <span>Pre-Checklist ({preChecklistStats.checkedCount}/{preChecklistStats.totalCount})</span>
@@ -1042,13 +1073,13 @@ export function TeamTripDetail() {
 
         {/* Core Checklist Item loop lists */}
         <div className="space-y-3">
-          {activeRole === 'Loader' ? (
+          {(activeRole === 'Loader' || activeRole === 'Assembler') ? (
             <h3 className="text-[10px] font-black uppercase tracking-widest text-zinc-400 font-mono px-1 text-left">Manifest Items Grouped by Invoice ({invoices.length})</h3>
           ) : (
             <h3 className="text-[10px] font-black uppercase tracking-widest text-zinc-400 font-mono px-1 text-left">Manifest Items List ({items.length})</h3>
           )}
 
-          {activeRole === 'Loader' && invoices.length === 0 ? (
+          {(activeRole === 'Loader' || activeRole === 'Assembler') && invoices.length === 0 ? (
             <div className="bg-white rounded-3xl py-12 border border-zinc-200 text-center text-zinc-400 text-xs">
               <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2 text-zinc-400" />
               Loading invoices for grouped loader view...
@@ -1057,7 +1088,7 @@ export function TeamTripDetail() {
             <div className="bg-white rounded-3xl py-12 border border-zinc-200 text-center text-zinc-400 text-xs">
               No manifest items listed on this dispatch's invoices.
             </div>
-          ) : activeRole === 'Loader' ? (
+          ) : (activeRole === 'Loader' || activeRole === 'Assembler') ? (
             <div className="space-y-6">
               {[...invoices].reverse().map((inv, index, arr) => {
                 const schoolName = inv.schoolName || inv.clientName || inv.client || inv.ship_to_details?.school_name || inv.ship_to_details?.name || 'Unknown School';
@@ -1076,15 +1107,15 @@ export function TeamTripDetail() {
                           </h4>
                           {index === 0 ? (
                             <span className="text-[9px] font-mono font-bold bg-amber-500/10 text-amber-700 border border-amber-200/50 px-2 py-0.5 rounded-full">
-                              LOAD FIRST (Deep Front)
+                              {activeRole === 'Assembler' ? 'ASSEMBLE FIRST' : 'LOAD FIRST (Deep Front)'}
                             </span>
                           ) : index === arr.length - 1 ? (
                             <span className="text-[9px] font-mono font-bold bg-blue-500/10 text-blue-700 border border-blue-250/50 px-2 py-0.5 rounded-full">
-                              LOAD LAST (Near Door)
+                              {activeRole === 'Assembler' ? 'ASSEMBLE LAST' : 'LOAD LAST (Near Door)'}
                             </span>
                           ) : (
                             <span className="text-[9px] font-mono font-bold bg-zinc-100 text-zinc-600 px-2 py-0.5 rounded-full">
-                              LOAD STEP #{index + 1}
+                              {activeRole === 'Assembler' ? `STEP #${index + 1}` : `LOAD STEP #${index + 1}`}
                             </span>
                           )}
                         </div>
@@ -1128,15 +1159,28 @@ export function TeamTripDetail() {
                             key={`${inv.id}-${stockCode}-${idx}`}
                             onClick={() => {
                               if (!canCheck || isUpdating) return;
-                              setActiveItemToCount({ 
-                                stockCode, 
-                                description, 
-                                qty, 
-                                keyUnified, 
+                              const itemToCount: AssemblerItemToCount = {
+                                stockCode,
+                                description,
+                                qty,
+                                keyUnified,
                                 keyLegacy,
                                 isPart,
                                 parentItem
-                              });
+                              };
+
+                              if (activeRole === 'Assembler') {
+                                // Assemblers just tick items complete/incomplete at the
+                                // full manifest quantity — no manual count entry needed.
+                                if (isChecked) {
+                                  handleClearAssemblerCount(itemToCount);
+                                } else {
+                                  handleSaveAssemblerCount(itemToCount, qty.toString());
+                                }
+                                return;
+                              }
+
+                              setActiveItemToCount(itemToCount);
                               setAssemblerEnteredQty('');
                             }}
                             className={cn(
@@ -1460,7 +1504,7 @@ export function TeamTripDetail() {
                                       <button
                                         onClick={async () => {
                                           if (!localReason.trim()) {
-                                            alert("Please enter a reason for flagging this item as partially complete.");
+                                            toast.error('Reason Required', { description: 'Please enter a reason for flagging this item as partially complete.' });
                                             return;
                                           }
                                           await updatePartialItem(trip.id, keyUnified, {
@@ -1581,7 +1625,7 @@ export function TeamTripDetail() {
                 </div>
                 <div>
                   <h3 className="font-sans font-black text-sm text-zinc-900 uppercase tracking-tight">
-                    Staging Pre-Checklist
+                    {activeRole === 'Assembler' ? 'Assembly Pre-Checklist' : 'Staging Pre-Checklist'}
                   </h3>
                   <span className="text-[10px] font-mono text-zinc-400 block mt-0.5 uppercase tracking-wide">
                     Trip: {trip.name}
@@ -1662,8 +1706,8 @@ export function TeamTripDetail() {
               <div className="border-t border-zinc-150 pt-4 space-y-3 bg-white shrink-0">
                 {/* Stats row & percentage */}
                 <div className="flex items-center justify-between text-xs font-sans">
-                  <span className="font-black text-zinc-500 uppercase text-[9px] tracking-wide">Staging Progress</span>
-                  <span className="font-bold text-amber-800 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-full text-[10px]">
+                  <span className="font-black text-zinc-500 uppercase text-[9px] tracking-wide">{activeRole === 'Assembler' ? 'Assembly Progress' : 'Staging Progress'}</span>
+                  <span className={cn("font-bold px-2 py-0.5 rounded-full text-[10px] border", activeRole === 'Assembler' ? "text-blue-800 bg-blue-50 border-blue-100" : "text-amber-800 bg-amber-50 border-amber-100")}>
                     {(() => {
                       let checkedCount = 0;
                       uniquePreChecklistItems.forEach(item => {
@@ -1682,7 +1726,7 @@ export function TeamTripDetail() {
                 {/* Progress bar line */}
                 <div className="w-full bg-zinc-100 h-2 rounded-full overflow-hidden">
                   <div 
-                    className="bg-amber-500 h-full transition-all duration-300"
+                    className={cn("h-full transition-all duration-300", activeRole === 'Assembler' ? "bg-blue-500" : "bg-amber-500")}
                     style={{
                       width: `${(() => {
                         let checkedCount = 0;

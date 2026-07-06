@@ -9,9 +9,10 @@ interface KpiStats {
   invoicedAmt: number;
 }
 
-export function KpiStatsRow({ stats, onDeliveredClick }: {
+export function KpiStatsRow({ stats, onDeliveredClick, onPartiallyCompletedClick }: {
   stats: KpiStats;
   onDeliveredClick: () => void;
+  onPartiallyCompletedClick: () => void;
 }) {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -27,7 +28,8 @@ export function KpiStatsRow({ stats, onDeliveredClick }: {
         value={stats.loaded.toString()}
         icon={Package}
         color="bg-amber-50 text-amber-600"
-        subtitle="Ready for Transit"
+        subtitle="Click to view all"
+        onClick={onPartiallyCompletedClick}
       />
       <StatCard
         title="DELIVERED"

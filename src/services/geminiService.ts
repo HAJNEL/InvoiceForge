@@ -22,6 +22,12 @@ export interface DetailedInvoice {
   deliveryAddressLine1: string;
   deliveryAddressLine2: string;
   deliveryRegion: string;
+  // Google-resolved (or manually overridden) address actually used for the map
+  // pin. Populated by the geocoding flows; editable on the invoice edit screens.
+  deliveryAddress?: string;
+  // True when `deliveryAddress` was set/edited by a user, so Refresh Pins preserves
+  // it instead of overwriting it with a fresh school lookup.
+  deliveryAddressManual?: boolean;
   lineItems: {
     stockCode: string;
     description: string;

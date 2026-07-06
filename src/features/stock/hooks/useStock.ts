@@ -17,8 +17,9 @@ export interface KnockdownItem {
   description: string;
   qty: number;
   displayName: string;
-  type: 'knockdown' | 'assembled' | 'pre-assembled' | 'stock-take';
+  type: 'knockdown' | 'assembled' | 'pre-assembled' | 'stock-take' | 'consumable';
   parts: StockPart[];
+  imageBase64?: string;
   createdAt: string;
   updatedAt?: string;
 }
@@ -43,6 +44,7 @@ export function useStock() {
       displayName: item.displayName,
       type: item.type || 'knockdown',
       parts: item.parts || [],
+      ...(item.imageBase64 ? { imageBase64: item.imageBase64 } : {}),
       createdAt: new Date().toISOString()
     };
 
@@ -107,6 +109,7 @@ export function useStock() {
           qty: typeof d.qty === 'number' ? d.qty : 0,
           displayName: d.displayName || '',
           type: (d.type || 'knockdown') as KnockdownItem['type'],
+          imageBase64: d.imageBase64 || undefined,
           parts: (d.parts as StockPart[] || []).map((p) => ({
             partCode: p.partCode || '',
             description: p.description || '',

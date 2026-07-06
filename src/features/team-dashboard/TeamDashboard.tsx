@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { toast } from 'sonner';
 import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import {
   Search, Calendar, ChevronRight, LogOut, Loader2, Shield, Info, AlertTriangle, Truck, RefreshCw,
-  Package, ClipboardList, ChevronDown, X, Menu, ListTodo, FileText, MapPin, Filter
+  Package, ClipboardList, ChevronDown, X, Menu, ListTodo, FileText, MapPin, Filter, ArrowLeft
 } from 'lucide-react';
 import { useTeamDashboard } from './useTeamDashboard';
 import { useMyTasks } from '../todos/hooks/useMyTasks';
@@ -11,92 +12,23 @@ import { auth, db } from '../../lib/firebase';
 import { NRLogo } from '../../components/Logo';
 import { Trip, TripStatus } from '../../types';
 
-interface GroupedStockItem {
+interface StockCountItem {
   stockCode: string;
   description: string;
-  totalQty: number;
-  unitPrice: number;
-  totalValue: number;
+  displayName?: string;
   isPart?: boolean;
   parentItem?: string | null;
-  sources: { invoiceNumber: string; client: string; qty: number; value: number }[];
-}
-
-interface GroupableItem {
-  stockCode: string;
-  isPart?: boolean;
-  parentItem?: string | null;
-}
-
-interface StockItemWithSources {
-  stockCode: string;
-  description: string;
-  totalQty: number;
-  unitPrice: number;
-  totalValue: number;
-  isPart?: boolean;
-  parentItem?: string | null;
-  sources: { invoiceNumber: string; client: string; qty: number; value: number }[];
-}
-
-function groupAndSortItems<T extends GroupableItem>(
-  items: T[],
-  knockdownItems?: { stockCode: string; parts?: { partCode?: string; description?: string }[] }[]
-): { groupCode: string; items: T[] }[] {
-  const groupsMap: { [key: string]: T[] } = {};
-  
-  items.forEach(item => {
-    let parentCode = (item.isPart && item.parentItem) ? item.parentItem.trim() : null;
-    
-    if (!parentCode && knockdownItems) {
-      const match = knockdownItems.find(k => 
-        k.parts?.some(p => (p.partCode || '').toLowerCase().trim() === item.stockCode.toLowerCase().trim())
-      );
-      if (match) {
-        parentCode = match.stockCode.trim();
-        item.isPart = true;
-        item.parentItem = parentCode;
-      }
-    }
-    
-    const groupKey = parentCode || item.stockCode.trim() || 'NO_STOCK_CODE';
-    
-    if (!groupsMap[groupKey]) {
-      groupsMap[groupKey] = [];
-    }
-    groupsMap[groupKey].push(item);
-  });
-
-  Object.keys(groupsMap).forEach(key => {
-    groupsMap[key].sort((a, b) => {
-      const aIsPart = !!a.isPart;
-      const bIsPart = !!b.isPart;
-      if (aIsPart === bIsPart) {
-        return a.stockCode.localeCompare(b.stockCode);
-      }
-      return aIsPart ? 1 : -1;
-    });
-  });
-
-  const grouped = Object.keys(groupsMap).map(groupCode => ({
-    groupCode,
-    items: groupsMap[groupCode]
-  }));
-
-  grouped.sort((a, b) => a.groupCode.localeCompare(b.groupCode));
-
-  return grouped;
 }
 
 export function TeamDashboard() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { profile, trips, invoices, invoicesCount, isOwner, loading, errorWord, knockdownItems, inventoryItems, teamStockTakes } = useTeamDashboard();
+  const { profile, trips, invoices, invoicesCount, isOwner, loading, errorWord, knockdownItems, catalogProducts, inventoryItems, teamStockTakes } = useTeamDashboard();
 
-  // Selected status for stock counter tab. Default is "draft"
-  const [selectedStockStatus, setSelectedStockStatus] = useState<string>('draft');
+  // Stock counter catalog tab
+  const [stockCatalogTab, setStockCatalogTab] = useState<'products' | 'knockdown' | 'consumables'>('products');
   const [definedCounts, setDefinedCounts] = useState<Record<string, number>>({});
-  const [activeGroupToCount, setActiveGroupToCount] = useState<GroupedStockItem | null>(null);
+  const [activeGroupToCount, setActiveGroupToCount] = useState<StockCountItem | null>(null);
   const [enteredQty, setEnteredQty] = useState<string>('');
   const [isSubmittingStock, setIsSubmittingStock] = useState(false);
 
@@ -154,112 +86,48 @@ export function TeamDashboard() {
     setSearchParams({ role });
   };
 
-  // Filter invoices for stock counter based on selected status filter
-  const filteredInvoicesForStock = React.useMemo(() => {
-    return (invoices || []).filter(inv => {
-      // Norm invoice status
-      const statusLower = (inv.status || 'draft').toLowerCase().trim();
-      
-      if (selectedStockStatus === 'draft') {
-        return statusLower === 'draft' || statusLower === 'darft';
-      }
-      if (selectedStockStatus === 'partially_complete') {
-        return statusLower === 'partially_complete' || statusLower === 'partially completed' || statusLower === 'partially complete';
-      }
-      if (selectedStockStatus === 'proposed') {
-        return statusLower === 'proposed';
-      }
-      if (selectedStockStatus === 'assembled') {
-        return statusLower === 'assembled';
-      }
-      return false;
-    });
-  }, [invoices, selectedStockStatus]);
+  // Catalog-based stock count item lists
+  const productItems = React.useMemo<StockCountItem[]>(() =>
+    (catalogProducts || [])
+      .filter(p => (p.category || 'product') === 'product')
+      .map(p => ({ stockCode: p.stockCode, description: p.description, displayName: p.description })),
+    [catalogProducts]
+  );
 
-  // Group line items
-  const groupedStockItems = React.useMemo<StockItemWithSources[]>(() => {
-    const groupedMap: { [key: string]: StockItemWithSources } = {};
+  const knockdownCatalogItems = React.useMemo<StockCountItem[]>(() =>
+    (knockdownItems || [])
+      .filter(k => k.type === 'knockdown')
+      .map(k => ({ stockCode: k.stockCode, description: k.description, displayName: k.displayName })),
+    [knockdownItems]
+  );
 
-    filteredInvoicesForStock.forEach(inv => {
-      const items = inv.lineItems || [];
-      items.forEach(item => {
-        const code = (item.stockCode || 'NO-CODE').trim();
-        const desc = (item.description || 'No Description').trim();
-        
-        // Find if this code matches a knockdown item stock code
-        const matchingKnockdown = knockdownItems?.find(
-          k => k.stockCode.toLowerCase().trim() === code.toLowerCase().trim()
-        );
+  const consumableItems = React.useMemo<StockCountItem[]>(() => [
+    ...(catalogProducts || []).filter(p => p.category === 'consumable').map(p => ({ stockCode: p.stockCode, description: p.description, displayName: p.description })),
+    ...(knockdownItems || []).filter(k => k.type === 'consumable').map(k => ({ stockCode: k.stockCode, description: k.description, displayName: k.displayName }))
+  ], [catalogProducts, knockdownItems]);
 
-        if (matchingKnockdown && matchingKnockdown.parts && matchingKnockdown.parts.length > 0) {
-          // If knockdown match, multiply that invoice's required count into parts requirements
-          matchingKnockdown.parts.forEach(part => {
-            const partCode = (part.partCode || 'NO-CODE').trim();
-            const partDesc = (part.description || 'No Description').trim();
-            const partKey = `${partCode}_${partDesc}`;
-            
-            const reqQty = (item.qty || 0) * (part.qty || 1);
+  const activeStockItems = React.useMemo<StockCountItem[]>(() => {
+    const base = stockCatalogTab === 'products' ? productItems
+      : stockCatalogTab === 'knockdown' ? knockdownCatalogItems
+      : consumableItems;
+    const q = searchQuery.toLowerCase().trim();
+    if (!q) return base;
+    return base.filter(i =>
+      i.stockCode.toLowerCase().includes(q) ||
+      i.description.toLowerCase().includes(q) ||
+      (i.displayName || '').toLowerCase().includes(q)
+    );
+  }, [stockCatalogTab, productItems, knockdownCatalogItems, consumableItems, searchQuery]);
 
-            if (!groupedMap[partKey]) {
-              groupedMap[partKey] = {
-                stockCode: partCode,
-                description: partDesc,
-                totalQty: 0,
-                unitPrice: 0,
-                totalValue: 0,
-                isPart: true,
-                parentItem: code,
-                sources: []
-              };
-            }
-            groupedMap[partKey].totalQty += reqQty;
-            groupedMap[partKey].sources.push({
-              invoiceNumber: inv.number,
-              client: inv.client,
-              qty: reqQty,
-              value: 0
-            });
-          });
-        } else {
-          // Normal direct line item
-          const key = `${code}_${desc}`;
-          if (!groupedMap[key]) {
-            groupedMap[key] = {
-              stockCode: code,
-              description: desc,
-              totalQty: 0,
-              unitPrice: item.unitPrice || 0,
-              totalValue: 0,
-              isPart: false,
-              sources: []
-            };
-          }
-          groupedMap[key].totalQty += (item.qty || 0);
-          groupedMap[key].totalValue += (item.value || 0);
-          groupedMap[key].sources.push({
-            invoiceNumber: inv.number,
-            client: inv.client,
-            qty: item.qty || 0,
-            value: item.value || 0
-          });
-        }
-      });
-    });
-
-    // Apply search query filter if provided
-    return Object.values(groupedMap).filter(item => {
-      const q = searchQuery.toLowerCase().trim();
-      if (!q) return true;
-      return item.stockCode.toLowerCase().includes(q) || 
-             item.description.toLowerCase().includes(q) || 
-             item.sources.some(s => s.client.toLowerCase().includes(q) || s.invoiceNumber.toLowerCase().includes(q));
-    });
-  }, [filteredInvoicesForStock, searchQuery, knockdownItems]);
+  // All catalog items — used for submit lookup regardless of active tab
+  const allCatalogItems = React.useMemo<StockCountItem[]>(() => [
+    ...productItems, ...knockdownCatalogItems, ...consumableItems
+  ], [productItems, knockdownCatalogItems, consumableItems]);
 
   const handleSubmitStockTake = async () => {
     const records = Object.entries(definedCounts);
     if (records.length === 0) {
-      alert("No stock items have been counted yet. Please click on a group and enter its actual quantity first!");
+      toast.warning('Nothing Counted Yet', { description: 'Tap an item and enter its physical quantity before submitting.' });
       return;
     }
 
@@ -289,14 +157,14 @@ export function TeamDashboard() {
 
       // Create a single grouped stock take document with multiple parts/items in it
       const itemsToSave = records.map(([key, qty]) => {
-        const item = groupedStockItems.find(g => `${g.stockCode}_${g.description}` === key);
+        const item = allCatalogItems.find(i => `${i.stockCode}_${i.description}` === key);
         return {
           stockCode: item?.stockCode || key.split('_')[0],
-          description: item?.description || key.split('_')[1] || '',
-          isPart: !!item?.isPart,
-          parentItem: item?.parentItem || null,
+          description: item?.description || '',
+          isPart: false,
+          parentItem: null,
           countedQty: qty,
-          expectedQty: item?.totalQty || 0,
+          expectedQty: 0,
           status: 'pending'
         };
       });
@@ -317,10 +185,10 @@ export function TeamDashboard() {
 
       // Clear local state on success
       setDefinedCounts({});
-      alert(`Stock take #${nextCode} submitted successfully and is now awaiting approval!`);
+      toast.success('Stock Take Submitted', { description: `Stock take #${nextCode} is now awaiting administrator approval.` });
     } catch (err) {
       console.error("Failed to submit stock take:", err);
-      alert("Failed to submit stock count. Please try again.");
+      toast.error('Submission Failed', { description: 'Could not submit stock count. Check your connection and try again.' });
     } finally {
       setIsSubmittingStock(false);
     }
@@ -347,31 +215,6 @@ export function TeamDashboard() {
       return matchesSearch && matchesDistrict && matchesStatus;
     });
   }, [invoices, invoiceSearch, invoiceDistrictFilter, invoiceStatusFilter]);
-
-  // If user is actually an owner, gently redirect to main admin dashboard portal
-  if (isOwner) {
-    return (
-      <div className="min-h-screen bg-zinc-50 flex items-center justify-center p-6">
-        <div className="bg-white p-8 rounded-3xl border border-zinc-200 max-w-sm w-full text-center space-y-4 text-left">
-          <div className="w-12 h-12 bg-amber-100 rounded-full flex items-center justify-center text-amber-600 mx-auto">
-            <Info className="w-6 h-6" />
-          </div>
-          <div>
-            <h3 className="font-bold text-zinc-900 text-sm text-center">Account Owner Detected</h3>
-            <p className="text-xs text-zinc-550 mt-1.5 leading-relaxed text-center">
-              You are signed in as an administrator. Redirecting you to your primary control console...
-            </p>
-          </div>
-          <button
-            onClick={() => navigate('/dashboard')}
-            className="w-full bg-brand-primary text-white py-2.5 rounded-xl text-xs font-black uppercase tracking-wider hover:bg-zinc-800 transition-all shadow-sm cursor-pointer"
-          >
-            Go to Admin Dashboard
-          </button>
-        </div>
-      </div>
-    );
-  }
 
   const handleLogout = async () => {
     await auth.signOut();
@@ -437,6 +280,18 @@ export function TeamDashboard() {
       {/* Sticky Top Mobile Navigation Bar */}
       <header className="sticky top-0 z-40 bg-white border-b border-zinc-200 h-16 px-4 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-1.5 animate-fade-in">
+          {/* Account owner: return to the screen they were on in the main account */}
+          {isOwner && (
+            <button
+              type="button"
+              onClick={() => navigate(-1)}
+              className="p-2 -ml-2 rounded-xl text-zinc-700 hover:bg-zinc-100 transition-all cursor-pointer"
+              title="Back to main account"
+            >
+              <ArrowLeft className="w-5 h-5 stroke-[2.5]" />
+            </button>
+          )}
+
           {/* Burger button to open roles sidebar */}
           <button
             type="button"
@@ -489,7 +344,7 @@ export function TeamDashboard() {
           {showLogoutMenu && (
             <div className="absolute right-0 mt-2 w-48 bg-white border border-zinc-200 rounded-2xl shadow-xl py-2 z-50 text-left animate-fade-in pre-render-shadow">
               <div className="px-4 py-2 border-b border-zinc-100 mb-1">
-                <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Signed in as</p>
+                <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Signed in as{isOwner ? ' (Owner)' : ''}</p>
                 <p className="text-xs font-black text-zinc-800 truncate leading-snug">{profile?.firstName} {profile?.lastName}</p>
               </div>
               <button 
@@ -759,171 +614,161 @@ export function TeamDashboard() {
                 )}
               </div>
             ) : currentRole === 'Stock Counter' ? (
-              <div className="bg-white rounded-3xl p-6 border border-zinc-200 shadow-sm relative text-left">
-                {/* Card Header with Status Selector in Top Right Corner */}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-zinc-100 pb-4 mb-4">
-                  <div>
-                    <div className="flex items-center gap-2 text-zinc-900 mb-0.5">
-                      <ClipboardList className="w-5 h-5 text-emerald-600" />
-                      <h3 className="font-bold text-sm text-zinc-900">Grouped Stock Line Items</h3>
-                    </div>
-                    <p className="text-[11px] text-zinc-500 leading-snug">
-                      Showing aggregated item quantities filtered by the invoice workflow status.
-                    </p>
+              <div className="bg-white rounded-3xl p-6 border border-zinc-200 shadow-sm relative text-left space-y-4">
+                {/* Card Header */}
+                <div className="flex flex-col gap-1">
+                  <div className="flex items-center gap-2 text-zinc-900">
+                    <ClipboardList className="w-5 h-5 text-emerald-600" />
+                    <h3 className="font-bold text-sm text-zinc-900">Stock Take</h3>
                   </div>
-
-                  {/* Change Status select dropdown in top right corner of card */}
-                  <div className="relative shrink-0 flex items-center gap-1.5 self-start sm:self-center">
-                    <span className="text-[10px] uppercase font-bold tracking-wider text-zinc-400 font-mono">Status:</span>
-                    <div className="relative">
-                      <select aria-label="Stock status"
-                        value={selectedStockStatus}
-                        onChange={(e) => setSelectedStockStatus(e.target.value)}
-                        className="appearance-none bg-zinc-50 hover:bg-zinc-100 border border-zinc-200 text-zinc-800 text-[11px] font-black uppercase tracking-wider py-1.5 pl-3 pr-8 rounded-xl cursor-pointer focus:outline-none focus:ring-1 focus:ring-brand-accent focus:border-brand-accent transition-all"
-                      >
-                        <option value="draft">Darft (Default)</option>
-                        <option value="partially_complete">Partially completed</option>
-                        <option value="proposed">Proposed</option>
-                        <option value="assembled">Assembled</option>
-                      </select>
-                      <ChevronDown className="w-3.5 h-3.5 text-zinc-550 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                    </div>
-                  </div>
+                  <p className="text-[11px] text-zinc-500 leading-snug">
+                    Count physical quantities across your product catalog.
+                  </p>
                 </div>
 
-                {/* Progress of counted stock items indicator */}
-                {groupedStockItems.length > 0 && (
-                  <div className="bg-zinc-50 rounded-2xl p-3.5 border border-zinc-150 mb-5 text-[11px] font-mono leading-relaxed text-zinc-550 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div className="flex items-center gap-2">
-                      <Package className="w-4 h-4 text-emerald-500" />
-                      <span>
-                        Total Unique Products: <strong>{groupedStockItems.length}</strong>
+                {/* Category Tabs */}
+                <div className="flex gap-1 bg-zinc-100 p-1 rounded-2xl">
+                  {([
+                    { key: 'products', label: 'Products', count: productItems.length },
+                    { key: 'knockdown', label: 'Knockdown', count: knockdownCatalogItems.length },
+                    { key: 'consumables', label: 'Consumables', count: consumableItems.length },
+                  ] as const).map(tab => (
+                    <button
+                      key={tab.key}
+                      type="button"
+                      title={tab.label}
+                      onClick={() => setStockCatalogTab(tab.key)}
+                      className={`flex-1 py-2 px-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                        stockCatalogTab === tab.key
+                          ? 'bg-white text-brand-primary shadow-sm border border-zinc-200/60'
+                          : 'text-zinc-500 hover:text-zinc-700'
+                      }`}
+                    >
+                      {tab.label}
+                      <span className={`px-1.5 py-0.5 rounded-md text-[9px] font-black leading-none ${
+                        stockCatalogTab === tab.key
+                          ? 'bg-brand-primary/10 text-brand-primary'
+                          : 'bg-zinc-200 text-zinc-500'
+                      }`}>
+                        {tab.count}
                       </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-zinc-400 font-bold uppercase text-[9px] tracking-wider font-sans">Verification Checklist:</span>
-                      <span className="bg-emerald-50 text-emerald-700 font-black px-2.5 py-0.5 rounded-full border border-emerald-150 shadow-2xs font-sans font-black">
-                        {groupedStockItems.filter(item => {
-                          const itemKey = `${item.stockCode}_${item.description}`;
-                          let matchingCount = 0;
-                          for (const tTake of (teamStockTakes || [])) {
-                            const matchingItem = tTake.items?.find((i: { stockCode: string; countedQty: number }) => i.stockCode.toLowerCase().trim() === item.stockCode.toLowerCase().trim());
-                            if (matchingItem) {
-                              matchingCount = matchingItem.countedQty || 0;
-                            }
-                          }
-                          return definedCounts[itemKey] !== undefined || matchingCount > 0;
-                        }).length} / {groupedStockItems.length} Checked
-                      </span>
-                    </div>
-                  </div>
-                )}
+                    </button>
+                  ))}
+                </div>
 
-                {/* Stock Items list */}
-                <div className="space-y-3">
-                  {groupedStockItems.length === 0 ? (
-                    <div className="text-center py-10 space-y-3">
-                      <Package className="w-10 h-10 text-zinc-300 mx-auto stroke-[1.5]" />
-                      <div className="space-y-1">
-                        <p className="text-xs font-bold text-zinc-700">No stock items found</p>
-                        <p className="text-[11px] text-zinc-400 max-w-xs mx-auto">
-                          No invoices match the status: <strong className="text-zinc-500 font-black">"{selectedStockStatus === 'draft' ? 'Darft' : selectedStockStatus === 'partially_complete' ? 'Partially completed' : selectedStockStatus === 'proposed' ? 'Proposed' : 'Assembled'}"</strong>.
-                        </p>
-                      </div>
-                    </div>
-                  ) : (
-                    (() => {
-                      const groups = groupAndSortItems<StockItemWithSources>(groupedStockItems, knockdownItems);
-                      return groups.map((gObj) => (
-                        <div key={gObj.groupCode} className="border border-zinc-200 rounded-3xl p-4 bg-zinc-50/20 space-y-2.5">
-                          <div className="flex items-center gap-2 pb-1.5 border-b border-zinc-150">
-                            <span className="text-[9px] font-mono font-black uppercase text-zinc-400 tracking-wider">Group:</span>
-                            <span className="font-mono text-[10px] font-black uppercase bg-zinc-900 text-white px-2.5 py-0.5 rounded-md">
-                              {gObj.groupCode}
-                            </span>
-                          </div>
-                          <div className="space-y-2">
-                            {gObj.items.map((item) => {
-                              const itemKey = `${item.stockCode}_${item.description}`;
-                              const isLocalChanged = definedCounts[itemKey] !== undefined;
-
-                              // Check inside teamStockTakes list to see if this item has any counted quantity
-                              let matchingCount = 0;
-                              for (const tTake of (teamStockTakes || [])) {
-                                const matchingItem = tTake.items?.find((i: { stockCode: string; countedQty: number }) => i.stockCode.toLowerCase().trim() === item.stockCode.toLowerCase().trim());
-                                if (matchingItem) {
-                                  matchingCount = matchingItem.countedQty || 0;
-                                  break;
-                                }
-                              }
-
-                              // Get current inventory amount
-                              const matchingInventoryItem = (inventoryItems || []).find(
-                                inv => inv.stockCode.toLowerCase().trim() === item.stockCode.toLowerCase().trim()
-                              );
-                              const currentInventoryAmount = matchingInventoryItem ? (matchingInventoryItem.qty || 0) : 0;
-
-                              // If locally changed, use that value; otherwise default to inventory quantity
-                              const currentVal = isLocalChanged ? definedCounts[itemKey] : currentInventoryAmount;
-
-                              let bgClass = 'bg-white border-zinc-200 hover:border-zinc-350 hover:shadow-2xs';
-                              if (isLocalChanged) {
-                                bgClass = 'bg-orange-50/40 border-orange-400 shadow-2xs';
-                              } else if (matchingCount > 0) {
-                                bgClass = 'bg-emerald-50/20 border-emerald-305 shadow-2xs';
-                              }
-
-                              return (
-                                <div
-                                  key={itemKey}
-                                  onClick={() => {
-                                    setActiveGroupToCount(item);
-                                    setEnteredQty(isLocalChanged ? currentVal.toString() : '');
-                                  }}
-                                  className={`p-4 rounded-3xl border transition-all cursor-pointer flex items-center justify-between gap-3 select-none hover:scale-[1.005] ${bgClass}`}
-                                >
-                                  <div className="min-w-0 text-left flex-1 flex flex-col justify-center">
-                                    <div className="flex items-center gap-1.5 flex-wrap">
-                                      <span className="font-mono text-[10px] font-black uppercase tracking-wider bg-zinc-100 text-zinc-750 px-2 py-0.5 rounded border border-zinc-200">
-                                        {item.stockCode}
-                                      </span>
-                                      {item.isPart && (
-                                        <span className="text-[9px] font-sans font-black uppercase bg-purple-50 text-purple-700 border border-purple-200 px-2 py-0.5 rounded shadow-2xs tracking-wider">
-                                          Part of {item.parentItem}
-                                        </span>
-                                      )}
-                                    </div>
-
-                                    <p className="text-xs font-black mt-1 leading-snug text-zinc-900">
-                                      {item.description}
-                                    </p>
-                                  </div>
-
-                                  {/* Compact count display - green bg by default (inventory), orange bg if edited (locally changed) */}
-                                  <div className="shrink-0 flex items-center justify-end pl-2">
-                                    {isLocalChanged ? (
-                                      <div className="flex items-center justify-center bg-orange-100 border border-orange-350 text-orange-950 px-4 py-2 rounded-2xl min-w-[54px] text-center font-sans font-black text-sm shadow-3xs transition-all animate-scale-up">
-                                        {currentVal}
-                                      </div>
-                                    ) : (
-                                      <div className="flex items-center justify-center bg-emerald-50 border border-emerald-300 text-emerald-950 px-4 py-2 rounded-2xl min-w-[54px] text-center font-sans font-black text-sm shadow-3xs transition-all">
-                                        {currentInventoryAmount}
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      ));
-                    })()
+                {/* Search */}
+                <div className="relative">
+                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400 pointer-events-none" />
+                  <input
+                    type="text"
+                    placeholder="Search stock code or description…"
+                    value={searchQuery}
+                    onChange={e => setSearchQuery(e.target.value)}
+                    title="Search items"
+                    className="w-full pl-10 pr-9 py-2.5 border border-zinc-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 bg-zinc-50 transition-all"
+                  />
+                  {searchQuery && (
+                    <button
+                      type="button"
+                      title="Clear search"
+                      onClick={() => setSearchQuery('')}
+                      className="absolute right-3.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 cursor-pointer"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
                   )}
                 </div>
 
-                {/* Submit Stock Take Footer panel */}
-                {groupedStockItems.length > 0 && (
-                  <div className="pt-4 border-t border-zinc-250 mt-6 shrink-0 flex flex-col gap-2">
+                {/* Progress indicator */}
+                {activeStockItems.length > 0 && (
+                  <div className="bg-zinc-50 rounded-2xl p-3 border border-zinc-150 text-[11px] font-mono text-zinc-550 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      <Package className="w-4 h-4 text-emerald-500" />
+                      <span>Items: <strong>{activeStockItems.length}</strong></span>
+                    </div>
+                    <span className="bg-emerald-50 text-emerald-700 font-black px-2.5 py-0.5 rounded-full border border-emerald-150 font-sans text-[10px]">
+                      {activeStockItems.filter(item => definedCounts[`${item.stockCode}_${item.description}`] !== undefined).length} / {activeStockItems.length} Counted
+                    </span>
+                  </div>
+                )}
+
+                {/* Items list */}
+                <div className="space-y-2">
+                  {activeStockItems.length === 0 ? (
+                    <div className="text-center py-10 space-y-3">
+                      <Package className="w-10 h-10 text-zinc-300 mx-auto stroke-[1.5]" />
+                      <div className="space-y-1">
+                        {searchQuery.trim() ? (
+                          <>
+                            <p className="text-xs font-bold text-zinc-700">No results for "{searchQuery}"</p>
+                            <p className="text-[11px] text-zinc-400 max-w-xs mx-auto">
+                              Try a different stock code or description.
+                            </p>
+                          </>
+                        ) : (
+                          <>
+                            <p className="text-xs font-bold text-zinc-700">No {stockCatalogTab} in catalog</p>
+                            <p className="text-[11px] text-zinc-400 max-w-xs mx-auto">
+                              Add {stockCatalogTab} in the Products screen to see them here.
+                            </p>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    activeStockItems.map((item) => {
+                      const itemKey = `${item.stockCode}_${item.description}`;
+                      const isLocalChanged = definedCounts[itemKey] !== undefined;
+
+                      const matchingInventoryItem = (inventoryItems || []).find(
+                        inv => inv.stockCode.toLowerCase().trim() === item.stockCode.toLowerCase().trim()
+                      );
+                      const currentInventoryAmount = matchingInventoryItem ? (matchingInventoryItem.qty || 0) : 0;
+                      const currentVal = isLocalChanged ? definedCounts[itemKey] : currentInventoryAmount;
+
+                      let bgClass = 'bg-white border-zinc-200 hover:border-zinc-350 hover:shadow-2xs';
+                      if (isLocalChanged) bgClass = 'bg-orange-50/40 border-orange-400 shadow-2xs';
+
+                      return (
+                        <div
+                          key={itemKey}
+                          onClick={() => {
+                            setActiveGroupToCount(item);
+                            setEnteredQty(isLocalChanged ? currentVal.toString() : '');
+                          }}
+                          className={`p-4 rounded-3xl border transition-all cursor-pointer flex items-center justify-between gap-3 select-none hover:scale-[1.005] ${bgClass}`}
+                        >
+                          <div className="min-w-0 text-left flex-1">
+                            <span className="font-mono text-[10px] font-black uppercase tracking-wider bg-zinc-100 text-zinc-750 px-2 py-0.5 rounded border border-zinc-200 inline-block">
+                              {item.stockCode}
+                            </span>
+                            <p className="text-xs font-black mt-1 leading-snug text-zinc-900">
+                              {item.displayName || item.description}
+                            </p>
+                            {item.displayName && item.description !== item.displayName && (
+                              <p className="text-[10px] text-zinc-400 mt-0.5 truncate">{item.description}</p>
+                            )}
+                          </div>
+                          <div className="shrink-0 pl-2">
+                            {isLocalChanged ? (
+                              <div className="flex items-center justify-center bg-orange-100 border border-orange-350 text-orange-950 px-4 py-2 rounded-2xl min-w-[54px] text-center font-sans font-black text-sm shadow-3xs">
+                                {currentVal}
+                              </div>
+                            ) : (
+                              <div className="flex items-center justify-center bg-emerald-50 border border-emerald-300 text-emerald-950 px-4 py-2 rounded-2xl min-w-[54px] text-center font-sans font-black text-sm shadow-3xs">
+                                {currentInventoryAmount}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+
+                {/* Submit footer */}
+                {allCatalogItems.length > 0 && (
+                  <div className="pt-4 border-t border-zinc-150 flex flex-col gap-2">
                     <button
                       type="button"
                       onClick={handleSubmitStockTake}
@@ -931,19 +776,13 @@ export function TeamDashboard() {
                       className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-zinc-200 disabled:text-zinc-400 disabled:cursor-not-allowed text-white font-sans font-black text-xs uppercase tracking-widest rounded-2xl cursor-pointer transition-all flex items-center justify-center gap-2 shadow-md hover:scale-[1.01] active:scale-99"
                     >
                       {isSubmittingStock ? (
-                        <>
-                          <Loader2 className="w-4 h-4 animate-spin shrink-0" />
-                          Submitting Ledger...
-                        </>
+                        <><Loader2 className="w-4 h-4 animate-spin shrink-0" />Submitting Ledger...</>
                       ) : (
-                        <>
-                          <ClipboardList className="w-4 h-4 shrink-0" />
-                          Submit Stock Take ({Object.keys(definedCounts).length} Items Counted)
-                        </>
+                        <><ClipboardList className="w-4 h-4 shrink-0" />Submit Stock Take ({Object.keys(definedCounts).length} Items Counted)</>
                       )}
                     </button>
                     <p className="text-[10px] text-zinc-450 text-center font-medium leading-normal">
-                      Count data remains local until you press submit. Submission saves rows to <strong className="font-mono">stock</strong> pending review by master managers.
+                      Count data is local until you submit. Submissions are reviewed by the administrator.
                     </p>
                   </div>
                 )}
@@ -1083,51 +922,35 @@ export function TeamDashboard() {
             </div>
 
             {(() => {
-              const matchingKnockdown = knockdownItems?.find(
-                item => item.stockCode.toLowerCase().trim() === activeGroupToCount.stockCode.toLowerCase().trim()
+              const matchingKnockdown = (knockdownItems || []).find(
+                k => k.stockCode.toLowerCase().trim() === activeGroupToCount.stockCode.toLowerCase().trim() && k.type === 'knockdown'
               );
-              const calculatedMultiplier = parseInt(enteredQty, 10) || 0;
-              if (!matchingKnockdown) return null;
+              if (!matchingKnockdown || !matchingKnockdown.parts || matchingKnockdown.parts.length === 0) return null;
+              const multiplier = parseInt(enteredQty, 10) || 0;
               return (
                 <div className="bg-zinc-50 border border-zinc-200/60 rounded-2xl p-4 space-y-2.5">
                   <div className="flex items-center justify-between border-b border-zinc-200 pb-1.5">
                     <span className="text-[10px] font-mono font-black text-zinc-500 uppercase tracking-wider">
-                      Parts Breakdown ({matchingKnockdown.type || 'knockdown'})
+                      Parts Breakdown
                     </span>
-                    <span className="text-[10px] text-zinc-400 font-mono">
-                      Configured Code: {matchingKnockdown.stockCode}
-                    </span>
+                    <span className="text-[10px] text-zinc-400 font-mono">{matchingKnockdown.parts.length} parts</span>
                   </div>
-                  <p className="text-[11px] font-black text-zinc-905 leading-tight">
-                    {matchingKnockdown.displayName || matchingKnockdown.description}
-                  </p>
-                  {matchingKnockdown.parts && matchingKnockdown.parts.length > 0 ? (
-                    <div className="space-y-2 max-h-36 overflow-y-auto pr-1">
-                      {matchingKnockdown.parts.map((part, pIdx) => {
-                        const totalPartCount = part.qty * calculatedMultiplier;
-                        return (
-                          <div key={pIdx} className="flex items-center justify-between gap-3 text-xs border-b border-dashed border-zinc-200/50 pb-1.5 last:border-0 last:pb-0">
-                            <div className="min-w-0 flex-1">
-                              <p className="font-bold text-zinc-800 truncate leading-tight">{part.description}</p>
-                              <p className="text-[9px] font-mono text-zinc-450">Part code: {part.partCode}</p>
-                            </div>
-                            <div className="text-right shrink-0">
-                              <p className="font-sans font-black text-zinc-700">
-                                {part.qty} pcs each
-                              </p>
-                              {calculatedMultiplier > 0 && (
-                                <p className="text-[9px] font-mono text-emerald-600 font-black">
-                                  Total: {totalPartCount} units
-                                </p>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <p className="text-[10px] text-zinc-400 italic">No knockdown sub-components configured.</p>
-                  )}
+                  <div className="space-y-2 max-h-36 overflow-y-auto pr-1">
+                    {matchingKnockdown.parts.map((part, pIdx) => (
+                      <div key={pIdx} className="flex items-center justify-between gap-3 text-xs border-b border-dashed border-zinc-200/50 pb-1.5 last:border-0 last:pb-0">
+                        <div className="min-w-0 flex-1">
+                          <p className="font-bold text-zinc-800 truncate leading-tight">{part.description}</p>
+                          <p className="text-[9px] font-mono text-zinc-450">Code: {part.partCode}</p>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <p className="font-sans font-black text-zinc-700">{part.qty} each</p>
+                          {multiplier > 0 && (
+                            <p className="text-[9px] font-mono text-emerald-600 font-black">Total: {part.qty * multiplier}</p>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               );
             })()}
@@ -1138,7 +961,7 @@ export function TeamDashboard() {
                 onClick={() => {
                   const qtyValue = parseInt(enteredQty, 10);
                   if (isNaN(qtyValue) || qtyValue < 0) {
-                    alert("Please enter a valid non-negative number.");
+                    toast.error('Invalid Quantity', { description: 'Please enter a valid number (0 or greater).' });
                     return;
                   }
                   const itemKey = `${activeGroupToCount.stockCode}_${activeGroupToCount.description}`;

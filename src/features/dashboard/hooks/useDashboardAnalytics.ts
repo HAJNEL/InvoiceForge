@@ -249,47 +249,16 @@ export function useDashboardAnalytics({ invoices, trucks, trips, weekOffset }: U
       invoicedAmt: 0
     };
 
-    let startOfWeek: Date | null = null;
-    let endOfWeek: Date | null = null;
-    if (weekDays.length > 0) {
-      startOfWeek = new Date(weekDays[0].dateString + 'T00:00:00');
-      endOfWeek = new Date(weekDays[6].dateString + 'T23:59:59');
-    }
-
     return invoices.reduce((acc, inv) => {
       acc.total += 1;
       const status = inv.status.toLowerCase();
       if (status === 'assembly' || status === 'assembled') acc.assembly += 1;
       if (status === 'partially_complete' || status === 'partially complete' || status === 'partially-completed') acc.loaded += 1;
-      // DELIVERED KPI card based on the count of invoices on a "DELIVERED", "COMPLETED", or "COMPLETE" status
       if (status === 'completed' || status === 'delivered' || status === 'complete') acc.delivered += 1;
-
-      // INVOICED KPI card based on the amount of invoices in an "INVOICED" status for the selected week
-      if (status === 'invoiced') {
-        const isDirectMatch = weekDays.some(day => day.dateString === inv.date);
-        let isWithinWeekRange = isDirectMatch;
-
-        if (!isWithinWeekRange && inv.date && startOfWeek && endOfWeek) {
-          try {
-            let invDateObj = new Date(inv.date + 'T00:00:00');
-            if (isNaN(invDateObj.getTime())) {
-              invDateObj = new Date(inv.date);
-            }
-            if (!isNaN(invDateObj.getTime()) && invDateObj >= startOfWeek && invDateObj <= endOfWeek) {
-              isWithinWeekRange = true;
-            }
-          } catch {
-            // ignore parse errors
-          }
-        }
-
-        if (isWithinWeekRange) {
-          acc.invoicedAmt += (inv.amount || 0);
-        }
-      }
+      if (status === 'invoiced') acc.invoicedAmt += (inv.amount || 0);
       return acc;
     }, { total: 0, assembly: 0, loaded: 0, delivered: 0, invoicedAmt: 0 });
-  }, [invoices, weekDays]);
+  }, [invoices]);
 
   const completedInvoices = useMemo(() => {
     // Includes partially-completed invoices so they remain visible alongside fully completed ones.
@@ -297,6 +266,13 @@ export function useDashboardAnalytics({ invoices, trucks, trips, weekOffset }: U
       const s = inv.status.toLowerCase();
       return s === 'completed' || s === 'delivered' ||
         s === 'partially_complete' || s === 'partially-completed' || s === 'partially complete';
+    });
+  }, [invoices]);
+
+  const partiallyCompletedInvoices = useMemo(() => {
+    return invoices.filter(inv => {
+      const s = inv.status.toLowerCase();
+      return s === 'partially_complete' || s === 'partially-completed' || s === 'partially complete';
     });
   }, [invoices]);
 
@@ -341,6 +317,7 @@ export function useDashboardAnalytics({ invoices, trucks, trips, weekOffset }: U
     weekDays,
     stats,
     completedInvoices,
+    partiallyCompletedInvoices,
     recentActivity,
     weekNumber,
     getTripsForCell

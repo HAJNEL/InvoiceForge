@@ -4,6 +4,7 @@
  */
 
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { Toaster } from 'sonner';
 import { useEffect } from 'react';
 import { Layout } from './layout/MainLayout';
 import { Dashboard } from './features/dashboard/Dashboard';
@@ -28,6 +29,7 @@ import { TeamRegister } from './features/auth/TeamRegister';
 import { TeamDashboard } from './features/team-dashboard/TeamDashboard';
 import { TeamTripDetail } from './features/team-dashboard/TeamTripDetail';
 import { TodoBoard } from './features/todos/TodoBoard';
+import { ReportsPage } from './features/reports/ReportsPage';
 
 export default function App() {
   const { user, loading, isTeamMember } = useAuth();
@@ -99,6 +101,26 @@ export default function App() {
 
   return (
     <Router>
+      <Toaster
+        position="bottom-right"
+        toastOptions={{
+          duration: 4000,
+          classNames: {
+            toast: 'font-sans text-xs font-semibold rounded-2xl border shadow-xl px-4 py-3.5 gap-3',
+            title: 'font-black text-[11px] uppercase tracking-wider',
+            description: 'text-[11px] font-medium opacity-80',
+            success: 'bg-emerald-50 border-emerald-200 text-emerald-900',
+            error: 'bg-red-50 border-red-200 text-red-900',
+            warning: 'bg-amber-50 border-amber-200 text-amber-900',
+            info: 'bg-zinc-50 border-zinc-200 text-zinc-900',
+            actionButton: 'bg-zinc-900 text-white text-[10px] font-black uppercase tracking-wider px-3 py-1.5 rounded-lg hover:bg-zinc-700 transition-all',
+            cancelButton: 'bg-zinc-100 text-zinc-700 text-[10px] font-black uppercase tracking-wider px-3 py-1.5 rounded-lg hover:bg-zinc-200 transition-all',
+          }
+        }}
+        richColors={false}
+        expand={false}
+        closeButton
+      />
       <Routes>
         <Route path="/shared-checklist/:tripId" element={<SharedChecklist />} />
         <Route path="/register/team" element={<TeamRegister />} />
@@ -125,6 +147,7 @@ export default function App() {
           <Route path="/invoices/:id/edit" element={<ExtractionReview />} />
           <Route path="/invoices/:id/review" element={<ExtractionReview />} />
           <Route path="/trucks" element={<TruckList />} />
+          <Route path="/reports" element={<ReportsPage />} />
           <Route path="/trips" element={<TripList />} />
           <Route path="/todos" element={<TodoBoard />} />
           <Route path="/trips/new" element={<TripForm />} />

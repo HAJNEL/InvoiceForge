@@ -5,11 +5,21 @@ import { db } from '../../../lib/firebase';
 import { useAuth } from '../../../core/hooks/useAuth';
 import { handleFirestoreError, OperationType } from '../../../lib/firestore-errors';
 
+export interface ProductComponent {
+  id: string;
+  stockCode: string;
+  description: string;
+  type: 'knockdown' | 'consumable';
+  qtyPerUnit: number;
+}
+
 export interface Product {
   id: string;
   stockCode: string;
   description: string;
   unitPrice: number;
+  category?: 'product' | 'consumable';
+  components?: ProductComponent[];
   userId: string;
   createdAt?: string;
   updatedAt?: string;
@@ -18,10 +28,10 @@ export interface Product {
 export function useProducts() {
   const { user } = useAuth();
   const [products, setProducts] = useState<Product[]>([]);
+  const [inventoryMap, setInventoryMap] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Helper to sanitize ID for firestore Rules
   const getProductDocId = useCallback((userId: string, stockCode: string) => {
     const cleanStockCode = stockCode.trim().replace(/[^a-zA-Z0-9_-]/g, '_');
     return `${userId}_${cleanStockCode}`;
@@ -40,6 +50,7 @@ export function useProducts() {
       stockCode,
       description: productData.description || '',
       unitPrice: typeof productData.unitPrice === 'number' ? productData.unitPrice : 0,
+      category: productData.category || 'product',
       userId: user.uid,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
@@ -55,7 +66,7 @@ export function useProducts() {
     }
   }, [user, getProductDocId]);
 
-  const updateProduct = useCallback(async (id: string, updates: Partial<Pick<Product, 'description' | 'unitPrice'>>) => {
+  const updateProduct = useCallback(async (id: string, updates: Partial<Pick<Product, 'description' | 'unitPrice' | 'category' | 'components'>>) => {
     const path = `products/${id}`;
     try {
       await updateDoc(doc(db, 'products', id), {
@@ -82,13 +93,12 @@ export function useProducts() {
     }
   }, []);
 
-  // Save multiple products from an array of raw line items
   const syncLineItemsAsProducts = useCallback(async (lineItems: any[]) => {
     if (!user || !lineItems || lineItems.length === 0) return;
 
     try {
       const batch = writeBatch(db);
-      
+
       for (const item of lineItems) {
         const stockCode = item.stockCode || item.stock_code;
         const description = item.description || item.desc || '';
@@ -104,10 +114,11 @@ export function useProducts() {
           stockCode: cleanStock,
           description: description || '',
           unitPrice: unitPrice,
+          category: 'product',
           userId: user.uid,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
-        }, { merge: true }); // Merge true to only update fields and not destroy existing metadata if any
+        }, { merge: true });
       }
 
       await batch.commit();
@@ -116,7 +127,6 @@ export function useProducts() {
     }
   }, [user, getProductDocId]);
 
-  // Sync products from ALL existing invoices of the current user on the system
   const syncExistingInvoicesToProducts = useCallback(async () => {
     if (!user) return;
     try {
@@ -144,6 +154,7 @@ export function useProducts() {
     }
   }, [user, syncLineItemsAsProducts]);
 
+  // Products snapshot
   useEffect(() => {
     if (!user) {
       setProducts([]);
@@ -152,26 +163,24 @@ export function useProducts() {
     }
 
     const path = 'products';
-    const q = query(
-      collection(db, path),
-      where('userId', '==', user.uid)
-    );
+    const q = query(collection(db, path), where('userId', '==', user.uid));
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const data = snapshot.docs.map(doc => {
-        const d = doc.data();
+      const data = snapshot.docs.map(d => {
+        const v = d.data();
         return {
-          id: doc.id,
-          stockCode: d.stockCode || '',
-          description: d.description || '',
-          unitPrice: typeof d.unitPrice === 'number' ? d.unitPrice : 0,
-          userId: d.userId || '',
-          createdAt: d.createdAt,
-          updatedAt: d.updatedAt
+          id: d.id,
+          stockCode: v.stockCode || '',
+          description: v.description || '',
+          unitPrice: typeof v.unitPrice === 'number' ? v.unitPrice : 0,
+          category: (v.category || 'product') as 'product' | 'consumable',
+          components: Array.isArray(v.components) ? v.components : undefined,
+          userId: v.userId || '',
+          createdAt: v.createdAt,
+          updatedAt: v.updatedAt
         };
       });
 
-      // Sort alphabetically by stockCode
       data.sort((a, b) => a.stockCode.localeCompare(b.stockCode));
       setProducts(data);
       setLoading(false);
@@ -187,13 +196,34 @@ export function useProducts() {
     return () => unsubscribe();
   }, [user]);
 
-  return { 
-    products, 
-    loading, 
-    error, 
-    saveProduct, 
-    updateProduct, 
-    deleteProduct, 
+  // Inventory snapshot — provides units-on-floor per stockCode
+  useEffect(() => {
+    if (!user) { setInventoryMap({}); return; }
+
+    const q = query(collection(db, 'inventory'), where('userId', '==', user.uid));
+    const unsubscribe = onSnapshot(q, (snap) => {
+      const map: Record<string, number> = {};
+      snap.forEach(d => {
+        const v = d.data();
+        const code = (v.stockCode || '').toLowerCase().trim();
+        if (code) map[code] = Number(v.qty) || 0;
+      });
+      setInventoryMap(map);
+    }, (err) => {
+      console.error("Firestore Subscribe Inventory Error:", err);
+    });
+
+    return () => unsubscribe();
+  }, [user]);
+
+  return {
+    products,
+    inventoryMap,
+    loading,
+    error,
+    saveProduct,
+    updateProduct,
+    deleteProduct,
     syncLineItemsAsProducts,
     syncExistingInvoicesToProducts
   };

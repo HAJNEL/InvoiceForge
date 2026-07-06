@@ -14,9 +14,11 @@ import {
   MapPin,
   CheckCircle2,
   Clock,
-  ExternalLink
+  ExternalLink,
+  Route,
+  Save
 } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import { useInvoice } from './hooks/useInvoice';
 import { useInvoices } from './hooks/useInvoices';
@@ -45,6 +47,28 @@ export function InvoiceDetail() {
   const [pendingStatus, setPendingStatus] = useState<string | null>(null);
   const [statusError, setStatusError] = useState<string | null>(null);
   const [bypassWarning, setBypassWarning] = useState(false);
+  const [distanceInput, setDistanceInput] = useState('');
+  const [isSavingDistance, setIsSavingDistance] = useState(false);
+
+  useEffect(() => {
+    if (typeof invoice?.distanceKm === 'number') {
+      setDistanceInput(String(invoice.distanceKm));
+    }
+  }, [invoice?.distanceKm]);
+
+  const parsedDistance = parseFloat(distanceInput);
+  const isDistanceValid = !isNaN(parsedDistance) && parsedDistance >= 0;
+  const distanceChanged = isDistanceValid && parsedDistance !== invoice?.distanceKm;
+
+  const handleSaveDistance = async () => {
+    if (!id || !isDistanceValid) return;
+    setIsSavingDistance(true);
+    try {
+      await updateInvoice(id, { distanceKm: parsedDistance });
+    } finally {
+      setIsSavingDistance(false);
+    }
+  };
 
   const handleDelete = async () => {
     if (id) {
@@ -205,9 +229,9 @@ export function InvoiceDetail() {
                   <div className="text-sm">
                     <p className="font-bold text-lg mb-1">{invoice.schoolName || invoice.customerName || invoice.clientName || 'Unknown Client'}</p>
                     {invoice.schoolName && invoice.customerName && <p className="text-xs text-zinc-500 italic mt-0.5">{invoice.customerName}</p>}
-                    <p className="text-zinc-500 mt-2">{invoice.streetAddress || invoice.customerAddressLine1 || invoice.clientAddress}</p>
+                    <p className="text-zinc-500 mt-2">{invoice.deliveryAddressLine1 || invoice.clientAddress}</p>
                     <p className="text-zinc-500">
-                      {[invoice.suburb, invoice.district].filter(Boolean).join(', ') || invoice.customerAddressLine2}
+                      {[invoice.deliveryAddressLine2, invoice.deliveryRegion, invoice.district].filter(Boolean).join(', ')}
                     </p>
                     {invoice.email && <p className="text-zinc-500 mt-2 font-medium underline">{invoice.email}</p>}
                   </div>
@@ -377,6 +401,38 @@ export function InvoiceDetail() {
                     <Package className="w-3 h-3 text-zinc-400" />
                     <span className="text-sm font-black text-zinc-900">{totalQty}</span>
                   </div>
+                </div>
+                <div className="p-4 bg-zinc-50 rounded-2xl border border-zinc-100">
+                  <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-1 leading-none">Distance (KM)</p>
+                  <div className="flex items-center gap-1.5">
+                    <Route className="w-3 h-3 text-zinc-400 shrink-0" />
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.1"
+                      title="Delivery distance in km"
+                      aria-label="Delivery distance in km"
+                      placeholder="—"
+                      value={distanceInput}
+                      onChange={(e) => setDistanceInput(e.target.value)}
+                      className="w-full min-w-0 bg-transparent text-sm font-black text-zinc-900 focus:outline-none"
+                    />
+                    {distanceChanged && (
+                      <button
+                        onClick={handleSaveDistance}
+                        disabled={isSavingDistance}
+                        title="Save distance"
+                        className="p-1 rounded-md text-zinc-400 hover:text-brand-accent hover:bg-white transition-colors shrink-0"
+                      >
+                        {isSavingDistance ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                      </button>
+                    )}
+                  </div>
+                  {isDistanceValid && (
+                    <p className="text-[9px] text-zinc-400 mt-1 font-bold uppercase tracking-widest">
+                      {parsedDistance >= 50 ? 'Regional (8% + 2%)' : 'Local (6% + 1.5%)'}
+                    </p>
+                  )}
                 </div>
                 <div className="p-4 bg-zinc-50 rounded-2xl border border-zinc-100 col-span-2">
                   <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-1 leading-none">District</p>

@@ -67,15 +67,25 @@ export interface StockTakeSubmission {
   }[];
 }
 
+export interface CatalogProduct {
+  id: string;
+  stockCode: string;
+  description: string;
+  unitPrice: number;
+  category?: 'product' | 'consumable';
+  userId: string;
+}
+
 export function useTeamDashboard() {
   const { user } = useAuth();
-  
+
   // States
   const [profile, setProfile] = useState<TeamMember | null>(null);
   const [trips, setTrips] = useState<Trip[]>([]);
   const [invoices, setInvoices] = useState<UIDashboardInvoice[]>([]);
   const [invoicesCount, setInvoicesCount] = useState<number | null>(null);
   const [knockdownItems, setKnockdownItems] = useState<KnockdownItem[]>([]);
+  const [catalogProducts, setCatalogProducts] = useState<CatalogProduct[]>([]);
   const [inventoryItems, setInventoryItems] = useState<TeamInventoryItem[]>([]);
   const [teamStockSubmissions, setTeamStockSubmissions] = useState<StockTakeItem[]>([]);
   const [teamStockTakes, setTeamStockTakes] = useState<StockTakeSubmission[]>([]);
@@ -101,9 +111,24 @@ export function useTeamDashboard() {
         const snap = await getDocs(q);
 
         if (snap.empty) {
-          // If no team profile exists, this is probably the main account owner
+          // No team profile exists, so this is the main account owner.
+          // Give them a synthetic profile covering every role so the team
+          // dashboard loads directly for them, without a redirect or a second login.
           setIsOwner(true);
-          setLoading(false);
+          setProfile({
+            id: user.uid,
+            ownerId: user.uid,
+            firstName: user.email?.split('@')[0] || 'Account',
+            lastName: 'Owner',
+            email: user.email || '',
+            role: 'editor',
+            inviteCode: '',
+            status: 'active',
+            userId: user.uid,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            roles: ['Assembler', 'Loader', 'Delivered Checker', 'Stock Counter', 'Invoice Management'],
+          });
           return;
         }
 
@@ -142,6 +167,11 @@ export function useTeamDashboard() {
 
     const qKnockdowns = query(
       collection(db, 'knockdown_items'),
+      where('userId', '==', profile.ownerId)
+    );
+
+    const qProducts = query(
+      collection(db, 'products'),
       where('userId', '==', profile.ownerId)
     );
 
@@ -193,13 +223,13 @@ export function useTeamDashboard() {
           date: d.invoiceDate || d.issueDate || 'N/A',
           status: d.status || 'draft',
           district: d.district || d.region || '',
-          deliveryAddress: [d.deliveryAddressLine1, d.deliveryAddressLine2].filter(Boolean).join(', ') || d.address || '',
+          deliveryAddress: d.deliveryAddress || [d.deliveryAddressLine1, d.deliveryAddressLine2].filter(Boolean).join(', ') || d.address || '',
           lineItems: (d.line_items || d.lineItems || []).map((item: Record<string, unknown>) => ({
             stockCode: String(item.stock_code || item.stockCode || ''),
             description: String(item.description || ''),
-            qty: typeof item.quantity === 'number' ? item.quantity : (typeof item.qty === 'number' ? item.qty : 0),
-            unitPrice: typeof item.unit_price === 'number' ? item.unit_price : (typeof item.unitPrice === 'number' ? item.unitPrice : 0),
-            value: typeof item.line_item_value === 'number' ? item.line_item_value : (typeof item.value === 'number' ? item.value : 0),
+            qty: Number(item.quantity ?? item.qty ?? 0) || 0,
+            unitPrice: Number(item.unit_price ?? item.unitPrice ?? 0) || 0,
+            value: Number(item.line_item_value ?? item.value ?? 0) || 0,
           }))
         });
       });
@@ -227,6 +257,24 @@ export function useTeamDashboard() {
       setKnockdownItems(results);
     }, (err) => {
       console.error("Fetch shared knockdown items error:", err);
+    });
+
+    const unsubscribeProducts = onSnapshot(qProducts, (snap) => {
+      const results: CatalogProduct[] = [];
+      snap.forEach((d) => {
+        const v = d.data();
+        results.push({
+          id: d.id,
+          stockCode: v.stockCode || '',
+          description: v.description || '',
+          unitPrice: Number(v.unitPrice) || 0,
+          category: v.category || 'product',
+          userId: v.userId || ''
+        });
+      });
+      setCatalogProducts(results);
+    }, (err) => {
+      console.error("Fetch catalog products error:", err);
     });
 
     const unsubscribeStock = onSnapshot(qStock, (snap) => {
@@ -263,6 +311,7 @@ export function useTeamDashboard() {
       unsubscribeTrips();
       unsubscribeInvoices();
       unsubscribeKnockdowns();
+      unsubscribeProducts();
       unsubscribeStock();
       unsubscribeStockTakes();
       unsubscribeInventory();
@@ -321,7 +370,11 @@ export function useTeamDashboard() {
             updatedAt: new Date().toISOString()
           });
 
-          // 3. Find any child/split invoices of this invoice and set them to 'delivered' as well
+          // 3. Find any child/split invoices of this invoice and set them to 'delivered'
+          // as well — EXCEPT loader-created partial (outstanding stock) invoices. Those
+          // represent items that never made it onto this truck at all, so they must stay
+          // 'partially_complete' pending a future redelivery trip, not be swept to 'delivered'
+          // just because the original invoice's trip finished.
           try {
             const qChild = query(
               collection(db, 'invoices'),
@@ -329,6 +382,7 @@ export function useTeamDashboard() {
             );
             const snapChild = await getDocs(qChild);
             snapChild.forEach((cDoc) => {
+              if (cDoc.data().isPartialInvoice) return;
               const childRef = doc(db, 'invoices', cDoc.id);
               batch.update(childRef, {
                 status: 'delivered',
@@ -416,6 +470,7 @@ export function useTeamDashboard() {
     updateTripStatus,
     updatePartialItem,
     knockdownItems,
+    catalogProducts,
     inventoryItems,
     teamStockSubmissions,
     teamStockTakes

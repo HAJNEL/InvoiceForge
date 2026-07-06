@@ -10,10 +10,12 @@ import {
   Menu,
   X,
   Truck,
-  Calendar,
+  MapPin,
   Boxes,
   Package,
-  ListTodo
+  ListTodo,
+  Users,
+  BarChart3
 } from 'lucide-react';
 import { auth } from '../lib/firebase';
 import { cn } from '../lib/utils';
@@ -24,12 +26,13 @@ import { useSettings } from '../features/settings/hooks/useSettings';
 
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-  { name: 'Trips', href: '/trips', icon: Calendar },
+  { name: 'Trips', href: '/trips', icon: MapPin },
   { name: 'Todo Lists', href: '/todos', icon: ListTodo },
   { name: 'Stock', href: '/stock', icon: Boxes },
   { name: 'Invoices', href: '/invoices', icon: FileText },
   { name: 'Products', href: '/products', icon: Package },
   { name: 'Trucks', href: '/trucks', icon: Truck },
+  { name: 'Reports', href: '/reports', icon: BarChart3 },
   { name: 'Settings', href: '/settings', icon: Settings },
 ];
 
@@ -125,6 +128,13 @@ export function Layout() {
           </div>
           
           <div className="flex items-center gap-4">
+            <button
+              title="Switch to Team Dashboard"
+              onClick={() => navigate('/team-dashboard')}
+              className="p-2 text-zinc-500 hover:bg-zinc-100 rounded-lg transition-colors"
+            >
+              <Users className="w-5 h-5" />
+            </button>
             <button title='ok' className="p-2 text-zinc-500 hover:bg-zinc-100 rounded-lg transition-colors relative">
               <Bell className="w-5 h-5" />
               <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border-2 border-white"></span>

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { toast } from 'sonner';
 import { MapPin, Save, Loader2, Warehouse, Navigation, Image as ImageIcon, Upload, Trash2, Check, AlertCircle, Bell, Send } from 'lucide-react';
 import { APIProvider, Map, AdvancedMarker, Pin, useMapsLibrary } from '@vis.gl/react-google-maps';
 import { useSettings } from './hooks/useSettings';
@@ -275,11 +276,11 @@ function SaveButton({ address, onSave }: { address: string, onSave: (lat: number
         const { lat, lng } = results[0].geometry.location;
         await onSave(lat(), lng());
       } else {
-        alert('Could not find location for this address.');
+        toast.error('Location Not Found', { description: 'Could not find coordinates for this address. Try a more specific address.' });
       }
     } catch (err) {
       console.error(err);
-      alert('Geocoding failed.');
+      toast.error('Geocoding Failed', { description: 'An error occurred while looking up the address coordinates.' });
     } finally {
       setIsGeocoding(false);
     }

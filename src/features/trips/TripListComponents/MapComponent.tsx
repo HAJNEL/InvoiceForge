@@ -9,13 +9,14 @@ import {
   useMapsLibrary
 } from '@vis.gl/react-google-maps';
 import { cn } from '../../../lib/utils';
+import { buildPinSearchAddress } from '../../../lib/geocoding';
 import { UIInvoice } from '../../invoices/hooks/useInvoices';
 import { Trip, Settings } from '../../../types';
 import { GeocodedInvoice } from './types';
 import { STATUS_COLORS } from './statusColors';
 import { InvoicePin } from './InvoicePin';
 
-export function MapComponent({ invoices, allInvoices, geocodedInvoices, setGeocodedInvoices, onInvoiceClick, warehouse, routedTrip, highlightedInvoiceIds, showHistory, isRefreshing }: {
+export function MapComponent({ invoices, allInvoices, geocodedInvoices, setGeocodedInvoices, onInvoiceClick, warehouse, routedTrip, highlightedInvoiceIds, showHistory, isRefreshing, filters }: {
   invoices: UIInvoice[],
   allInvoices: UIInvoice[],
   geocodedInvoices: GeocodedInvoice[],
@@ -25,7 +26,8 @@ export function MapComponent({ invoices, allInvoices, geocodedInvoices, setGeoco
   routedTrip: Trip | null,
   highlightedInvoiceIds: string[],
   showHistory: boolean,
-  isRefreshing?: boolean
+  isRefreshing?: boolean,
+  filters?: { searchTerm: string, selectedDistrict: string, selectedStatus: string, lineItemFilter: string }
 }) {
   const map = useMap();
   const geocodingLib = useMapsLibrary('geocoding');
@@ -118,84 +120,59 @@ export function MapComponent({ invoices, allInvoices, geocodedInvoices, setGeoco
   useEffect(() => {
     if (!geocodingLib || !allInvoices.length) return;
 
-    const invoicesToGeocode = allInvoices.filter((inv) =>
-      !geocodedInvoices.some((gi) => gi.id === inv.id) &&
-      !processingIds.current.has(inv.id)
-    );
+    // Re-geocode when there's no cached pin yet OR the invoice's address data has
+    // changed since it was cached (stale cache previously caused pins to keep
+    // showing an old, sometimes coincidentally-shared, location).
+    const invoicesToGeocode = allInvoices.filter((inv) => {
+      const existing = geocodedInvoices.find((gi) => gi.id === inv.id);
+      const expectedAddress = buildPinSearchAddress(inv);
+      const processingKey = inv.id + '_' + expectedAddress;
+
+      if (!existing) return !processingIds.current.has(processingKey);
+
+      const isOutdated = existing.searchAddress !== expectedAddress;
+      return isOutdated && !processingIds.current.has(processingKey);
+    });
 
     if (invoicesToGeocode.length === 0) return;
 
-    // Mark as processing
-    invoicesToGeocode.forEach(inv => processingIds.current.add(inv.id));
+    // Mark as processing, keyed by id + expected address so a genuine address
+    // change is retried instead of being permanently skipped.
+    invoicesToGeocode.forEach(inv => processingIds.current.add(inv.id + '_' + buildPinSearchAddress(inv)));
 
-    // Batch geocoding
+    // Batch geocoding. Each result is committed to state as soon as it resolves
+    // (rather than all at once at the end) so a progress bar can track real,
+    // incremental completion instead of jumping straight from 0% to 100%.
     const geocodeInvoices = async () => {
-      const results: GeocodedInvoice[] = [];
       for (const inv of invoicesToGeocode) {
-        // Construct a searchable address
-        const fullAddress = [
-          inv.deliveryAddressLine1,
-          inv.deliveryAddressLine2,
-          inv.district,
-          'South Africa'
-        ].filter(Boolean).join(', ');
-
-        if (!fullAddress || fullAddress.length < 5) {
-          // If no specific address, at least try customer name + district
-          const fallbackAddress = [inv.client, inv.district, 'South Africa'].filter(Boolean).join(', ');
-          try {
-            const { results: fallbackResults } = await new geocodingLib.Geocoder().geocode({
-              address: fallbackAddress
-            });
-            if (fallbackResults && fallbackResults[0]) {
-              results.push({
-                id: inv.id,
-                number: inv.number,
-                client: inv.client,
-                status: inv.status,
-                address: fallbackResults[0].formatted_address,
-                position: {
-                  lat: fallbackResults[0].geometry.location.lat(),
-                  lng: fallbackResults[0].geometry.location.lng()
-                },
-                district: inv.district,
-                lineItems: inv.lineItems
-              });
-            }
-          } catch {
-            console.error(`Fallback geocoding failed for ${inv.number}`);
-          }
-          continue;
-        }
+        const expectedAddress = buildPinSearchAddress(inv);
 
         try {
           const { results: geoResults } = await new geocodingLib.Geocoder().geocode({
-            address: fullAddress
+            address: expectedAddress
           });
 
           if (geoResults && geoResults[0]) {
-            results.push({
+            const result: GeocodedInvoice = {
               id: inv.id,
               number: inv.number,
               client: inv.client,
               status: inv.status,
               address: geoResults[0].formatted_address,
+              searchAddress: expectedAddress,
               position: {
                 lat: geoResults[0].geometry.location.lat(),
                 lng: geoResults[0].geometry.location.lng()
               },
               district: inv.district,
               lineItems: inv.lineItems
-            });
+            };
+            setGeocodedInvoices((prev) => [...prev.filter(p => p.id !== result.id), result]);
           }
           await new Promise(r => setTimeout(r, 200));
         } catch (err) {
           console.error(`Geocoding failed for ${inv.number}:`, err);
         }
-      }
-
-      if (results.length > 0) {
-        setGeocodedInvoices((prev) => [...prev, ...results]);
       }
     };
 
@@ -237,13 +214,37 @@ export function MapComponent({ invoices, allInvoices, geocodedInvoices, setGeoco
     }
   }, [map, geocodedInvoices, warehouse]);
 
+  // Progress for the refresh overlay: how many of the currently-known invoices
+  // already have a resolved pin, out of the total that need one.
+  const geocodedTotal = allInvoices.length;
+  const geocodedDone = geocodedInvoices.filter(gi => allInvoices.some(inv => inv.id === gi.id)).length;
+  const geocodedPercent = geocodedTotal > 0 ? Math.min(100, Math.round((geocodedDone / geocodedTotal) * 100)) : 0;
+
   return (
     <div className="flex flex-col h-full w-full">
       <div className="flex-1 min-h-0 relative">
         {isRefreshing && (
-          <div className="absolute inset-0 z-20 bg-white/70 backdrop-blur-sm flex flex-col items-center justify-center gap-3 pointer-events-none">
-            <Loader2 className="w-8 h-8 text-brand-accent animate-spin" />
-            <p className="text-sm font-black uppercase tracking-widest text-zinc-600">Geocoding pins...</p>
+          <div className="absolute inset-0 z-20 bg-white/70 backdrop-blur-sm flex flex-col items-center justify-center gap-4 pointer-events-none">
+            <div className="w-full max-w-xs bg-white rounded-2xl border border-zinc-200 shadow-xl px-6 py-5 space-y-3">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-brand-accent/10 rounded-xl border border-brand-accent/20 shrink-0">
+                  <Loader2 className="w-4 h-4 text-brand-accent animate-spin" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-black uppercase tracking-widest text-zinc-800 leading-tight">Refreshing Map Pins</p>
+                  <p className="text-[10px] font-bold text-zinc-400 mt-0.5">
+                    {geocodedDone} of {geocodedTotal} {geocodedTotal === 1 ? 'invoice' : 'invoices'} geocoded
+                  </p>
+                </div>
+                <span className="ml-auto text-sm font-black font-mono text-brand-primary tabular-nums shrink-0">{geocodedPercent}%</span>
+              </div>
+              <div className="w-full h-2 bg-zinc-100 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-brand-accent rounded-full transition-all duration-300 ease-out"
+                  style={{ width: `${geocodedPercent}%` }}
+                />
+              </div>
+            </div>
           </div>
         )}
         <Map
@@ -251,6 +252,7 @@ export function MapComponent({ invoices, allInvoices, geocodedInvoices, setGeoco
           defaultZoom={11}
           mapId="INVOICE_MAP"
           style={{ width: '100%', height: '100%' }}
+          fullscreenControl={false}
           internalUsageAttributionIds={['gmp_mcp_codeassist_v1_aistudio']}
         >
           {geocodedInvoices.filter(gi => {
@@ -284,12 +286,39 @@ export function MapComponent({ invoices, allInvoices, geocodedInvoices, setGeoco
               if (isTripStop) return true;
 
               // 2. Other pins are shown only if their status is explicitly toggled ON in selectedLegendStatuses
-              return selectedLegendStatuses.includes(statusKey);
+              if (!selectedLegendStatuses.includes(statusKey)) return false;
             } else {
               // Standard behavior of the legend multi-select
               if (selectedLegendStatuses.length > 0 && !selectedLegendStatuses.includes(statusKey)) {
                 return false;
               }
+            }
+
+            // Map Pin Filters bar: keyword search, line item, district and status dropdowns
+            if (filters) {
+              const searchLower = filters.searchTerm.toLowerCase();
+              const matchesSearch = !filters.searchTerm ||
+                (actualInvoice.number || '').toLowerCase().includes(searchLower) ||
+                (actualInvoice.client || '').toLowerCase().includes(searchLower) ||
+                (actualInvoice.district || '').toLowerCase().includes(searchLower);
+              if (!matchesSearch) return false;
+
+              const matchesDistrict = filters.selectedDistrict === 'all' ||
+                (actualInvoice.district || '').trim().toUpperCase() === filters.selectedDistrict.trim().toUpperCase();
+              if (!matchesDistrict) return false;
+
+              const matchesStatus = filters.selectedStatus === 'all' ||
+                filters.selectedStatus === statusKey ||
+                (filters.selectedStatus === 'complete' && statusKey === 'delivered');
+              if (!matchesStatus) return false;
+
+              const lineItemLower = filters.lineItemFilter.toLowerCase();
+              const matchesLineItem = !filters.lineItemFilter ||
+                (actualInvoice.lineItems || []).some(li =>
+                  (li.stockCode || '').toLowerCase().includes(lineItemLower) ||
+                  (li.description || '').toLowerCase().includes(lineItemLower)
+                );
+              if (!matchesLineItem) return false;
             }
 
             return true;

@@ -14,6 +14,7 @@ import { BusinessIntelligencePanel } from './components/BusinessIntelligencePane
 import { RecentActivityCard } from './components/RecentActivityCard';
 import { RecentInvoicesTable } from './components/RecentInvoicesTable';
 import { DeliveredInvoicesModal } from './components/DeliveredInvoicesModal';
+import { PartiallyCompletedInvoicesModal } from './components/PartiallyCompletedInvoicesModal';
 import { DispatchTripsModal } from './components/DispatchTripsModal';
 
 export function Dashboard() {
@@ -59,6 +60,7 @@ export function Dashboard() {
   }, [invoices, invoicesPage]);
 
   const [showDeliveredModal, setShowDeliveredModal] = useState(false);
+  const [showPartiallyCompletedModal, setShowPartiallyCompletedModal] = useState(false);
   const [weekOffset, setWeekOffset] = useState(0);
   const [selectedCellInfo, setSelectedCellInfo] = useState<{
     dateString: string;
@@ -78,6 +80,7 @@ export function Dashboard() {
     weekDays,
     stats,
     completedInvoices,
+    partiallyCompletedInvoices,
     recentActivity,
     weekNumber,
     getTripsForCell
@@ -118,7 +121,11 @@ export function Dashboard() {
       </div>
 
       {/* KPI Stats */}
-      <KpiStatsRow stats={stats} onDeliveredClick={() => setShowDeliveredModal(true)} />
+      <KpiStatsRow
+        stats={stats}
+        onDeliveredClick={() => setShowDeliveredModal(true)}
+        onPartiallyCompletedClick={() => setShowPartiallyCompletedModal(true)}
+      />
 
       {/* Weekly Dispatch Schedule */}
       <DispatchSchedule
@@ -177,6 +184,13 @@ export function Dashboard() {
           invoices={completedInvoices}
           onClose={() => setShowDeliveredModal(false)}
           onUpdateStatus={updateInvoice}
+        />
+      )}
+
+      {showPartiallyCompletedModal && (
+        <PartiallyCompletedInvoicesModal
+          invoices={partiallyCompletedInvoices}
+          onClose={() => setShowPartiallyCompletedModal(false)}
         />
       )}
     </div>

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { toast } from 'sonner';
 import { useParams } from 'react-router-dom';
 import { doc, onSnapshot, updateDoc } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
@@ -69,7 +70,7 @@ export function SharedChecklist() {
       });
     } catch (err) {
       console.error('Failed to update check item in real-time:', err);
-      alert('Network issue: Could not check off item. Please try again.');
+      toast.error('Sync Failed', { description: 'Could not check off item. Check your connection and try again.' });
     }
   };
 
@@ -83,7 +84,7 @@ export function SharedChecklist() {
       });
     } catch (err) {
       console.error('Failed to reset checks:', err);
-      alert('Network issue: Could not reset checklist. Please try again.');
+      toast.error('Reset Failed', { description: 'Could not reset checklist. Check your connection and try again.' });
     }
   };
 

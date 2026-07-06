@@ -14,6 +14,9 @@ export interface FirestoreInvoice extends DetailedInvoice {
   clientAddress?: string;
   totalAmount?: number;
   deliveredDate?: string;
+  // Delivery distance in km, entered on the detail page; drives the
+  // Local/Regional revenue split in Reports.
+  distanceKm?: number;
   vatPercentage?: number;
   createdAt?: string;
   updatedAt?: string;

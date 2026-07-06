@@ -13,6 +13,7 @@ import { UIInvoice } from '../../invoices/hooks/useInvoices';
 import { Settings, TripStop } from '../../../types';
 import { GeocodedInvoice } from './types';
 import { STATUS_COLORS, getStatusColor, getStatusBorderColor } from './statusColors';
+import { buildPinSearchAddress } from '../../../lib/geocoding';
 
 // A single map pin. Google's AdvancedMarker renders its children into the map's
 // overlay pane — OUTSIDE React's event root — so React-synthetic pointer events never
@@ -180,23 +181,7 @@ export function InteractiveTripMap({
     // 1. Invoices to geocode using priority logic
     const invoicesToGeocode = invoices.filter((inv) => {
       const existing = geocodedInvoices.find(gi => gi.id === inv.id);
-
-      const stopLoc = inv.stopDetails?.location;
-      const schoolName = inv.schoolName;
-      const fullAddress = [
-        inv.deliveryAddressLine1,
-        inv.deliveryAddressLine2,
-        inv.district,
-        'South Africa'
-      ].filter(Boolean).join(', ');
-
-      const expectedAddress = (stopLoc && stopLoc.trim())
-        ? stopLoc.trim()
-        : ((schoolName && schoolName.trim())
-          ? [schoolName.trim(), inv.district, 'South Africa'].filter(Boolean).join(', ')
-          : (fullAddress && fullAddress.length >= 5
-            ? fullAddress
-            : [inv.client, inv.district, 'South Africa'].filter(Boolean).join(', ')));
+      const expectedAddress = buildPinSearchAddress(inv);
 
       if (!existing) {
         return !processingIds.current.has(inv.id + "_" + expectedAddress);
@@ -226,22 +211,7 @@ export function InteractiveTripMap({
 
     // Mark as processing with address hashes
     invoicesToGeocode.forEach(inv => {
-      const stopLoc = inv.stopDetails?.location;
-      const schoolName = inv.schoolName;
-      const fullAddress = [
-        inv.deliveryAddressLine1,
-        inv.deliveryAddressLine2,
-        inv.district,
-        'South Africa'
-      ].filter(Boolean).join(', ');
-
-      const expectedAddress = (stopLoc && stopLoc.trim())
-        ? stopLoc.trim()
-        : ((schoolName && schoolName.trim())
-          ? [schoolName.trim(), inv.district, 'South Africa'].filter(Boolean).join(', ')
-          : (fullAddress && fullAddress.length >= 5
-            ? fullAddress
-            : [inv.client, inv.district, 'South Africa'].filter(Boolean).join(', ')));
+      const expectedAddress = buildPinSearchAddress(inv);
       processingIds.current.add(inv.id + "_" + expectedAddress);
     });
 
@@ -255,22 +225,7 @@ export function InteractiveTripMap({
 
       // Geocode Invoices
       for (const inv of invoicesToGeocode) {
-        const stopLoc = inv.stopDetails?.location;
-        const schoolName = inv.schoolName;
-        const fullAddress = [
-          inv.deliveryAddressLine1,
-          inv.deliveryAddressLine2,
-          inv.district,
-          'South Africa'
-        ].filter(Boolean).join(', ');
-
-        const expectedAddress = (stopLoc && stopLoc.trim())
-          ? stopLoc.trim()
-          : ((schoolName && schoolName.trim())
-            ? [schoolName.trim(), inv.district, 'South Africa'].filter(Boolean).join(', ')
-            : (fullAddress && fullAddress.length >= 5
-              ? fullAddress
-              : [inv.client, inv.district, 'South Africa'].filter(Boolean).join(', ')));
+        const expectedAddress = buildPinSearchAddress(inv);
 
         try {
           const { results: geoResults } = await new geocodingLib.Geocoder().geocode({

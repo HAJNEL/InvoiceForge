@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { formatCurrency } from '../../lib/utils';
 import { 
@@ -18,6 +18,12 @@ import { db, auth } from '../../lib/firebase';
 import { doc, getDoc, updateDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { DetailedInvoice } from '../../services/geminiService';
 import { useProducts } from '../products/hooks/useProducts';
+import { APIProvider } from '@vis.gl/react-google-maps';
+import { GoogleMapsAutocomplete } from '../../components/GoogleMapsAutocomplete';
+import { buildSchoolLookupAddress, buildPinSearchAddress, geocodeAddress, upsertCachedPin } from '../../lib/geocoding';
+
+const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_PLATFORM_KEY || '';
+const hasValidMapsKey = Boolean(GOOGLE_MAPS_API_KEY);
 
 export function ExtractionReview() {
   const { id } = useParams();
@@ -28,6 +34,9 @@ export function ExtractionReview() {
   const [error, setError] = useState<string | null>(null);
   const isEditing = window.location.pathname.includes('/edit');
   const { syncLineItemsAsProducts } = useProducts();
+  // The delivery address as loaded, used to detect whether the user edited it so
+  // Refresh Pins can preserve hand-picked addresses. See src/lib/geocoding.ts.
+  const initialDeliveryAddressRef = useRef('');
 
   useEffect(() => {
     async function fetchInvoice() {
@@ -133,6 +142,7 @@ export function ExtractionReview() {
           }
 
           setInvoice(cleanData);
+          initialDeliveryAddressRef.current = (cleanData.deliveryAddress || '').trim();
         } else {
           console.error("No such invoice!");
           navigate(isEditing ? '/invoices' : '/invoices/import');
@@ -211,9 +221,16 @@ export function ExtractionReview() {
         }
       };
 
+      // Flag the delivery address as manual when the user edited it (or it was
+      // already manual and left untouched), so Refresh Pins preserves it.
+      const currentDelivery = (invoice.deliveryAddress || '').trim();
+      const deliveryEdited = currentDelivery !== initialDeliveryAddressRef.current;
+      const deliveryAddressManual = deliveryEdited ? currentDelivery.length > 0 : (invoice.deliveryAddressManual === true);
+
       await updateDoc(docRef, {
         ...invoice,
         ...invoiceSchemaData,
+        deliveryAddressManual,
         status: isEditing ? currentStatus || status : status,
         updatedAt: new Date().toISOString()
       });
@@ -222,85 +239,53 @@ export function ExtractionReview() {
         await syncLineItemsAsProducts(invoice.lineItems);
       }
 
-      // Auto-geocode and cache coordinates in localStorage to load markers instantly on /trips
-      const GMAPS_KEY = process.env.GOOGLE_MAPS_PLATFORM_KEY || '';
-      if (GMAPS_KEY) {
-        try {
-          const fullAddress = [
-            invoice.deliveryAddressLine1,
-            invoice.deliveryAddressLine2,
-            invoice.district,
-            'South Africa'
-          ].filter(Boolean).join(', ');
+      // Auto-geocode and cache coordinates in localStorage to load markers instantly on /trips.
+      // A manual delivery-address override wins; otherwise we look up the school name on
+      // Google Maps first (source of truth for the pin), then fall back to the extracted
+      // street address / client name. The resolved address is saved back onto the invoice
+      // as `deliveryAddress` so the pin and the invoice stay in sync.
+      try {
+        const pinSource = {
+          client: invoice.schoolName || invoice.deliveryCustomerName || invoice.customerName || 'Unknown Client',
+          schoolName: invoice.schoolName,
+          district: invoice.district,
+          deliveryAddress: invoice.deliveryAddress,
+          deliveryAddressLine1: invoice.deliveryAddressLine1,
+          deliveryAddressLine2: invoice.deliveryAddressLine2,
+        };
 
-          let targetAddress = fullAddress;
-          let geocodeResult = null;
+        // Manual override → geocode the user's chosen address. Otherwise force the
+        // school-name lookup so editing the school moves the pin (the stored auto
+        // deliveryAddress is ignored here and refreshed from the school).
+        const fallbackAddress = buildPinSearchAddress({ ...pinSource, deliveryAddress: undefined });
+        const primaryAddress = deliveryAddressManual
+          ? (currentDelivery || buildSchoolLookupAddress(pinSource) || fallbackAddress)
+          : (buildSchoolLookupAddress(pinSource) || fallbackAddress);
 
-          if (targetAddress && targetAddress.trim().length >= 5) {
-            const res = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(targetAddress)}&key=${GMAPS_KEY}`);
-            if (res.ok) {
-              const data = await res.json();
-              if (data.status === 'OK' && data.results?.[0]) {
-                geocodeResult = data.results[0];
-              }
-            }
-          }
-
-          if (!geocodeResult) {
-            const fallbackAddress = [invoice.schoolName || invoice.customerName || invoice.deliveryCustomerName, invoice.district, 'South Africa'].filter(Boolean).join(', ');
-            if (fallbackAddress && fallbackAddress.trim().length >= 5) {
-              const res = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(fallbackAddress)}&key=${GMAPS_KEY}`);
-              if (res.ok) {
-                const data = await res.json();
-                if (data.status === 'OK' && data.results?.[0]) {
-                  geocodeResult = data.results[0];
-                  targetAddress = fallbackAddress;
-                }
-              }
-            }
-          }
-
-          if (geocodeResult) {
-            const position = {
-              lat: geocodeResult.geometry.location.lat,
-              lng: geocodeResult.geometry.location.lng
-            };
-
-            // Setup and store cache in localStorage matching other components
-            const existingStoredStr = localStorage.getItem('geocoded_invoices');
-            let existingStored: any[] = [];
-            if (existingStoredStr) {
-              try {
-                const parsed = JSON.parse(existingStoredStr);
-                if (Array.isArray(parsed)) {
-                  existingStored = parsed;
-                }
-              } catch {
-                existingStored = [];
-              }
-            }
-
-            // Filter out older record
-            existingStored = existingStored.filter((item: any) => item.id !== id);
-
-            const geocodedItem = {
-              id: id,
-              number: invoice.taxInvoice || `TEMP-${Date.now()}`,
-              client: invoice.schoolName || invoice.deliveryCustomerName || invoice.customerName || 'Unknown Client',
-              status: isEditing ? currentStatus || status : status,
-              address: geocodeResult.formatted_address || targetAddress,
-              position: position,
-              district: invoice.district,
-              lineItems: invoice.lineItems || []
-            };
-
-            existingStored.push(geocodedItem);
-            localStorage.setItem('geocoded_invoices', JSON.stringify(existingStored));
-            console.log(`[DEBUG] Successfully geocoded and stored marker in localStorage for single reviewed invoice: ${geocodedItem.number}`);
-          }
-        } catch (geocodeErr) {
-          console.error('Error auto-geocoding single reviewed invoice:', geocodeErr);
+        let geo = await geocodeAddress(primaryAddress);
+        if (!geo && primaryAddress !== fallbackAddress) {
+          geo = await geocodeAddress(fallbackAddress);
         }
+
+        if (geo) {
+          // Persist the resolved address onto the invoice, then cache the pin.
+          await updateDoc(docRef, { deliveryAddress: geo.formattedAddress, deliveryAddressManual });
+
+          upsertCachedPin({
+            id,
+            number: invoice.taxInvoice || `TEMP-${Date.now()}`,
+            client: pinSource.client,
+            status: isEditing ? currentStatus || status : status,
+            address: geo.formattedAddress,
+            searchAddress: geo.formattedAddress,
+            position: geo.position,
+            district: invoice.district,
+            lineItems: invoice.lineItems || [],
+          });
+          console.log(`[DEBUG] Geocoded and stored pin for reviewed invoice: ${invoice.taxInvoice}`);
+        }
+      } catch (geocodeErr) {
+        console.error('Error auto-geocoding single reviewed invoice:', geocodeErr);
       }
 
       navigate(isEditing ? `/invoices/${id}` : '/invoices');
@@ -387,7 +372,7 @@ export function ExtractionReview() {
 
   if (!invoice) return null;
 
-  return (
+  const content = (
     <div className="space-y-8 animate-in fade-in duration-500 pb-20">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
@@ -466,9 +451,43 @@ export function ExtractionReview() {
             <div className="grid grid-cols-2 lg:grid-cols-3 gap-6">
               <ReviewField label="Shipping Name" value={invoice.deliveryCustomerName || ''} onChange={(v) => updateField('deliveryCustomerName', v)} />
               <ReviewField label="School Name" value={invoice.schoolName || ''} onChange={(v) => updateField('schoolName', v)} />
-              <ReviewField label="Street Address" value={invoice.deliveryAddressLine1 || ''} onChange={(v) => updateField('deliveryAddressLine1', v)} />
+              {hasValidMapsKey ? (
+                <div className="space-y-1.5 group">
+                  <label className="block text-[9px] font-bold uppercase tracking-widest text-zinc-400 group-hover:text-brand-accent transition-colors">Street Address</label>
+                  <GoogleMapsAutocomplete
+                    value={invoice.deliveryAddressLine1 || ''}
+                    onChange={(v) => updateField('deliveryAddressLine1', v)}
+                    placeholder="Search delivery address..."
+                    className="w-full px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent focus:outline-none transition-all"
+                  />
+                </div>
+              ) : (
+                <ReviewField label="Street Address" value={invoice.deliveryAddressLine1 || ''} onChange={(v) => updateField('deliveryAddressLine1', v)} />
+              )}
               <ReviewField label="City" value={invoice.deliveryAddressLine2 || ''} onChange={(v) => updateField('deliveryAddressLine2', v)} />
               <ReviewField label="Region" value={invoice.deliveryRegion || ''} onChange={(v) => updateField('deliveryRegion', v)} />
+              <div className="space-y-1.5 group col-span-2 lg:col-span-3">
+                <label className="block text-[9px] font-bold uppercase tracking-widest text-zinc-400 group-hover:text-brand-accent transition-colors">Delivery Address</label>
+                {hasValidMapsKey ? (
+                  <GoogleMapsAutocomplete
+                    value={invoice.deliveryAddress || ''}
+                    onChange={(v) => updateField('deliveryAddress', v)}
+                    placeholder="Search the delivery address on Google Maps..."
+                    className="w-full px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent focus:outline-none transition-all"
+                  />
+                ) : (
+                  <input
+                    aria-label="Delivery Address"
+                    title="The exact location used for this invoice's map pin. Auto-filled from the Google Maps school lookup; edit to move the pin."
+                    type="text"
+                    value={invoice.deliveryAddress || ''}
+                    onChange={(v) => updateField('deliveryAddress', v.target.value)}
+                    placeholder="Auto-filled from the Google Maps school lookup on save"
+                    className="w-full px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent focus:outline-none transition-all"
+                  />
+                )}
+                <p className="text-[10px] text-zinc-400">This is the actual location used for the map pin. Leave blank to use the looked-up school address; type an address here to override where the pin is placed.</p>
+              </div>
             </div>
           </div>
 
@@ -717,6 +736,12 @@ export function ExtractionReview() {
       </div>
     </div>
   );
+
+  return hasValidMapsKey ? (
+    <APIProvider apiKey={GOOGLE_MAPS_API_KEY} version="weekly">
+      {content}
+    </APIProvider>
+  ) : content;
 }
 
 function ReviewField({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {

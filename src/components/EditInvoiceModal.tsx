@@ -26,6 +26,9 @@ export function EditInvoiceModal({ isOpen, onClose, invoice, trips = [], onSucce
   const [district, setDistrict] = useState('');
   const [addressLine1, setAddressLine1] = useState('');
   const [addressLine2, setAddressLine2] = useState('');
+  // The actual location used for the map pin. Editing it moves the pin (the trip
+  // maps re-geocode when this differs from the cached pin's searchAddress).
+  const [deliveryAddress, setDeliveryAddress] = useState('');
   const [status, setStatus] = useState('draft');
   const [lineItems, setLineItems] = useState<any[]>([]);
 
@@ -61,6 +64,7 @@ export function EditInvoiceModal({ isOpen, onClose, invoice, trips = [], onSucce
     setDistrict(invoice.district || '');
     setAddressLine1(invoice.deliveryAddressLine1 || '');
     setAddressLine2(invoice.deliveryAddressLine2 || '');
+    setDeliveryAddress(invoice.deliveryAddress || '');
     setStatus(invoice.status || 'draft');
 
     // Load stop details (if exists)
@@ -165,6 +169,11 @@ export function EditInvoiceModal({ isOpen, onClose, invoice, trips = [], onSucce
 
       const invoiceRef = doc(db, 'invoices', invoice.id);
 
+      // Mark the delivery address as manual only when the user actually changed it,
+      // so Refresh Pins preserves hand-picked pins but keeps re-looking-up the rest.
+      const deliveryChanged = deliveryAddress.trim() !== (invoice.deliveryAddress || '').trim();
+      const deliveryAddressManual = deliveryChanged ? deliveryAddress.trim().length > 0 : (invoice.deliveryAddressManual === true);
+
       await updateDoc(invoiceRef, {
         schoolName: clientName,
         taxInvoice: invoiceNumber,
@@ -172,6 +181,8 @@ export function EditInvoiceModal({ isOpen, onClose, invoice, trips = [], onSucce
         district: district,
         deliveryAddressLine1: addressLine1,
         deliveryAddressLine2: addressLine2,
+        deliveryAddress: deliveryAddress,
+        deliveryAddressManual: deliveryAddressManual,
         status: status,
         lineItems: formattedLineItemsDb,
         line_items: formattedLineItemsDb,
@@ -408,6 +419,17 @@ export function EditInvoiceModal({ isOpen, onClose, invoice, trips = [], onSucce
                   className="w-full p-2 bg-white border border-zinc-200 rounded-lg font-bold"
                   placeholder="Additional details"
                 />
+              </div>
+
+              <div className="space-y-1 md:col-span-2">
+                <label className="text-[9px] font-bold uppercase text-zinc-500 block">Delivery Address (map pin location)</label>
+                <GoogleMapsAutocomplete
+                  value={deliveryAddress}
+                  onChange={setDeliveryAddress}
+                  placeholder="Search the delivery address on Google Maps..."
+                  className="w-full p-2 bg-white border border-zinc-200 rounded-lg font-bold"
+                />
+                <p className="text-[10px] text-zinc-400 font-medium normal-case">Actual location used for the map pin. Auto-filled from the Google Maps school lookup; edit to override where the pin is placed.</p>
               </div>
             </div>
           </div>

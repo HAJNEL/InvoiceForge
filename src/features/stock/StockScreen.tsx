@@ -9,9 +9,8 @@ import {
   ChevronUp, 
   Check, 
   X,
-  Shuffle, 
-  PackageCheck, 
-  Wrench,
+  Shuffle,
+  PackageCheck,
   HelpCircle,
   Clock,
   User,
@@ -152,8 +151,8 @@ export function groupAndSortItems<T extends GroupableItem>(
 export function StockScreen() {
   const { stockItems, loading, error, deleteStockItem, updateTypeAndQty } = useStock();
 
-  // Selected major tab: 'inventory' | 'knockdown' | 'assembled' | 'pre-assembled' | 'stock-take'
-  const [activeTab, setActiveTab] = useState<'inventory' | 'knockdown' | 'assembled' | 'pre-assembled' | 'stock-take'>('inventory');
+  // Selected major tab: 'inventory' | 'assembled' | 'pre-assembled' | 'stock-take'
+  const [activeTab, setActiveTab] = useState<'inventory' | 'assembled' | 'pre-assembled' | 'stock-take'>('inventory');
   
   // Selected subtab under Inventory tab
   const [inventorySubTab, setInventorySubTab] = useState<'current-stock' | 'invoice-builder' | 'missing-items' | 'extras'>('current-stock');
@@ -551,7 +550,6 @@ export function StockScreen() {
   const counts = useMemo(() => {
     return {
       inventory: inventoryItems.length,
-      knockdown: stockItems.filter(i => i.type === 'knockdown').length,
       assembled: stockItems.filter(i => i.type === 'assembled').length,
       'pre-assembled': stockItems.filter(i => i.type === 'pre-assembled').length,
       'stock-take': stockTakes.length,
@@ -595,7 +593,7 @@ export function StockScreen() {
           className="px-5 py-3 bg-brand-primary hover:bg-zinc-850 text-white font-black text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer flex items-center gap-2 shadow-md hover:scale-[1.02] active:scale-95 shrink-0"
         >
           <Plus className="w-4 h-4 stroke-[3]" />
-          Knockdown Item Setup
+          Product Setup
         </button>
       </div>
 
@@ -604,9 +602,9 @@ export function StockScreen() {
         
         {/* Tab List */}
         <div className="flex flex-wrap gap-2 p-1 bg-zinc-100 rounded-xl border border-zinc-200 shrink-0 self-start">
-          {(['inventory', 'knockdown', 'assembled', 'pre-assembled', 'stock-take'] as const).map((tab) => {
+          {(['inventory', 'assembled', 'pre-assembled', 'stock-take'] as const).map((tab) => {
             const isActive = activeTab === tab;
-            const tabLabel = tab === 'inventory' ? 'Inventory' : tab === 'knockdown' ? 'Knockdown' : tab === 'assembled' ? 'Assembled' : tab === 'pre-assembled' ? 'Pre-assembled' : 'Stock Take';
+            const tabLabel = tab === 'inventory' ? 'Inventory' : tab === 'assembled' ? 'Assembled' : tab === 'pre-assembled' ? 'Pre-assembled' : 'Stock Take';
             const count = counts[tab];
             
             return (
@@ -1628,10 +1626,10 @@ export function StockScreen() {
                               {/* Move categories button dropdown/cluster */}
                               <div className="flex items-center gap-1 bg-zinc-100/60 border border-zinc-150 rounded-xl p-0.5" title="Relocate to category">
                                 <Shuffle className="w-3.5 h-3.5 text-zinc-400 mx-1.5 shrink-0" />
-                                {(['knockdown', 'assembled', 'pre-assembled'] as const).map((t) => {
+                                {(['assembled', 'pre-assembled'] as const).map((t) => {
                                   if (t === item.type) return null;
-                                  const label = t === 'knockdown' ? 'Knockdown' : t === 'assembled' ? 'Assembled' : 'Pre-assembled';
-                                  const icon = t === 'knockdown' ? <Wrench className="w-3 h-3" /> : t === 'assembled' ? <PackageCheck className="w-3 h-3" /> : <Boxes className="w-3 h-3" />;
+                                  const label = t === 'assembled' ? 'Assembled' : 'Pre-assembled';
+                                  const icon = t === 'assembled' ? <PackageCheck className="w-3 h-3" /> : <Boxes className="w-3 h-3" />;
                                   return (
                                     <button
                                       key={t}

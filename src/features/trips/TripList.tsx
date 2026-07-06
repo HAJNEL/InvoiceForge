@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { Plus, Trash2, Edit3, Loader2, AlertCircle, Calendar as CalendarIcon, Navigation, CheckCircle2, FileText, Package, X, Eye, ExternalLink, History, AlertTriangle, Check, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
+import { Plus, Trash2, Edit3, Loader2, AlertCircle, Calendar as CalendarIcon, Navigation, CheckCircle2, Package, X, History, AlertTriangle, Check, ChevronLeft, ChevronRight, RefreshCw, Search, Maximize2, Minimize2, MapPin } from 'lucide-react';
+import { toast } from 'sonner';
 import { PartialConfirmModal } from '../../components/PartialConfirmModal';
 import { APIProvider } from '@vis.gl/react-google-maps';
 import { cn } from '../../lib/utils';
@@ -15,7 +16,9 @@ import { CapacityProgressBar } from './TripListComponents/CapacityProgressBar';
 import { StockModal } from './TripListComponents/StockModal';
 import { MapComponent } from './TripListComponents/MapComponent';
 import { StatusBadge } from './TripListComponents/StatusBadge';
+import { InvoiceDetailsPanel } from './TripListComponents/InvoiceDetailsPanel';
 import { restoreInventoryForItems } from '../../utils/inventory';
+import { buildSchoolLookupAddress, buildPinSearchAddress, geocodeAddress } from '../../lib/geocoding';
 
 const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_PLATFORM_KEY || '';
 const hasValidKey = Boolean(GOOGLE_MAPS_API_KEY);
@@ -31,6 +34,96 @@ const needsInventoryRestore = (status: string) =>
   status === TripStatus.ASSEMBLED ||
   status === TripStatus.ON_ROUTE ||
   status === TripStatus.DELIVERED;
+
+// Shared "Map Pin Filters" controls, reused in both the standard map panel and the
+// fullscreen map's top bar so filtering behaves identically in either view.
+function MapPinFiltersControls({
+  searchTerm, setSearchTerm,
+  lineItemFilter, setLineItemFilter,
+  selectedDistrict, setSelectedDistrict,
+  selectedStatus, setSelectedStatus,
+  districtsList, showHistory
+}: {
+  searchTerm: string; setSearchTerm: (v: string) => void;
+  lineItemFilter: string; setLineItemFilter: (v: string) => void;
+  selectedDistrict: string; setSelectedDistrict: (v: string) => void;
+  selectedStatus: string; setSelectedStatus: (v: string) => void;
+  districtsList: string[]; showHistory: boolean;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+      {/* Keyword Search */}
+      <div className="relative w-full md:w-48">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-400" />
+        <input
+          type="text"
+          placeholder="Filter client, invoice..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="w-full pl-9 pr-3 py-1.5 text-xs bg-white border border-zinc-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent"
+        />
+      </div>
+
+      {/* Line Item Search */}
+      <div className="relative w-full md:w-48">
+        <Package className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-400" />
+        <input
+          type="text"
+          placeholder="Filter line item..."
+          value={lineItemFilter}
+          onChange={(e) => setLineItemFilter(e.target.value)}
+          className="w-full pl-9 pr-3 py-1.5 text-xs bg-white border border-zinc-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent"
+        />
+      </div>
+
+      {/* District Dropdown */}
+      <select
+        title="Filter by district"
+        value={selectedDistrict}
+        onChange={(e) => setSelectedDistrict(e.target.value)}
+        className="text-xs bg-white border border-zinc-200 rounded-xl px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-brand-accent/20 w-fit"
+      >
+        <option value="all">All Districts</option>
+        {districtsList.map(dist => (
+          <option key={dist} value={dist}>{dist}</option>
+        ))}
+      </select>
+
+      {/* Status Dropdown */}
+      <select
+        title="Filter by status"
+        value={selectedStatus}
+        onChange={(e) => setSelectedStatus(e.target.value)}
+        className="text-xs bg-white border border-zinc-200 rounded-xl px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-brand-accent/20 w-fit"
+      >
+        <option value="all">All Statuses</option>
+        <option value="partially_complete">Partially Complete</option>
+        <option value="draft">Draft</option>
+        <option value="proposed">Proposed</option>
+        <option value="assembled">Assembled</option>
+        <option value="on_route">On Route</option>
+        {showHistory && <option value="complete">Delivered / Complete</option>}
+      </select>
+
+      {/* Clear filters shortcut */}
+      {(searchTerm || lineItemFilter || selectedDistrict !== 'all' || selectedStatus !== 'all') && (
+        <button
+          type="button"
+          title="Reset map pin filters"
+          onClick={() => {
+            setSearchTerm('');
+            setLineItemFilter('');
+            setSelectedDistrict('all');
+            setSelectedStatus('all');
+          }}
+          className="text-[10px] font-black uppercase text-red-500 hover:text-red-600 tracking-wider hover:underline shrink-0"
+        >
+          Reset
+        </button>
+      )}
+    </div>
+  );
+}
 
 export function TripList() {
   const navigate = useNavigate();
@@ -117,14 +210,98 @@ export function TripList() {
   const [isRefreshingPins, setIsRefreshingPins] = useState(false);
   const prevGeocodedCountRef = useRef(0);
 
-  const handleRefreshPins = () => {
+  // Re-pins every invoice. For invoices without a manually-entered delivery
+  // address it re-looks-up the school name on Google Maps and writes the fresh
+  // result back onto the invoice (`deliveryAddress`). Invoices whose delivery
+  // address was set by hand (`deliveryAddressManual`) are preserved: their pin is
+  // rebuilt from that address but the stored address is never overwritten.
+  // The invoice write happens BEFORE the pin is committed so that once Firestore's
+  // snapshot reflects the new `deliveryAddress`, the map's own staleness check sees
+  // the pin as already up-to-date (searchAddress === deliveryAddress) and doesn't
+  // immediately re-geocode it.
+  const handleRefreshPins = async () => {
     localStorage.removeItem('geocoded_invoices');
     setGeocodedInvoices([]);
-    setIsRefreshingPins(true);
     prevGeocodedCountRef.current = 0;
+    setIsRefreshingPins(true);
+
+    const toRefresh = [...invoices];
+    for (const inv of toRefresh) {
+      const manualAddress = inv.deliveryAddressManual ? inv.deliveryAddress?.trim() : '';
+
+      // Manual override: geocode the saved address as-is (don't touch the school).
+      // Otherwise force the school-name lookup so an outdated saved address gets
+      // refreshed to the latest Google result.
+      const lookupAddress = manualAddress || buildSchoolLookupAddress(inv) || buildPinSearchAddress(inv);
+      let geo = await geocodeAddress(lookupAddress);
+      // If the primary search found nothing, fall back to the full priority chain
+      // (delivery address, street address, then client name).
+      if (!geo && lookupAddress !== buildPinSearchAddress(inv)) {
+        geo = await geocodeAddress(buildPinSearchAddress(inv));
+      }
+
+      if (geo) {
+        // Only auto-managed invoices get their stored deliveryAddress rewritten;
+        // a manual override is left exactly as the user entered it.
+        if (!manualAddress) {
+          // Persist first (latency-compensated snapshot updates almost immediately).
+          await updateInvoice(inv.id, { deliveryAddress: geo.formattedAddress, deliveryAddressManual: false });
+        }
+
+        const pin: GeocodedInvoice = {
+          id: inv.id,
+          number: inv.number,
+          client: inv.client,
+          status: inv.status,
+          address: geo.formattedAddress,
+          // Keep searchAddress equal to whatever buildPinSearchAddress will return
+          // for this invoice, so the map doesn't consider the fresh pin stale.
+          searchAddress: manualAddress || geo.formattedAddress,
+          position: geo.position,
+          district: inv.district,
+          lineItems: inv.lineItems,
+        };
+        setGeocodedInvoices((prev) => [...prev.filter(p => p.id !== pin.id), pin]);
+      }
+
+      // Match MapComponent's request pacing to stay under Google's rate limits.
+      await new Promise(r => setTimeout(r, 200));
+    }
+
+    // If nothing resolved, the settle-timer effect never fires (count stayed 0),
+    // so clear the overlay here.
+    setGeocodedInvoices((prev) => {
+      if (prev.length === 0) setIsRefreshingPins(false);
+      return prev;
+    });
   };
 
   const [selectedInvoiceForStock, setSelectedInvoiceForStock] = useState<UIInvoice | null>(null);
+
+  // Map Pin Filters
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedDistrict, setSelectedDistrict] = useState('all');
+  const [selectedStatus, setSelectedStatus] = useState('all');
+  const [lineItemFilter, setLineItemFilter] = useState('');
+
+  // Fullscreen map mode: shows the same pin filters plus a left sidebar with the
+  // selected invoice's details, instead of the details card below the map.
+  const [isMapFullscreen, setIsMapFullscreen] = useState(false);
+
+  // Lock body scroll and allow Escape to exit while the fullscreen map is open
+  useEffect(() => {
+    if (!isMapFullscreen) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsMapFullscreen(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [isMapFullscreen]);
 
   // Sync to localStorage on geocodedInvoices updates (keeping it clean of deleted invoices)
   useEffect(() => {
@@ -182,6 +359,15 @@ export function TripList() {
     const trip = trips.find(t => t.id === highlightedTripId);
     return trip?.invoiceIds || [];
   }, [trips, highlightedTripId]);
+
+  // Unique Districts across all invoices, for the Map Pin Filters district dropdown
+  const districtsList = useMemo(() => {
+    const districtsSet = new Set<string>();
+    invoices.forEach(inv => {
+      if (inv.district) districtsSet.add(inv.district.trim().toUpperCase());
+    });
+    return Array.from(districtsSet).sort();
+  }, [invoices]);
 
   const activeInvoices = useMemo(() => {
     if (showHistory) {
@@ -269,6 +455,10 @@ export function TripList() {
     setCurrentPage(1);
     setRoutedTrip(null);
     setSelectedInvoice(null);
+    setSearchTerm('');
+    setLineItemFilter('');
+    setSelectedDistrict('all');
+    setSelectedStatus('all');
   }, [showHistory]);
 
   const totalPages = Math.ceil(sortedDateKeys.length / itemsPerPage);
@@ -318,7 +508,7 @@ export function TripList() {
               </button>
             )}
             <button
-              title="Refresh all invoice pins from database"
+              title="Re-look up every school on Google Maps and refresh its pin and delivery address"
               onClick={handleRefreshPins}
               disabled={isRefreshingPins || invoicesLoading}
               className="flex items-center gap-2 bg-white text-zinc-600 px-4 py-2 rounded-xl font-bold text-sm hover:bg-zinc-50 transition-all border border-zinc-200 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -348,99 +538,129 @@ export function TripList() {
           </div>
         </div>
 
-        {/* Map Section */}
-        <div className="h-[460px] w-full rounded-2xl overflow-hidden shadow-lg border border-zinc-200 relative bg-zinc-100">
-          <MapComponent
-            invoices={activeInvoices}
-            allInvoices={invoices}
-            geocodedInvoices={geocodedInvoices}
-            setGeocodedInvoices={setGeocodedInvoices}
-            onInvoiceClick={setSelectedInvoice}
-            warehouse={settings}
-            routedTrip={routedTrip}
-            highlightedInvoiceIds={highlightedInvoiceIds}
-            showHistory={showHistory}
-            isRefreshing={isRefreshingPins}
-          />
+        {/* Map Panel with Filter Bar — becomes a fullscreen overlay (with a left invoice
+            sidebar in place of the below-map details card) when isMapFullscreen is true.
+            The MapComponent instance below stays mounted throughout so pins/geocoding
+            are never re-fetched when toggling fullscreen. */}
+        <div className={cn(
+          isMapFullscreen
+            ? "fixed inset-0 z-[100] bg-zinc-50 flex flex-col"
+            : "bg-white rounded-2xl border border-zinc-200 overflow-hidden shadow-lg"
+        )}>
+          {isMapFullscreen ? (
+            /* Fullscreen top bar: title, shared pin filters, exit control */
+            <div className="bg-white border-b border-zinc-200 px-6 py-4 flex flex-col lg:flex-row items-center justify-between gap-4 shrink-0">
+              <div className="flex items-center gap-3 shrink-0">
+                <div className="p-2 bg-brand-primary/10 rounded-xl border border-brand-primary/20">
+                  <MapPin className="w-4 h-4 text-brand-primary" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-black text-brand-primary uppercase tracking-tight">Trip Map — Fullscreen</h2>
+                  <p className="text-[11px] text-zinc-400 font-medium">Click a pin to view invoice details.</p>
+                </div>
+              </div>
+
+              <MapPinFiltersControls
+                searchTerm={searchTerm} setSearchTerm={setSearchTerm}
+                lineItemFilter={lineItemFilter} setLineItemFilter={setLineItemFilter}
+                selectedDistrict={selectedDistrict} setSelectedDistrict={setSelectedDistrict}
+                selectedStatus={selectedStatus} setSelectedStatus={setSelectedStatus}
+                districtsList={districtsList} showHistory={showHistory}
+              />
+
+              <button
+                type="button"
+                title="Exit Fullscreen (Esc)"
+                onClick={() => setIsMapFullscreen(false)}
+                className="flex items-center gap-2 bg-zinc-900 text-white px-4 py-2 rounded-xl font-bold text-xs hover:bg-zinc-800 transition-all shadow-sm shrink-0"
+              >
+                <Minimize2 className="w-4 h-4" />
+                Exit Fullscreen
+              </button>
+            </div>
+          ) : (
+            /* Standard Map Pin Filters Bar */
+            <div className="bg-zinc-50 border-b border-zinc-200 px-6 py-4 flex flex-col md:flex-row items-center justify-between gap-4">
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400">Map Pin Filters</span>
+                <span className="h-4 w-px bg-zinc-200" />
+                <p className="text-xs text-zinc-500 font-medium">Filter the pins shown on the map below.</p>
+              </div>
+
+              <MapPinFiltersControls
+                searchTerm={searchTerm} setSearchTerm={setSearchTerm}
+                lineItemFilter={lineItemFilter} setLineItemFilter={setLineItemFilter}
+                selectedDistrict={selectedDistrict} setSelectedDistrict={setSelectedDistrict}
+                selectedStatus={selectedStatus} setSelectedStatus={setSelectedStatus}
+                districtsList={districtsList} showHistory={showHistory}
+              />
+            </div>
+          )}
+
+          <div className={cn(isMapFullscreen ? "flex-1 flex min-h-0" : "")}>
+            {/* Left sidebar with selected invoice details — fullscreen only */}
+            {isMapFullscreen && (
+              <div className="w-[380px] shrink-0 border-r border-zinc-200 bg-white overflow-y-auto">
+                {liveSelectedInvoice ? (
+                  <InvoiceDetailsPanel
+                    invoice={liveSelectedInvoice}
+                    variant="sidebar"
+                    onClose={() => setSelectedInvoice(null)}
+                    onViewInvoice={() => navigate(`/invoices/${liveSelectedInvoice.id}`)}
+                  />
+                ) : (
+                  <div className="h-full flex flex-col items-center justify-center text-center p-8">
+                    <MapPin className="w-10 h-10 text-zinc-200 mb-3" />
+                    <p className="text-zinc-500 font-bold text-sm uppercase tracking-tight">No Pin Selected</p>
+                    <p className="text-zinc-400 text-xs mt-1 max-w-[220px]">Click any pin on the map to view its invoice details here.</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Map Section */}
+            <div className={cn(isMapFullscreen ? "flex-1 relative bg-zinc-100" : "h-[460px] w-full relative bg-zinc-100")}>
+              <MapComponent
+                invoices={activeInvoices}
+                allInvoices={invoices}
+                geocodedInvoices={geocodedInvoices}
+                setGeocodedInvoices={setGeocodedInvoices}
+                onInvoiceClick={setSelectedInvoice}
+                warehouse={settings}
+                routedTrip={routedTrip}
+                highlightedInvoiceIds={highlightedInvoiceIds}
+                showHistory={showHistory}
+                isRefreshing={isRefreshingPins}
+                filters={{ searchTerm, selectedDistrict, selectedStatus, lineItemFilter }}
+              />
+
+              {/* Custom Fullscreen toggle, overlaid top-right of the map (standard view only) */}
+              {!isMapFullscreen && (
+                <button
+                  type="button"
+                  title="Expand Map to Fullscreen"
+                  onClick={() => setIsMapFullscreen(true)}
+                  className="absolute top-2.5 right-2.5 z-10 p-2 bg-white hover:bg-zinc-50 text-zinc-600 rounded-lg shadow-md border border-zinc-200 transition-all hover:scale-105 active:scale-95"
+                >
+                  <Maximize2 className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+          </div>
         </div>
 
-        {/* Selected Invoice Details Card */}
-        {liveSelectedInvoice && (
-           <div className="bg-white p-6 rounded-2xl shadow-xl border border-zinc-200 z-10 animate-in slide-in-from-top-4 duration-300 ring-4 ring-brand-primary/5">
-              <div className="flex justify-between items-start mb-4">
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-1">
-                    <h4 className="text-xl font-black text-brand-primary uppercase tracking-tight flex items-center gap-2">
-                      <FileText className="w-5 h-5 text-brand-primary" strokeWidth={2.5} />
-                      Invoice {liveSelectedInvoice.number}
-                    </h4>
-                    <span className="px-2 py-0.5 bg-brand-primary/5 text-brand-primary rounded-md text-[10px] font-black uppercase tracking-widest border border-brand-primary/10">
-                      {liveSelectedInvoice.district || 'No District'}
-                    </span>
-                  </div>
-                  <p className="text-[11px] font-bold text-zinc-400 uppercase tracking-widest flex items-center gap-1.5 leading-relaxed">
-                    <span>Delivery Address:</span>
-                    <span className="text-zinc-800 normal-case font-extrabold">{liveSelectedInvoice.address}</span>
-                  </p>
-                </div>
-                <div className="flex gap-2">
-                  <button 
-                    onClick={() => navigate(`/invoices/${liveSelectedInvoice.id}`)}
-                    className="flex items-center gap-2 bg-brand-primary text-white px-4 py-2 rounded-xl font-bold text-xs hover:bg-brand-primary/90 transition-all shadow-sm group"
-                  >
-                    <Eye className="w-4 h-4" />
-                    View Invoice
-                    <ExternalLink className="w-3 h-3 opacity-50 group-hover:opacity-100 transition-opacity" />
-                  </button>
-                  <button 
-                    title='Select Invoice'
-                    onClick={() => setSelectedInvoice(null)}
-                    className="p-2 hover:bg-zinc-100 rounded-xl text-zinc-400 transition-all border border-transparent hover:border-zinc-200"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
-                </div>
-              </div>
+        {/* Selected Invoice Details Card (standard, non-fullscreen view only —
+            fullscreen shows the same details in the left sidebar instead) */}
+        {!isMapFullscreen && liveSelectedInvoice && (
+          <InvoiceDetailsPanel
+            invoice={liveSelectedInvoice}
+            variant="card"
+            onClose={() => setSelectedInvoice(null)}
+            onViewInvoice={() => navigate(`/invoices/${liveSelectedInvoice.id}`)}
+          />
+        )}
 
-              {/* Stock Items Section */}
-              <div className="bg-zinc-50 rounded-2xl border border-zinc-100 p-5">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-2">
-                    <div className="p-1.5 bg-white rounded-lg border border-zinc-100 shadow-sm">
-                      <Package className="w-3.5 h-3.5 text-brand-accent" />
-                    </div>
-                    <h5 className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400">Stock Manifest</h5>
-                  </div>
-                  {liveSelectedInvoice.lineItems && liveSelectedInvoice.lineItems.length > 0 && (
-                    <span className="text-[9px] font-black text-zinc-400 bg-white px-2 py-1 rounded-md border border-zinc-200">
-                      {liveSelectedInvoice.lineItems.length} ITEMS
-                    </span>
-                  )}
-                </div>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {(!liveSelectedInvoice.lineItems || liveSelectedInvoice.lineItems.length === 0) ? (
-                    <div className="col-span-full py-8 text-center bg-white rounded-xl border border-dashed border-zinc-200">
-                      <Package className="w-6 h-6 text-zinc-200 mx-auto mb-2" />
-                      <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight">No stock items found</p>
-                    </div>
-                  ) : (
-                    liveSelectedInvoice.lineItems.map((item, idx) => (
-                      <div key={idx} className="flex items-center gap-3 bg-white p-3 rounded-xl border border-zinc-100 shadow-sm group hover:border-brand-accent/30 transition-all">
-                        <div className="px-2 py-1 bg-brand-primary/5 rounded-lg font-mono text-[10px] font-black text-brand-primary border border-brand-primary/10">
-                          {item.stockCode}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-[10px] font-bold text-zinc-800 truncate leading-tight group-hover:text-brand-primary transition-colors">{item.description}</p>
-                          <p className="text-[9px] font-black text-zinc-400 uppercase tracking-tighter mt-1">Qty: <span className="text-zinc-900">{item.qty}</span></p>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-           </div>
-        )}        {/* Trips Grouped by date in their own Cards */}
+        {/* Trips Grouped by date in their own Cards */}
         {tripsLoading ? (
           <div className="bg-white rounded-2xl shadow-sm border border-zinc-200 p-12 text-center">
             <Loader2 className="w-8 h-8 text-brand-accent animate-spin mx-auto mb-2" />
@@ -537,7 +757,7 @@ export function TripList() {
                                               itemKeys: keys
                                             });
                                           } else {
-                                            alert("Could not map the partial item to a loaded invoice.");
+                                            toast.error('Mapping Error', { description: 'Could not link this partial item to a loaded invoice.' });
                                           }
                                         }}
                                         className="p-1 px-1.5 bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-700 font-mono text-[9px] font-black uppercase rounded-lg flex items-center gap-1 inline-flex animate-pulse select-none shrink-0"

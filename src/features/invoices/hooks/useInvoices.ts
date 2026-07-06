@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { toast } from 'sonner';
 import { collection, query, where, onSnapshot, doc, deleteDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../../../lib/firebase';
 import { useAuth } from '../../../core/hooks/useAuth';
@@ -14,10 +15,19 @@ export interface UIInvoice {
   status: string;
   clientEmail: string;
   district?: string;
+  // Canonical pin address: the Google-resolved school address, or a manual
+  // override entered on the invoice edit screens. See src/lib/geocoding.ts.
+  deliveryAddress?: string;
+  // True when `deliveryAddress` was entered/edited by a user, so Refresh Pins
+  // preserves it instead of overwriting it with a fresh school lookup.
+  deliveryAddressManual?: boolean;
   deliveryAddressLine1?: string;
   deliveryAddressLine2?: string;
   deliveredDate?: string;
   parentInvoiceId?: string | null;
+  // Delivery distance in km, entered manually on the invoice detail page.
+  // Drives the Local (<50km) vs Regional (>=50km) revenue split in Reports.
+  distanceKm?: number;
   stopDetails?: {
     location?: string;
     type?: string;
@@ -73,7 +83,7 @@ export function useInvoices() {
         });
 
         if (hasUndelivered) {
-          alert(`Action blocked: Invoice ${baseNumber} is partially complete. Both the original and the split invoice pieces must be verified and changed to "Delivered" status by a Delivered Checker before they can be marked as Invoiced.`);
+          toast.error('Action Blocked', { description: `Invoice ${baseNumber} is partially complete. Both the original and split pieces must be marked "Delivered" before invoicing.` });
           return false;
         }
       }
@@ -118,17 +128,20 @@ export function useInvoices() {
           status: d.status || 'draft',
           clientEmail: d.email || d.customerContact || 'No Email',
           district: d.district || d.deliveryRegion || 'Unassigned',
+          deliveryAddress: d.deliveryAddress || '',
+          deliveryAddressManual: d.deliveryAddressManual === true,
           deliveryAddressLine1: d.deliveryAddressLine1 || '',
           deliveryAddressLine2: d.deliveryAddressLine2 || '',
           deliveredDate: d.deliveredDate || '',
           parentInvoiceId: d.parentInvoiceId || null,
+          distanceKm: typeof d.distanceKm === 'number' ? d.distanceKm : undefined,
           stopDetails: d.stopDetails || null,
           lineItems: (d.line_items || d.lineItems || []).map((item: Record<string, unknown>) => ({
             stockCode: String(item.stock_code || item.stockCode || ''),
             description: String(item.description || ''),
-            qty: typeof item.quantity === 'number' ? item.quantity : (typeof item.qty === 'number' ? item.qty : 0),
-            unitPrice: typeof item.unit_price === 'number' ? item.unit_price : (typeof item.unitPrice === 'number' ? item.unitPrice : 0),
-            value: typeof item.line_item_value === 'number' ? item.line_item_value : (typeof item.value === 'number' ? item.value : 0),
+            qty: Number(item.quantity ?? item.qty ?? 0) || 0,
+            unitPrice: Number(item.unit_price ?? item.unitPrice ?? 0) || 0,
+            value: Number(item.line_item_value ?? item.value ?? 0) || 0,
           }))
         };
       });

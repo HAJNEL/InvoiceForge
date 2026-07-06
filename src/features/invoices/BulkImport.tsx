@@ -18,10 +18,11 @@ import { extractTextFromPdf } from '../../services/pdfService';
 import { parseInvoiceWithRegex } from '../../services/ruleBasedParser';
 import { extractDetailedInvoiceLlamaIndex } from '../../services/llamaIndexService';
 import { db, auth } from '../../lib/firebase';
-import { collection, addDoc, serverTimestamp, query, where, getDocs } from 'firebase/firestore';
+import { collection, addDoc, doc, updateDoc, serverTimestamp, query, where, getDocs } from 'firebase/firestore';
 import { handleFirestoreError, OperationType } from '../../lib/firestore-errors';
 import { DetailedInvoice } from '../../services/xaiService';
 import { useProducts } from '../products/hooks/useProducts';
+import { buildSchoolLookupAddress, buildPinSearchAddress, geocodeAddress, upsertCachedPin } from '../../lib/geocoding';
 
 interface UploadFile {
   id: string;
@@ -217,97 +218,49 @@ export function BulkImport() {
           throw new Error("Unable to save or resolve existing invoice document.");
         }
 
-        // Auto-geocode and cache coordinates in localStorage to load markers instantly on /trips
-        const GMAPS_KEY = process.env.GOOGLE_MAPS_PLATFORM_KEY || '';
-        if (GMAPS_KEY) {
-          try {
-            const fullAddress = [
-              normalizedData.deliveryAddressLine1,
-              normalizedData.deliveryAddressLine2,
-              normalizedData.district,
-              'South Africa'
-            ].filter(Boolean).join(', ');
+        // Auto-geocode and cache coordinates in localStorage to load markers instantly on /trips.
+        // Look up the school name on Google Maps first (source of truth for the pin), then
+        // fall back to the extracted street address / client name. The resolved address is
+        // saved onto the invoice as `deliveryAddress` so the pin and invoice stay in sync.
+        try {
+          const pinSource = {
+            client: normalizedData.schoolName || normalizedData.customerName || 'Unknown Client',
+            schoolName: normalizedData.schoolName,
+            district: normalizedData.district,
+            deliveryAddressLine1: normalizedData.deliveryAddressLine1,
+            deliveryAddressLine2: normalizedData.deliveryAddressLine2,
+          };
 
-            let targetAddress = fullAddress;
-            let geocodeResult = null;
+          const primaryAddress = buildSchoolLookupAddress(pinSource) || buildPinSearchAddress(pinSource);
+          const fallbackAddress = buildPinSearchAddress(pinSource);
 
-            if (targetAddress && targetAddress.trim().length >= 5) {
-              const res = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(targetAddress)}&key=${GMAPS_KEY}`);
-              if (res.ok) {
-                const data = await res.json();
-                if (data.status === 'OK' && data.results?.[0]) {
-                  geocodeResult = data.results[0];
-                }
-              }
-            }
-
-            if (!geocodeResult) {
-              const fallbackAddress = [normalizedData.schoolName || normalizedData.customerName, normalizedData.district, 'South Africa'].filter(Boolean).join(', ');
-              if (fallbackAddress && fallbackAddress.trim().length >= 5) {
-                const res = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(fallbackAddress)}&key=${GMAPS_KEY}`);
-                if (res.ok) {
-                  const data = await res.json();
-                  if (data.status === 'OK' && data.results?.[0]) {
-                    geocodeResult = data.results[0];
-                    targetAddress = fallbackAddress;
-                  }
-                }
-              }
-            }
-
-            if (geocodeResult) {
-              const position = {
-                lat: geocodeResult.geometry.location.lat,
-                lng: geocodeResult.geometry.location.lng
-              };
-
-              interface StoredGeocodedInvoice {
-                id: string;
-                number: string;
-                client: string;
-                status: string;
-                address: string;
-                position: { lat: number; lng: number };
-                district?: string;
-                lineItems?: unknown[];
-              }
-
-              // Load cached geocoded invoices from localStorage
-              const existingStoredStr = localStorage.getItem('geocoded_invoices');
-              let existingStored: StoredGeocodedInvoice[] = [];
-              if (existingStoredStr) {
-                try {
-                  const parsed = JSON.parse(existingStoredStr);
-                  if (Array.isArray(parsed)) {
-                    existingStored = parsed as StoredGeocodedInvoice[];
-                  }
-                } catch {
-                  existingStored = [];
-                }
-              }
-
-              // Filter out older record for the same invoice
-              existingStored = existingStored.filter((item: StoredGeocodedInvoice) => item.id !== finalInvoiceId);
-
-              // Setup and store GeocodedInvoice structure matching TripList
-              const geocodedItem = {
-                id: finalInvoiceId,
-                number: normalizedData.taxInvoice || `TEMP-${Date.now()}`,
-                client: normalizedData.schoolName || normalizedData.customerName || 'Unknown Client',
-                status: 'draft',
-                address: geocodeResult.formatted_address || targetAddress,
-                position: position,
-                district: normalizedData.district,
-                lineItems: normalizedData.lineItems || []
-              };
-
-              existingStored.push(geocodedItem);
-              localStorage.setItem('geocoded_invoices', JSON.stringify(existingStored));
-              console.log(`[DEBUG] Successfully geocoded and stored marker in localStorage for imported invoice: ${geocodedItem.number}`);
-            }
-          } catch (geocodeErr) {
-            console.error('Error auto-geocoding newly uploaded invoice:', geocodeErr);
+          let geo = await geocodeAddress(primaryAddress);
+          if (!geo && primaryAddress !== fallbackAddress) {
+            geo = await geocodeAddress(fallbackAddress);
           }
+
+          if (geo) {
+            // Persist the resolved address onto the invoice (skip for duplicates, which
+            // we intentionally never write), then cache the pin.
+            if (!isDuplicate) {
+              await updateDoc(doc(db, 'invoices', finalInvoiceId), { deliveryAddress: geo.formattedAddress, deliveryAddressManual: false });
+            }
+
+            upsertCachedPin({
+              id: finalInvoiceId,
+              number: normalizedData.taxInvoice || `TEMP-${Date.now()}`,
+              client: pinSource.client,
+              status: 'draft',
+              address: geo.formattedAddress,
+              searchAddress: geo.formattedAddress,
+              position: geo.position,
+              district: normalizedData.district,
+              lineItems: normalizedData.lineItems || [],
+            });
+            console.log(`[DEBUG] Geocoded and stored pin for imported invoice: ${normalizedData.taxInvoice}`);
+          }
+        } catch (geocodeErr) {
+          console.error('Error auto-geocoding newly uploaded invoice:', geocodeErr);
         }
 
         setFiles(prev => prev.map(f => f.id === id ? { 
