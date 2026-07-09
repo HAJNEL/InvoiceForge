@@ -49,7 +49,7 @@ function startOfWeek(d: Date): Date {
 export function DailyPlannerPage() {
   const { user } = useAuth();
   const { trips, loading: tripsLoading } = useTrips();
-  const { planners, loading: plannersLoading, saveEntries } = useDayPlanners();
+  const { planners, loading: plannersLoading, saveEntries, moveEntries } = useDayPlanners();
   // Recorded on planner entries when the account owner ticks them, so it's clear who
   // completed it even when that's the owner themselves (not just team members).
   const ownerDisplayName = user?.displayName || user?.email?.split('@')[0] || 'Account Owner';
@@ -349,7 +349,10 @@ export function DailyPlannerPage() {
           entries={entriesByDate[modalDate] || []}
           onClose={() => setModalDate(null)}
           onSave={(entries) => saveEntries(modalDate, entries)}
-          onDateChange={(newDate) => setModalDate(newDate)}
+          onMoveToDate={(newDate) => {
+            moveEntries(modalDate, newDate);
+            setModalDate(newDate);
+          }}
           completedByName={ownerDisplayName}
         />
       )}

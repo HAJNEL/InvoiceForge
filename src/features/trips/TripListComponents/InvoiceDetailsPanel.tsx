@@ -1,7 +1,9 @@
-import type { ReactNode } from 'react';
-import { FileText, Package, X, Eye, ExternalLink } from 'lucide-react';
+import { useState, type ReactNode } from 'react';
+import { FileText, Package, X, Eye, ExternalLink, Phone } from 'lucide-react';
 import { cn } from '../../../lib/utils';
 import { GeocodedInvoice } from './types';
+import { useSchoolPhone } from './useSchoolPhone';
+import { SchoolPhoneDialog } from './SchoolPhoneDialog';
 
 // Shared invoice detail readout used both below the standard map (as a horizontal
 // card) and inside the fullscreen map's left sidebar (as a vertical panel).
@@ -19,6 +21,8 @@ export function InvoiceDetailsPanel({
   extraActions?: ReactNode;
 }) {
   const isSidebar = variant === 'sidebar';
+  const phone = useSchoolPhone(invoice.client, invoice.district);
+  const [showPhoneDialog, setShowPhoneDialog] = useState(false);
 
   return (
     <div className={cn(
@@ -43,6 +47,27 @@ export function InvoiceDetailsPanel({
               {invoice.district || 'No District'}
             </span>
           </div>
+          {invoice.client && (
+            <div className={cn("flex items-center gap-2 flex-wrap", isSidebar ? "mb-1" : "mb-0.5")}>
+              <p className={cn(
+                "font-black text-zinc-800 normal-case",
+                isSidebar ? "text-sm" : "text-base"
+              )}>
+                {invoice.client}
+              </p>
+              {phone && (
+                <button
+                  type="button"
+                  title={`View phone number for ${invoice.client}`}
+                  onClick={() => setShowPhoneDialog(true)}
+                  className="flex items-center gap-1 px-2 py-0.5 bg-brand-primary/5 hover:bg-brand-primary/10 text-brand-primary rounded-md text-[10px] font-black tracking-tight border border-brand-primary/10 transition-colors shrink-0"
+                >
+                  <Phone className="w-3 h-3" />
+                  {phone}
+                </button>
+              )}
+            </div>
+          )}
           <p className={cn(
             "font-bold text-zinc-400 uppercase tracking-widest leading-relaxed",
             isSidebar ? "text-[10px] flex flex-col gap-0.5" : "text-[11px] flex items-center gap-1.5"
@@ -114,6 +139,14 @@ export function InvoiceDetailsPanel({
           )}
         </div>
       </div>
+
+      {showPhoneDialog && phone && (
+        <SchoolPhoneDialog
+          schoolName={invoice.client}
+          phone={phone}
+          onClose={() => setShowPhoneDialog(false)}
+        />
+      )}
     </div>
   );
 }

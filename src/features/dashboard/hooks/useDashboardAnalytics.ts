@@ -27,6 +27,11 @@ const getInvoiceDateObj = (dateStr?: string) => {
 export function useDashboardAnalytics({ invoices, trucks, trips, weekOffset }: UseDashboardAnalyticsArgs) {
   // Chart 1: Invoice totals calculations
   const invoiceTotalsOverTime = useMemo(() => {
+    // Financial performance is plotted by delivery date (set when an invoice is
+    // marked Delivered), not the invoice's own date - falls back to `date` for
+    // invoices that haven't been delivered yet, matching ReportsPage.tsx.
+    const getFinancialDateStr = (inv: UIInvoice) => inv.deliveredDate || inv.date;
+
     // Last 7 days daily
     const last7DaysData = Array.from({ length: 7 }).map((_, i) => {
       const d = new Date();
@@ -37,7 +42,7 @@ export function useDashboardAnalytics({ invoices, trucks, trips, weekOffset }: U
       const dateStr = `${yyyy}-${mm}-${dd}`;
       const formattedLabel = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 
-      const dayInvoices = invoices.filter(inv => inv.date === dateStr);
+      const dayInvoices = invoices.filter(inv => getFinancialDateStr(inv) === dateStr);
       const totalAmount = dayInvoices.reduce((sum, inv) => sum + (inv.amount || 0), 0);
       const count = dayInvoices.length;
 
@@ -54,7 +59,7 @@ export function useDashboardAnalytics({ invoices, trucks, trips, weekOffset }: U
       const dateStr = `${yyyy}-${mm}-${dd}`;
       const formattedLabel = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 
-      const dayInvoices = invoices.filter(inv => inv.date === dateStr);
+      const dayInvoices = invoices.filter(inv => getFinancialDateStr(inv) === dateStr);
       const totalAmount = dayInvoices.reduce((sum, inv) => sum + (inv.amount || 0), 0);
       const count = dayInvoices.length;
 
@@ -70,7 +75,7 @@ export function useDashboardAnalytics({ invoices, trucks, trips, weekOffset }: U
       const targetMonth = d.getMonth();
 
       const monthInvoices = invoices.filter(inv => {
-        const invDate = getInvoiceDateObj(inv.date);
+        const invDate = getInvoiceDateObj(getFinancialDateStr(inv));
         return invDate.getFullYear() === targetYear && invDate.getMonth() === targetMonth;
       });
 
@@ -276,15 +281,6 @@ export function useDashboardAnalytics({ invoices, trucks, trips, weekOffset }: U
     });
   }, [invoices]);
 
-  const recentActivity = useMemo(() => {
-    return invoices.slice(0, 5).map(inv => ({
-      id: inv.id,
-      title: `Invoice ${inv.number}`,
-      desc: `For ${inv.client} • ${inv.date}`,
-      status: inv.status
-    }));
-  }, [invoices]);
-
   const weekNumber = useMemo(() => {
     const today = new Date();
     const currentDay = today.getDay();
@@ -318,7 +314,6 @@ export function useDashboardAnalytics({ invoices, trucks, trips, weekOffset }: U
     stats,
     completedInvoices,
     partiallyCompletedInvoices,
-    recentActivity,
     weekNumber,
     getTripsForCell
   };

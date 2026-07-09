@@ -1,7 +1,7 @@
 import React from 'react';
 import { cn } from '../../../lib/utils';
 
-export function StatCard({ title, value, icon: Icon, color, subtitle, onClick, topRightActions }: {
+export function StatCard({ title, value, icon: Icon, color, subtitle, onClick, topRightActions, filterRow }: {
   title: string;
   value: string;
   icon: React.ElementType;
@@ -11,6 +11,9 @@ export function StatCard({ title, value, icon: Icon, color, subtitle, onClick, t
   // Small icon-button controls overlaid top-right (e.g. metric toggles). Rendered in
   // its own stacking context so clicks on them don't also trigger the card's onClick.
   topRightActions?: React.ReactNode;
+  // Optional control (e.g. a period select) rendered below the subtitle. Consumers
+  // are responsible for stopping click propagation so it doesn't also fire onClick.
+  filterRow?: React.ReactNode;
 }) {
   return (
     <div
@@ -35,6 +38,7 @@ export function StatCard({ title, value, icon: Icon, color, subtitle, onClick, t
         {subtitle && (
           <p className="text-[10px] font-bold text-zinc-400 mt-1 uppercase tracking-tight">{subtitle}</p>
         )}
+        {filterRow && <div className="mt-3">{filterRow}</div>}
       </div>
     </div>
   );

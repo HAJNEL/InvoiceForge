@@ -128,7 +128,7 @@ export function useTeamDashboard() {
             userId: user.uid,
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
-            roles: ['Assembler', 'Loader', 'Delivered Checker', 'Stock Counter', 'Invoice Management'],
+            roles: ['Assembler', 'Loader', 'Delivered Checker', 'Stock Counter', 'Invoice Management', 'Trip Overview'],
           });
           return;
         }

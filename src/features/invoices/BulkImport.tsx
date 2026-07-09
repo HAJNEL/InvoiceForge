@@ -22,6 +22,7 @@ import { collection, addDoc, doc, updateDoc, serverTimestamp, query, where, getD
 import { handleFirestoreError, OperationType } from '../../lib/firestore-errors';
 import { DetailedInvoice } from '../../services/xaiService';
 import { useProducts } from '../products/hooks/useProducts';
+import { useSettings } from '../settings/hooks/useSettings';
 import { buildSchoolLookupAddress, buildPinSearchAddress, geocodeAddress, upsertCachedPin } from '../../lib/geocoding';
 
 interface UploadFile {
@@ -40,6 +41,12 @@ export function BulkImport() {
   const [useAI, setUseAI] = useState(true);
   const navigate = useNavigate();
   const { syncLineItemsAsProducts } = useProducts();
+  const { settings } = useSettings();
+  // Biases geocoding toward the warehouse's region so a same-named school in
+  // another province doesn't outrank the real, nearby one (see geocoding.ts).
+  const warehouseBias = settings?.warehouseLat !== undefined && settings?.warehouseLng !== undefined
+    ? { lat: settings.warehouseLat, lng: settings.warehouseLng }
+    : undefined;
 
   const processFile = useCallback(async (uploadFile: { id: string, file: File }) => {
     const { id, file } = uploadFile;
@@ -234,9 +241,9 @@ export function BulkImport() {
           const primaryAddress = buildSchoolLookupAddress(pinSource) || buildPinSearchAddress(pinSource);
           const fallbackAddress = buildPinSearchAddress(pinSource);
 
-          let geo = await geocodeAddress(primaryAddress);
+          let geo = await geocodeAddress(primaryAddress, warehouseBias);
           if (!geo && primaryAddress !== fallbackAddress) {
-            geo = await geocodeAddress(fallbackAddress);
+            geo = await geocodeAddress(fallbackAddress, warehouseBias);
           }
 
           if (geo) {
@@ -306,7 +313,8 @@ export function BulkImport() {
         isDuplicate: isDupError || f.isDuplicate
       } : f));
     }
-  }, [useAI]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [useAI, settings?.warehouseLat, settings?.warehouseLng]);
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const newFiles = acceptedFiles.map(file => ({

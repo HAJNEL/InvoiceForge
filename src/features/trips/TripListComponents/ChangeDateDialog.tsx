@@ -9,7 +9,7 @@ export function ChangeDateDialog({ initialDate, onClose, onConfirm }: {
   const [date, setDate] = useState(initialDate);
 
   const handleConfirm = () => {
-    if (!date) return;
+    if (!date || date === initialDate) return;
     onConfirm(date);
     onClose();
   };
@@ -23,7 +23,7 @@ export function ChangeDateDialog({ initialDate, onClose, onConfirm }: {
             <div className="p-2 bg-brand-primary/10 rounded-xl border border-brand-primary/20">
               <CalendarIcon className="w-4 h-4 text-brand-primary" />
             </div>
-            <h3 className="text-sm font-black text-brand-primary uppercase tracking-tight">Change Date</h3>
+            <h3 className="text-sm font-black text-brand-primary uppercase tracking-tight">Move Entries</h3>
           </div>
           <button
             type="button"
@@ -36,11 +36,14 @@ export function ChangeDateDialog({ initialDate, onClose, onConfirm }: {
         </div>
 
         <div className="p-6 space-y-4">
+          <p className="text-xs text-zinc-500">
+            All entries in this planner will be moved to the date you pick here.
+          </p>
           <div className="space-y-1">
-            <label className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Date</label>
+            <label className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Move To Date</label>
             <input
               type="date"
-              title="Select date"
+              title="Select the date to move all entries to"
               autoFocus
               value={date}
               onChange={(e) => setDate(e.target.value)}
@@ -65,12 +68,12 @@ export function ChangeDateDialog({ initialDate, onClose, onConfirm }: {
             </button>
             <button
               type="button"
-              title="Go to date"
+              title="Move all entries to the selected date"
               onClick={handleConfirm}
-              disabled={!date}
+              disabled={!date || date === initialDate}
               className="px-4 py-2 bg-brand-primary text-white rounded-xl font-bold text-xs hover:bg-brand-primary/90 transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Go
+              Move
             </button>
           </div>
         </div>

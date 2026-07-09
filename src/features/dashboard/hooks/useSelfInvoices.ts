@@ -41,7 +41,7 @@ export function useSelfInvoices() {
     return () => unsubscribe();
   }, [user]);
 
-  const addSelfInvoice = useCallback(async (invoiceIds: string[], totalAmount: number) => {
+  const addSelfInvoice = useCallback(async (invoiceIds: string[], totalAmount: number, invoiceNumberOverride?: string) => {
     if (!user) return null;
     const path = 'self_invoices';
     try {
@@ -50,13 +50,13 @@ export function useSelfInvoices() {
       const snap = await getDocs(query(collection(db, path), where('userId', '==', user.uid)));
       let maxNum = 0;
       snap.forEach(docSnap => {
-        const match = /SELF-(\d+)/.exec(docSnap.data().invoiceNumber || '');
+        const match = /INV(\d+)/.exec(docSnap.data().invoiceNumber || '');
         if (match) {
           const n = parseInt(match[1], 10);
           if (n > maxNum) maxNum = n;
         }
       });
-      const invoiceNumber = `SELF-${String(maxNum + 1).padStart(4, '0')}`;
+      const invoiceNumber = invoiceNumberOverride?.trim() || `INV${String(maxNum + 1).padStart(5, '0')}`;
 
       const docRef = await addDoc(collection(db, path), {
         userId: user.uid,
@@ -107,6 +107,25 @@ export function useSelfInvoices() {
     }
   }, []);
 
+  // Renames an existing self-invoice's number - the only field the click-to-edit
+  // label in SelfInvoiceModal's header touches.
+  const renameSelfInvoice = useCallback(async (id: string, invoiceNumber: string) => {
+    const trimmed = invoiceNumber.trim();
+    if (!trimmed) return false;
+    const path = `self_invoices/${id}`;
+    try {
+      await updateDoc(doc(db, 'self_invoices', id), {
+        invoiceNumber: trimmed,
+        updatedAt: new Date().toISOString()
+      });
+      return true;
+    } catch (err) {
+      console.error('Firestore Rename Self Invoice Error:', err);
+      handleFirestoreError(err, OperationType.UPDATE, path);
+      return false;
+    }
+  }, []);
+
   // Replaces the bundled invoice selection on an existing self-invoice (edit flow) -
   // status/invoiceNumber are left untouched, only the bundle contents change.
   const updateSelfInvoiceInvoices = useCallback(async (id: string, invoiceIds: string[], totalAmount: number) => {
@@ -125,6 +144,35 @@ export function useSelfInvoices() {
     }
   }, []);
 
+  // Records the outcome of a Zoho Books push (see SelfInvoiceModal.handleComplete /
+  // POST /api/zoho/create-invoice) so success/failure is visible and a failed
+  // sync can be retried later without redoing the completion itself.
+  const setSelfInvoiceZohoStatus = useCallback(async (id: string, status: {
+    zohoCustomerId?: string;
+    zohoCustomerName?: string;
+    zohoInvoiceId?: string;
+    zohoInvoiceUrl?: string;
+    zohoSyncError?: string;
+  }) => {
+    const path = `self_invoices/${id}`;
+    try {
+      await updateDoc(doc(db, 'self_invoices', id), {
+        ...(status.zohoCustomerId ? { zohoCustomerId: status.zohoCustomerId } : {}),
+        ...(status.zohoCustomerName ? { zohoCustomerName: status.zohoCustomerName } : {}),
+        ...(status.zohoInvoiceId ? { zohoInvoiceId: status.zohoInvoiceId } : {}),
+        ...(status.zohoInvoiceUrl ? { zohoInvoiceUrl: status.zohoInvoiceUrl } : {}),
+        zohoSyncError: status.zohoSyncError ?? deleteField(),
+        zohoSyncedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+      return true;
+    } catch (err) {
+      console.error('Firestore Update Self Invoice Zoho Status Error:', err);
+      handleFirestoreError(err, OperationType.UPDATE, path);
+      return false;
+    }
+  }, []);
+
   const deleteSelfInvoice = useCallback(async (id: string) => {
     const path = `self_invoices/${id}`;
     try {
@@ -137,5 +185,5 @@ export function useSelfInvoices() {
     }
   }, []);
 
-  return { selfInvoices, loading, addSelfInvoice, completeSelfInvoice, revertSelfInvoice, updateSelfInvoiceInvoices, deleteSelfInvoice };
+  return { selfInvoices, loading, addSelfInvoice, completeSelfInvoice, revertSelfInvoice, updateSelfInvoiceInvoices, setSelfInvoiceZohoStatus, renameSelfInvoice, deleteSelfInvoice };
 }

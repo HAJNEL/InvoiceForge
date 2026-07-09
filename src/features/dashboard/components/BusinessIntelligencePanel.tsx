@@ -553,7 +553,7 @@ export function BusinessIntelligencePanel({
   };
 
   return (
-    <div className="lg:col-span-2 saas-card p-6">
+    <div className="saas-card p-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
           <h3 className="font-black text-xs uppercase tracking-widest text-zinc-400">Business Intelligence & History</h3>

@@ -82,6 +82,22 @@ export function useDayPlanners() {
     }
   }, [user]);
 
+  // Moves every entry from `fromDate` to `toDate`, merging with whatever entries
+  // already exist there (appended after them) rather than overwriting them, then
+  // clears the source day. Used by the "move to date" picker in the Day Planner
+  // dialog, which relocates entries rather than just navigating the view.
+  const moveEntries = useCallback(async (fromDate: string, toDate: string) => {
+    if (!user || fromDate === toDate) return false;
+    const source = planners.find(p => p.date === fromDate);
+    if (!source || source.entries.length === 0) return false;
+    const destination = planners.find(p => p.date === toDate);
+    const mergedEntries = [...(destination?.entries || []), ...source.entries];
+    const saved = await saveEntries(toDate, mergedEntries);
+    if (!saved) return false;
+    await deletePlanner(fromDate);
+    return true;
+  }, [user, planners, saveEntries, deletePlanner]);
+
   // Once the last trip for a date is deleted/moved, its planner no longer has a
   // reason to exist - remove it. Guarded on both loading flags so this never runs
   // against a not-yet-loaded trips or planners list.
@@ -95,5 +111,5 @@ export function useDayPlanners() {
     });
   }, [trips, planners, tripsLoading, loading, deletePlanner]);
 
-  return { planners, loading, tripDates: trips.map(t => t.date), saveEntries, deletePlanner };
+  return { planners, loading, tripDates: trips.map(t => t.date), saveEntries, deletePlanner, moveEntries };
 }

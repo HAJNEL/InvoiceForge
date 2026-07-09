@@ -550,7 +550,6 @@ export function TeamTripDetail() {
 
           const now = new Date().toISOString();
           const today = now.split('T')[0];
-          const ts = Date.now();
 
           for (const [originalInvoiceId, group] of Object.entries(byInvoiceId)) {
             if (group.items.length === 0) continue;
@@ -591,8 +590,8 @@ export function TeamTripDetail() {
               // this redelivery invoice geocodes and displays exactly like its parent.
               userId: profile.ownerId,
               status: 'partially_complete',
-              invoiceNumber: `PARTIAL-${group.invoiceNumber}-${ts}`,
-              taxInvoice: `PARTIAL-${group.invoiceNumber}-${ts}`,
+              invoiceNumber: `PARTIAL-${group.invoiceNumber}`,
+              taxInvoice: `PARTIAL-${group.invoiceNumber}`,
               clientName: rawData.clientName || rawData.customerName || group.schoolName,
               customerName: rawData.customerName || '',
               schoolName: rawData.schoolName || group.schoolName,

@@ -141,6 +141,20 @@ export interface Settings {
   updatedAt: string;
 }
 
+// Lives in its own `zoho_credentials/{uid}` collection (owner-only Firestore
+// rules), never in the publicly-readable `settings` doc - see firestore.rules.
+export interface ZohoCredentials {
+  id: string;
+  userId: string;
+  clientId?: string;
+  clientSecret?: string;
+  refreshToken?: string;
+  organizationId?: string;
+  region?: string; // Zoho data center suffix: 'com' | 'eu' | 'in' | 'com.au' | ... (default 'com')
+  connectedAt?: string; // set on the last successful Test Connection
+  updatedAt: string;
+}
+
 export interface SelfInvoice {
   id: string;
   userId: string;
@@ -148,6 +162,20 @@ export interface SelfInvoice {
   invoiceIds: string[];    // ids of the underlying Invoice docs billed together
   totalAmount: number;     // sum of included invoices' amounts, snapshotted at creation
   status: 'open' | 'completed';
+  // The Zoho Books customer this bundle is linked to, picked by the user from
+  // a picker dialog on Complete (see SelfInvoiceModal.handleComplete /
+  // GET /api/zoho/contacts) - a bundle can combine invoices from different
+  // underlying clients/schools, so this is chosen explicitly rather than
+  // derived from them.
+  zohoCustomerId?: string;
+  zohoCustomerName?: string;
+  // Set once the bundle has been pushed to Zoho Books on Complete (see
+  // POST /api/zoho/create-invoice).
+  zohoInvoiceId?: string;
+  zohoInvoiceUrl?: string;
+  zohoSyncedAt?: string;
+  // Present when the most recent Zoho push failed, so it can be surfaced/retried.
+  zohoSyncError?: string;
   completedAt?: string;
   createdAt: string;
   updatedAt: string;

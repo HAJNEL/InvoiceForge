@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { toast } from 'sonner';
-import { MapPin, Save, Loader2, Warehouse, Navigation, Image as ImageIcon, Upload, Trash2, Check, AlertCircle, Bell, Send } from 'lucide-react';
+import { MapPin, Save, Loader2, Warehouse, Navigation, Image as ImageIcon, Upload, Trash2, Check, AlertCircle, Bell, Send, Link2, Eye, EyeOff, PlugZap, Info, Copy } from 'lucide-react';
 import { APIProvider, Map, AdvancedMarker, Pin, useMapsLibrary } from '@vis.gl/react-google-maps';
 import { useSettings } from './hooks/useSettings';
+import { useZohoCredentials } from './hooks/useZohoCredentials';
 import { sendNotification, TEST_NOTIFICATION } from '../../lib/notifications';
-import { Settings } from '../../types';
+import { testZohoConnection } from '../../lib/zoho';
+import { Settings, ZohoCredentials } from '../../types';
 import { NRLogo } from '../../components/Logo';
 import { TeamMembersSection } from './components/TeamMembersSection';
 
@@ -14,8 +16,26 @@ const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_PLATFORM_KEY || '';
 // (non-blocking) format warning — Pushover's API remains the source of truth.
 const PUSHOVER_KEY_PATTERN = /^[a-zA-Z0-9]{30}$/;
 
+// Scope required when generating the refresh token in the Zoho API Console's
+// Self Client "Generate Code" step - must match what POST /api/zoho/create-invoice
+// and /api/zoho/test-connection (server.ts) actually call: contacts + invoices
+// CRUD, plus settings.READ for the organization lookup in Test Connection.
+const ZOHO_REQUIRED_SCOPE = 'ZohoBooks.invoices.CREATE,ZohoBooks.invoices.READ,ZohoBooks.contacts.CREATE,ZohoBooks.contacts.READ,ZohoBooks.settings.READ';
+
+const ZOHO_REGIONS = [
+  { value: 'com', label: 'United States (.com)' },
+  { value: 'eu', label: 'Europe (.eu)' },
+  { value: 'in', label: 'India (.in)' },
+  { value: 'com.au', label: 'Australia (.com.au)' },
+  { value: 'com.cn', label: 'China (.com.cn)' },
+  { value: 'jp', label: 'Japan (.jp)' },
+  { value: 'ca', label: 'Canada (.ca)' },
+  { value: 'sa', label: 'Saudi Arabia (.sa)' },
+];
+
 export function SettingsPage() {
   const { settings, loading, saveSettings } = useSettings();
+  const { credentials: zohoCredentials, loading: zohoLoading, saveCredentials: saveZohoCredentials } = useZohoCredentials();
   const [address, setAddress] = useState('');
   const [saveStatus, setSaveStatus] = useState<'idle' | 'success' | 'error'>('idle');
 
@@ -143,6 +163,29 @@ export function SettingsPage() {
           </div>
         </div>
 
+        {/* Zoho Books Integration Card */}
+        <div className="bg-white rounded-3xl shadow-sm border border-zinc-200 overflow-hidden">
+          <div className="p-8 space-y-8">
+            <div className="flex items-start gap-4">
+              <div className="p-3 bg-brand-primary/10 rounded-2xl flex-shrink-0">
+                <Link2 className="w-6 h-6 text-brand-primary" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-lg font-bold text-zinc-900 mb-1">Zoho Books Integration</h3>
+                <p className="text-sm text-zinc-500 mb-6">Connect your own Zoho Books account so completed Client Invoices are pushed there automatically.</p>
+
+                {zohoLoading ? (
+                  <div className="flex justify-center py-8">
+                    <Loader2 className="w-6 h-6 text-brand-accent animate-spin" />
+                  </div>
+                ) : (
+                  <ZohoIntegrationCard credentials={zohoCredentials} onSave={saveZohoCredentials} />
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* Team Members Management Section */}
         <TeamMembersSection />
       </div>
@@ -257,6 +300,251 @@ function PushoverKeyCard({
         >
           {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
           Save Key
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ZohoIntegrationCard({
+  credentials,
+  onSave
+}: {
+  credentials: ZohoCredentials | null;
+  onSave: (data: Partial<ZohoCredentials>) => Promise<boolean>;
+}) {
+  const [clientId, setClientId] = useState(credentials?.clientId || '');
+  const [clientSecret, setClientSecret] = useState(credentials?.clientSecret || '');
+  const [refreshToken, setRefreshToken] = useState(credentials?.refreshToken || '');
+  const [organizationId, setOrganizationId] = useState(credentials?.organizationId || '');
+  const [region, setRegion] = useState(credentials?.region || 'com');
+  const [showSecret, setShowSecret] = useState(false);
+  const [showRefreshToken, setShowRefreshToken] = useState(false);
+  const [showScopeInfo, setShowScopeInfo] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isTesting, setIsTesting] = useState(false);
+  const [status, setStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  const handleCopyScope = async () => {
+    try {
+      await navigator.clipboard.writeText(ZOHO_REQUIRED_SCOPE);
+      toast.success('Scope copied to clipboard');
+    } catch (err) {
+      console.error('Clipboard write failed:', err);
+      toast.error('Could not copy to clipboard');
+    }
+  };
+
+  useEffect(() => {
+    setClientId(credentials?.clientId || '');
+    setClientSecret(credentials?.clientSecret || '');
+    setRefreshToken(credentials?.refreshToken || '');
+    setOrganizationId(credentials?.organizationId || '');
+    setRegion(credentials?.region || 'com');
+  }, [credentials]);
+
+  const draft = {
+    clientId: clientId.trim(),
+    clientSecret: clientSecret.trim(),
+    refreshToken: refreshToken.trim(),
+    organizationId: organizationId.trim(),
+    region: region.trim() || 'com',
+  };
+  const isDirty =
+    draft.clientId !== (credentials?.clientId || '') ||
+    draft.clientSecret !== (credentials?.clientSecret || '') ||
+    draft.refreshToken !== (credentials?.refreshToken || '') ||
+    draft.organizationId !== (credentials?.organizationId || '') ||
+    draft.region !== (credentials?.region || 'com');
+  const isComplete = !!(draft.clientId && draft.clientSecret && draft.refreshToken && draft.organizationId);
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    setStatus(null);
+    const success = await onSave(draft);
+    setIsSaving(false);
+    setStatus(success
+      ? { type: 'success', message: 'Zoho Books connection saved.' }
+      : { type: 'error', message: 'Failed to save your Zoho Books connection.' });
+    if (success) setTimeout(() => setStatus(null), 3000);
+  };
+
+  const handleTest = async () => {
+    setIsTesting(true);
+    setStatus(null);
+    const result = await testZohoConnection(draft);
+    setIsTesting(false);
+    if (result.success) {
+      setStatus({ type: 'success', message: result.organizationName ? `Connected to "${result.organizationName}".` : 'Connection successful.' });
+      // Record the successful check on the saved doc without requiring the
+      // user to hit Save again, but only when the tested values are already
+      // what's persisted - otherwise Save is what actually stores them.
+      if (!isDirty) await onSave({ connectedAt: new Date().toISOString() });
+    } else {
+      setStatus({ type: 'error', message: result.error });
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <label className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Client ID</label>
+          <input
+            type="text"
+            title="Zoho Self Client ID from api-console.zoho.com"
+            value={clientId}
+            onChange={(e) => setClientId(e.target.value)}
+            placeholder="1000.XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            className="w-full px-4 py-3 border border-zinc-200 rounded-xl font-mono text-sm focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent transition-all bg-zinc-50/50"
+          />
+        </div>
+
+        <div className="space-y-2">
+          <label className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Organization ID</label>
+          <input
+            type="text"
+            title="Zoho Books Organization ID from Settings -> Organization Profile"
+            value={organizationId}
+            onChange={(e) => setOrganizationId(e.target.value)}
+            placeholder="e.g. 925627406"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            className="w-full px-4 py-3 border border-zinc-200 rounded-xl font-mono text-sm focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent transition-all bg-zinc-50/50"
+          />
+        </div>
+
+        <div className="space-y-2">
+          <label className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Client Secret</label>
+          <div className="relative">
+            <input
+              type={showSecret ? 'text' : 'password'}
+              title="Zoho Self Client Secret from api-console.zoho.com"
+              value={clientSecret}
+              onChange={(e) => setClientSecret(e.target.value)}
+              placeholder="Client Secret"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              className="w-full pl-4 pr-11 py-3 border border-zinc-200 rounded-xl font-mono text-sm focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent transition-all bg-zinc-50/50"
+            />
+            <button
+              type="button"
+              title={showSecret ? 'Hide Client Secret' : 'Show Client Secret'}
+              onClick={() => setShowSecret(v => !v)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600"
+            >
+              {showSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            </button>
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <div className="flex items-center gap-1.5">
+            <label className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Refresh Token</label>
+            <button
+              type="button"
+              title="Show the OAuth scope required to generate this token"
+              onClick={() => setShowScopeInfo(v => !v)}
+              className={`text-zinc-400 hover:text-brand-primary transition-colors ${showScopeInfo ? 'text-brand-primary' : ''}`}
+            >
+              <Info className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          <div className="relative">
+            <input
+              type={showRefreshToken ? 'text' : 'password'}
+              title="Zoho refresh token generated during the Self Client setup"
+              value={refreshToken}
+              onChange={(e) => setRefreshToken(e.target.value)}
+              placeholder="Refresh Token"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              className="w-full pl-4 pr-11 py-3 border border-zinc-200 rounded-xl font-mono text-sm focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent transition-all bg-zinc-50/50"
+            />
+            <button
+              type="button"
+              title={showRefreshToken ? 'Hide Refresh Token' : 'Show Refresh Token'}
+              onClick={() => setShowRefreshToken(v => !v)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600"
+            >
+              {showRefreshToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            </button>
+          </div>
+          {showScopeInfo && (
+            <div className="flex items-center gap-2 bg-zinc-50 border border-zinc-200 rounded-xl px-3 py-2">
+              <code className="flex-1 text-[10px] font-mono text-zinc-600 break-all">{ZOHO_REQUIRED_SCOPE}</code>
+              <button
+                type="button"
+                title="Copy scope to clipboard"
+                onClick={handleCopyScope}
+                className="shrink-0 p-1.5 text-zinc-400 hover:text-brand-primary hover:bg-white rounded-lg border border-transparent hover:border-zinc-200 transition-all"
+              >
+                <Copy className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+          {showScopeInfo && (
+            <p className="text-[10px] text-zinc-400">
+              Paste this into the "Scope" field on the Generate Code tab in the Zoho API Console when creating your Self Client's refresh token.
+            </p>
+          )}
+        </div>
+
+        <div className="space-y-2">
+          <label className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Data Center</label>
+          <select
+            title="Zoho data center your organization is hosted on"
+            value={region}
+            onChange={(e) => setRegion(e.target.value)}
+            className="w-full px-4 py-3 border border-zinc-200 rounded-xl text-sm focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent transition-all bg-zinc-50/50"
+          >
+            {ZOHO_REGIONS.map(r => (
+              <option key={r.value} value={r.value}>{r.label}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {credentials?.connectedAt && !status && (
+        <p className="text-xs text-zinc-400">Last verified {new Date(credentials.connectedAt).toLocaleString()}.</p>
+      )}
+
+      {status && (
+        <div className={`flex items-center gap-2 text-xs font-medium px-4 py-2.5 rounded-xl border ${
+          status.type === 'success'
+            ? 'text-emerald-600 bg-emerald-50/50 border-emerald-100'
+            : 'text-red-500 bg-red-50/50 border-red-100'
+        }`}>
+          {status.type === 'success' ? <Check className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
+          <span>{status.message}</span>
+        </div>
+      )}
+
+      <div className="flex justify-end gap-3">
+        <button
+          type="button"
+          onClick={handleTest}
+          disabled={!isComplete || isTesting}
+          title={isComplete ? 'Test this Zoho Books connection' : 'Fill in all fields to test the connection'}
+          className="flex items-center gap-2 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 px-5 py-2.5 rounded-xl font-bold text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {isTesting ? <Loader2 className="w-4 h-4 animate-spin" /> : <PlugZap className="w-4 h-4" />}
+          Test Connection
+        </button>
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={isSaving || !isDirty}
+          className="flex items-center gap-2 bg-brand-primary text-white px-6 py-2.5 rounded-xl font-bold text-sm hover:bg-brand-primary/90 transition-all shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+          Save Connection
         </button>
       </div>
     </div>

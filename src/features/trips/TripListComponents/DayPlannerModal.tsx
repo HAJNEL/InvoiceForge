@@ -4,13 +4,15 @@ import { DayPlannerEntry } from '../../../types';
 import { DayPlannerEditor } from './DayPlannerEditor';
 import { ChangeDateDialog } from './ChangeDateDialog';
 
-export function DayPlannerModal({ date, dateLabel, entries, onClose, onSave, onDateChange, completedByName }: {
+export function DayPlannerModal({ date, dateLabel, entries, onClose, onSave, onMoveToDate, completedByName }: {
   date: string;
   dateLabel: string;
   entries: DayPlannerEntry[];
   onClose: () => void;
   onSave: (entries: DayPlannerEntry[]) => Promise<boolean>;
-  onDateChange: (newDate: string) => void;
+  // Moves all entries currently shown here to a different date (does not just
+  // change which date's planner is being viewed).
+  onMoveToDate: (newDate: string) => void;
   completedByName: string;
 }) {
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -23,7 +25,7 @@ export function DayPlannerModal({ date, dateLabel, entries, onClose, onSave, onD
           <div className="flex items-center gap-3">
             <button
               type="button"
-              title="Change date"
+              title="Move entries to a different date"
               onClick={() => setShowDatePicker(true)}
               className="p-2 bg-brand-primary/10 rounded-xl border border-brand-primary/20 hover:bg-brand-primary/20 transition-all cursor-pointer"
             >
@@ -52,7 +54,7 @@ export function DayPlannerModal({ date, dateLabel, entries, onClose, onSave, onD
         <ChangeDateDialog
           initialDate={date}
           onClose={() => setShowDatePicker(false)}
-          onConfirm={onDateChange}
+          onConfirm={onMoveToDate}
         />
       )}
     </div>

@@ -51,6 +51,9 @@ service cloud.firestore {
     function isValidTask(data) { return true; }
     function isValidDayPlanner(data) { return true; }
     function isValidSelfInvoice(data) { return true; }
+    function isValidClientDistance(data) { return true; }
+    function isValidZohoCredentials(data) { return true; }
+    function isValidFuelLog(data) { return true; }
 
     match /invoices/{invoiceId} {
       allow get: if isSignedIn() && (resource == null || isOwner(resource.data) || isTeamMemberOfOwner(resource.data.userId));
@@ -258,6 +261,44 @@ service cloud.firestore {
       allow delete: if isOwner(existing()) || isTeamMemberOfOwner(existing().userId);
     }
 
+    // Per-user Zoho Books OAuth credentials (client id/secret/refresh token).
+    // Deliberately NOT under /settings (that collection is publicly readable
+    // for branding purposes) and NOT shared with team members - strictly the
+    // account owner only, doc id == their own uid.
+    match /zoho_credentials/{uid} {
+      allow get: if isSignedIn() && request.auth.uid == uid;
+      allow list: if false;
+
+      allow create: if isSignedIn()
+        && request.auth.uid == uid
+        && isValidId(uid)
+        && isValidZohoCredentials(incoming())
+        && incoming().userId == uid;
+
+      allow update: if isSignedIn()
+        && request.auth.uid == uid
+        && isValidZohoCredentials(incoming())
+        && incoming().userId == uid;
+
+      allow delete: if isSignedIn() && request.auth.uid == uid;
+    }
+
+    match /client_distances/{recordId} {
+      allow get: if isSignedIn() && (resource == null || isOwner(resource.data) || isTeamMemberOfOwner(resource.data.userId));
+      allow list: if isSignedIn() && (resource == null || resource.data.userId == request.auth.uid || isTeamMember());
+
+      allow create: if isSignedIn()
+        && isValidId(recordId)
+        && isValidClientDistance(incoming())
+        && (incoming().userId == request.auth.uid || isTeamMemberOfOwner(incoming().userId));
+
+      allow update: if (isOwner(existing()) || isTeamMemberOfOwner(existing().userId))
+        && isValidClientDistance(incoming())
+        && incoming().userId == existing().userId;
+
+      allow delete: if isOwner(existing()) || isTeamMemberOfOwner(existing().userId);
+    }
+
     match /day_planners/{plannerId} {
       allow get: if isSignedIn() && (resource == null || isOwner(resource.data) || isTeamMemberOfOwner(resource.data.userId));
       allow list: if isSignedIn() && (resource == null || resource.data.userId == request.auth.uid || isTeamMember());
@@ -269,6 +310,22 @@ service cloud.firestore {
 
       allow update: if (isOwner(existing()) || isTeamMemberOfOwner(existing().userId))
         && isValidDayPlanner(incoming())
+        && incoming().userId == existing().userId;
+
+      allow delete: if isOwner(existing()) || isTeamMemberOfOwner(existing().userId);
+    }
+
+    match /fuel_logs/{fuelLogId} {
+      allow get: if isSignedIn() && (resource == null || isOwner(resource.data) || isTeamMemberOfOwner(resource.data.userId));
+      allow list: if isSignedIn() && (resource == null || resource.data.userId == request.auth.uid || isTeamMember());
+
+      allow create: if isSignedIn()
+        && isValidId(fuelLogId)
+        && isValidFuelLog(incoming())
+        && (incoming().userId == request.auth.uid || isTeamMemberOfOwner(incoming().userId));
+
+      allow update: if (isOwner(existing()) || isTeamMemberOfOwner(existing().userId))
+        && isValidFuelLog(incoming())
         && incoming().userId == existing().userId;
 
       allow delete: if isOwner(existing()) || isTeamMemberOfOwner(existing().userId);

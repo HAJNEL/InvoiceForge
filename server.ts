@@ -1195,6 +1195,314 @@ app.post("/api/notify", notifyLimiter, requireAuth, async (req, res) => {
   return res.json({ success: true });
 });
 
+// ---------------------------------------------------------------------------
+// Zoho Books integration - push completed Client Invoices to Zoho Books.
+// Each user connects their own Zoho org from Settings; credentials live in the
+// owner-only `zoho_credentials/{uid}` Firestore collection (never the public
+// `settings` doc) and are only ever read server-side via the Admin SDK.
+// ---------------------------------------------------------------------------
+
+interface ZohoCredentials {
+  clientId: string;
+  clientSecret: string;
+  refreshToken: string;
+  organizationId: string;
+  region: string;
+}
+
+async function getZohoCredentialsForUser(uid: string): Promise<ZohoCredentials> {
+  const snap = await getAdminFirestore().collection("zoho_credentials").doc(uid).get();
+  const data = snap.exists ? snap.data() : undefined;
+  const clientId = typeof data?.clientId === "string" ? data.clientId.trim() : "";
+  const clientSecret = typeof data?.clientSecret === "string" ? data.clientSecret.trim() : "";
+  const refreshToken = typeof data?.refreshToken === "string" ? data.refreshToken.trim() : "";
+  const organizationId = typeof data?.organizationId === "string" ? data.organizationId.trim() : "";
+  const region = typeof data?.region === "string" && data.region.trim() ? data.region.trim() : "com";
+  if (!clientId || !clientSecret || !refreshToken || !organizationId) {
+    throw new Error("Zoho Books is not connected. Configure it in Settings first.");
+  }
+  return { clientId, clientSecret, refreshToken, organizationId, region };
+}
+
+// Maps a Zoho data-center region to its accounts/API/app domains.
+// See https://www.zoho.com/books/api/v3/ - defaults to the US data center.
+function getZohoDomains(region: string): { accountsDomain: string; apiDomain: string; appDomain: string } {
+  const cleanRegion = (region || "com").trim().toLowerCase();
+  return {
+    accountsDomain: `accounts.zoho.${cleanRegion}`,
+    apiDomain: `www.zohoapis.${cleanRegion}`,
+    appDomain: `books.zoho.${cleanRegion}`,
+  };
+}
+
+interface ZohoTokenResponse {
+  access_token?: string;
+  expires_in?: number;
+  error?: string;
+}
+
+// In-memory access token cache, keyed by uid - access tokens last ~1hr; a 60s
+// safety buffer avoids using one that expires mid-request.
+const zohoAccessTokens = new Map<string, { token: string; expiresAt: number }>();
+
+async function getZohoAccessToken(uid: string, creds: ZohoCredentials): Promise<string> {
+  const cached = zohoAccessTokens.get(uid);
+  if (cached && cached.expiresAt > Date.now() + 60000) {
+    return cached.token;
+  }
+
+  const { accountsDomain } = getZohoDomains(creds.region);
+  const params = new URLSearchParams({
+    grant_type: "refresh_token",
+    client_id: creds.clientId,
+    client_secret: creds.clientSecret,
+    refresh_token: creds.refreshToken,
+  }).toString();
+
+  const response = await makeRequest(
+    `https://${accountsDomain}/oauth/v2/token`,
+    { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, timeout: 15000 },
+    params
+  );
+  const data = (await response.json()) as ZohoTokenResponse;
+  if (!response.ok || !data.access_token) {
+    throw new Error(`Failed to refresh Zoho access token: ${data.error || response.statusText || "unknown error"}`);
+  }
+
+  const token = {
+    token: data.access_token,
+    expiresAt: Date.now() + (data.expires_in ? data.expires_in * 1000 : 3600000),
+  };
+  zohoAccessTokens.set(uid, token);
+  return token.token;
+}
+
+// Thin wrapper around a Zoho Books API call: attaches the access token,
+// organization_id, and parses the JSON body (Zoho errors come back as 200 OK
+// with a non-zero "code" field, so callers must check that too).
+async function zohoRequest(
+  uid: string,
+  creds: ZohoCredentials,
+  path: string,
+  options: { method?: string; query?: Record<string, string>; body?: unknown } = {}
+): Promise<{ ok: boolean; status?: number; data: Record<string, unknown> }> {
+  const accessToken = await getZohoAccessToken(uid, creds);
+  const { apiDomain } = getZohoDomains(creds.region);
+
+  const query = new URLSearchParams({ organization_id: creds.organizationId, ...(options.query || {}) }).toString();
+  const url = `https://${apiDomain}/books/v3${path}?${query}`;
+  const bodyStr = options.body ? JSON.stringify(options.body) : null;
+
+  const response = await makeRequest(
+    url,
+    {
+      method: options.method || "GET",
+      headers: {
+        Authorization: `Zoho-oauthtoken ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      timeout: 20000,
+    },
+    bodyStr
+  );
+  const data = (await response.json()) as Record<string, unknown>;
+  return { ok: response.ok, status: response.status, data };
+}
+
+interface ZohoContact {
+  contact_id: string;
+  contact_name: string;
+}
+
+// Lists every active contact in the org (paginated, 200/page) so the client
+// can offer a picker at Complete time - invoices are linked to a customer the
+// user explicitly chooses rather than one matched/created by name.
+async function listZohoContacts(uid: string, creds: ZohoCredentials): Promise<{ id: string; name: string }[]> {
+  const contacts: { id: string; name: string }[] = [];
+  let page = 1;
+  // Cap at 10 pages (2000 contacts) - far beyond what this app's customer
+  // base needs, just a safety net against an unbounded loop.
+  for (; page <= 10; page++) {
+    const res = await zohoRequest(uid, creds, "/contacts", {
+      query: { per_page: "200", page: String(page), sort_column: "contact_name" },
+    });
+    if (!res.ok || Number(res.data.code) !== 0) {
+      throw new Error(`Zoho contact list failed: ${res.data.message || "unknown error"}`);
+    }
+    const pageContacts = (res.data.contacts as ZohoContact[] | undefined) || [];
+    contacts.push(...pageContacts.map(c => ({ id: c.contact_id, name: c.contact_name })));
+    const hasMore = (res.data.page_context as { has_more_page?: boolean } | undefined)?.has_more_page;
+    if (!hasMore) break;
+  }
+  return contacts;
+}
+
+interface ZohoLineItemInput {
+  description: string;
+  quantity: number;
+  rate: number;
+}
+
+interface ZohoInvoiceResult {
+  invoiceId: string;
+  invoiceUrl: string;
+}
+
+async function createZohoInvoice(uid: string, creds: ZohoCredentials, params: {
+  customerId: string;
+  invoiceNumber: string;
+  invoiceDate?: string;
+  lineItems: ZohoLineItemInput[];
+}): Promise<ZohoInvoiceResult> {
+  const { appDomain } = getZohoDomains(creds.region);
+  const body: Record<string, unknown> = {
+    customer_id: params.customerId,
+    // Requires auto-numbering to be disabled in Zoho Books (Settings ->
+    // Invoices -> Auto-generate Invoice Number), otherwise Zoho rejects a
+    // custom invoice_number that doesn't match its own sequence.
+    invoice_number: params.invoiceNumber,
+    line_items: params.lineItems.map(li => ({
+      description: li.description,
+      quantity: li.quantity,
+      rate: li.rate,
+    })),
+  };
+  if (params.invoiceDate) body.date = params.invoiceDate;
+
+  const res = await zohoRequest(uid, creds, "/invoices", { method: "POST", body });
+  if (!res.ok || Number(res.data.code) !== 0) {
+    throw new Error(`Zoho invoice creation failed: ${res.data.message || "unknown error"}`);
+  }
+  const invoice = res.data.invoice as { invoice_id: string };
+  return {
+    invoiceId: invoice.invoice_id,
+    invoiceUrl: `https://${appDomain}/app#/invoices/${invoice.invoice_id}`,
+  };
+}
+
+// POST /api/zoho/test-connection - verifies a set of Zoho credentials work,
+// without requiring them to be saved first (so Settings can offer "Test" on
+// an unsaved edit). Body carries the candidate credentials directly since
+// they may not exist in Firestore yet.
+app.post("/api/zoho/test-connection", adminLimiter, requireAuth, async (req, res) => {
+  const callerUid = (req as AuthedRequest).authUid;
+  const { clientId, clientSecret, refreshToken, organizationId, region } = (req.body ?? {}) as {
+    clientId?: unknown; clientSecret?: unknown; refreshToken?: unknown; organizationId?: unknown; region?: unknown;
+  };
+
+  const creds: ZohoCredentials = {
+    clientId: typeof clientId === "string" ? clientId.trim() : "",
+    clientSecret: typeof clientSecret === "string" ? clientSecret.trim() : "",
+    refreshToken: typeof refreshToken === "string" ? refreshToken.trim() : "",
+    organizationId: typeof organizationId === "string" ? organizationId.trim() : "",
+    region: typeof region === "string" && region.trim() ? region.trim() : "com",
+  };
+  if (!creds.clientId || !creds.clientSecret || !creds.refreshToken || !creds.organizationId) {
+    return res.status(400).json({ success: false, error: "Client ID, Client Secret, Refresh Token and Organization ID are all required." });
+  }
+
+  // Use a throwaway cache key so a failed test doesn't poison the real cache
+  // entry (and a stale test-token can't leak into create-invoice calls).
+  const testUid = `test:${callerUid}`;
+  try {
+    await getZohoAccessToken(testUid, creds);
+    // Verify with /contacts, not /organizations - it only needs the same
+    // ZohoBooks.contacts.READ scope create-invoice already requires, whereas
+    // /organizations needs ZohoBooks.settings.READ, which a token generated
+    // before that scope existed in our setup instructions won't have.
+    const contactsRes = await zohoRequest(testUid, creds, "/contacts", { query: { per_page: "1" } });
+    if (!contactsRes.ok || Number(contactsRes.data.code) !== 0) {
+      throw new Error(`${contactsRes.data.message || "Could not read contacts from Zoho Books. Check the organization ID and that the token has the contacts/invoices scopes."}`);
+    }
+
+    // Org name is a nice-to-have for the success message, not a requirement -
+    // a token without ZohoBooks.settings.READ still passes the test above.
+    let organizationName: string | null = null;
+    try {
+      const orgRes = await zohoRequest(testUid, creds, `/organizations/${encodeURIComponent(creds.organizationId)}`);
+      if (orgRes.ok && Number(orgRes.data.code) === 0) {
+        organizationName = (orgRes.data.organization as { name?: string } | undefined)?.name || null;
+      }
+    } catch {
+      // Ignore - organization name is optional.
+    }
+
+    console.log(`[AUDIT] zoho test-connection OK caller=${callerUid} org=${organizationName || creds.organizationId}`);
+    return res.json({ success: true, organizationName });
+  } catch (error: unknown) {
+    const err = error as Error;
+    console.warn(`[AUDIT] zoho test-connection FAILED caller=${callerUid}:`, err.message || err);
+    return res.status(400).json({ success: false, error: err.message || "Could not connect to Zoho Books with these credentials." });
+  } finally {
+    zohoAccessTokens.delete(testUid);
+  }
+});
+
+// GET /api/zoho/contacts - lists the caller's Zoho Books customers, for the
+// "choose who this invoice is linked to" picker shown on Complete.
+app.get("/api/zoho/contacts", notifyLimiter, requireAuth, async (req, res) => {
+  const callerUid = (req as AuthedRequest).authUid;
+  try {
+    const creds = await getZohoCredentialsForUser(callerUid);
+    const contacts = await listZohoContacts(callerUid, creds);
+    return res.json({ success: true, contacts });
+  } catch (error: unknown) {
+    const err = error as Error;
+    console.error(`[AUDIT] zoho list-contacts FAILED caller=${callerUid}:`, err.message || err);
+    return res.status(500).json({ success: false, error: err.message || "Failed to load customers from Zoho Books." });
+  }
+});
+
+// POST /api/zoho/create-invoice - pushes a completed Client Invoice bundle to
+// Zoho Books as an invoice, linked to a customer the user explicitly picked
+// (see GET /api/zoho/contacts), using the caller's own saved Zoho connection.
+// Body: { customerId, invoiceNumber, invoiceDate?, lineItems }. Called from
+// SelfInvoiceModal.handleComplete once the bundle is marked completed in
+// Firestore; a Zoho failure here does not roll that back, it's surfaced to
+// the user to retry.
+app.post("/api/zoho/create-invoice", notifyLimiter, requireAuth, async (req, res) => {
+  const callerUid = (req as AuthedRequest).authUid;
+  const { customerId, invoiceNumber, invoiceDate, lineItems } = (req.body ?? {}) as {
+    customerId?: unknown; invoiceNumber?: unknown; invoiceDate?: unknown; lineItems?: unknown;
+  };
+
+  const custId = typeof customerId === "string" ? customerId.trim() : "";
+  const number = typeof invoiceNumber === "string" ? invoiceNumber.trim() : "";
+  if (!custId) {
+    return res.status(400).json({ success: false, error: "A Zoho customer must be selected." });
+  }
+  if (!number) {
+    return res.status(400).json({ success: false, error: "An invoice number is required." });
+  }
+  if (!Array.isArray(lineItems) || lineItems.length === 0) {
+    return res.status(400).json({ success: false, error: "At least one line item is required." });
+  }
+  const items: ZohoLineItemInput[] = lineItems.map((raw) => {
+    const item = (raw ?? {}) as Record<string, unknown>;
+    return {
+      description: String(item.description || "").slice(0, 500),
+      quantity: typeof item.quantity === "number" ? item.quantity : parseFloat(String(item.quantity || "1")) || 1,
+      rate: typeof item.rate === "number" ? item.rate : parseFloat(String(item.rate || "0")) || 0,
+    };
+  });
+
+  try {
+    const creds = await getZohoCredentialsForUser(callerUid);
+    const invoice = await createZohoInvoice(callerUid, creds, {
+      customerId: custId,
+      invoiceNumber: number,
+      invoiceDate: typeof invoiceDate === "string" ? invoiceDate : undefined,
+      lineItems: items,
+    });
+    console.log(`[AUDIT] zoho create-invoice OK caller=${callerUid} invoice=${number} zohoInvoiceId=${invoice.invoiceId}`);
+    return res.json({ success: true, zohoInvoiceId: invoice.invoiceId, zohoInvoiceUrl: invoice.invoiceUrl });
+  } catch (error: unknown) {
+    const err = error as Error;
+    console.error(`[AUDIT] zoho create-invoice FAILED caller=${callerUid} invoice=${number}:`, err.message || err);
+    return res.status(500).json({ success: false, error: err.message || "Failed to create invoice in Zoho Books." });
+  }
+});
+
 function findFreePort(startPort: number, maxAttempts = 100): Promise<number> {
   return new Promise((resolve, reject) => {
     if (maxAttempts <= 0) {

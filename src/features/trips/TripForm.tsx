@@ -6,7 +6,7 @@ import {
   ArrowLeft, Plus, AlertCircle,
   X, Package, FileText, Search, Truck, Navigation, Calendar as CalendarIcon, TrendingUp,
   Check, RotateCcw, Share2, AlertTriangle, Clock, Fuel, Bed, Coffee, GripVertical,
-  Maximize2, Minimize2, MapPin, Trash2
+  Maximize2, Minimize2, MapPin, Trash2, ArrowRightLeft
 } from 'lucide-react';
 import { PartialConfirmModal } from '../../components/PartialConfirmModal';
 import { EditInvoiceModal } from '../../components/EditInvoiceModal';
@@ -22,6 +22,7 @@ import { GeocodedInvoice } from './tripFormComponents/types';
 import { CapacityProgressBar } from './tripFormComponents/CapacityProgressBar';
 import { InteractiveTripMap } from './tripFormComponents/InteractiveTripMap';
 import { CustomStopModal } from './tripFormComponents/CustomStopModal';
+import { MoveInvoiceModal } from './tripFormComponents/MoveInvoiceModal';
 import { InvoiceDetailsPanel } from './TripListComponents/InvoiceDetailsPanel';
 
 const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_PLATFORM_KEY || '';
@@ -54,6 +55,8 @@ export function TripForm() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [originalInvoiceIds, setOriginalInvoiceIds] = useState<string[]>([]);
   const hasInitializedRef = useRef(false);
+  const nameManuallyEditedRef = useRef(false);
+  const skipNextAutoNameRef = useRef(false);
   const [checkedItems, setCheckedItems] = useState<{ [key: string]: boolean }>({});
   const [copied, setCopied] = useState(false);
 
@@ -98,6 +101,8 @@ export function TripForm() {
   });
   const [selectedInvoice, setSelectedInvoice] = useState<GeocodedInvoice | null>(null);
   const [editingInvoice, setEditingInvoice] = useState<UIInvoice | null>(null);
+  // The invoice stop currently being moved to another trip, via MoveInvoiceModal.
+  const [movingStop, setMovingStop] = useState<TripStop | null>(null);
 
   // Fullscreen map mode: shows the same pin filters plus a left sidebar with the
   // route stops list and selected invoice details, mirroring the trips list screen.
@@ -179,6 +184,7 @@ export function TripForm() {
         }
 
         hasInitializedRef.current = true;
+        skipNextAutoNameRef.current = true;
         if (trip.truckId) {
           localStorage.setItem('last_selected_truck_id', trip.truckId);
         }
@@ -280,7 +286,7 @@ export function TripForm() {
 
   // Auto-generate trip name on truck selection or date change based on convention: (Day abbreviation) - (Truck Name) - (trip number)
   useEffect(() => {
-    if ((!isEditMode || hasInitializedRef.current) && formData.truckId && formData.date && trucks.length > 0) {
+    if (!nameManuallyEditedRef.current && (!isEditMode || hasInitializedRef.current) && formData.truckId && formData.date && trucks.length > 0) {
       const activeTruck = trucks.find(t => t.id === formData.truckId);
       if (activeTruck) {
         // Find other trips for this truck on the same day
@@ -312,6 +318,16 @@ export function TripForm() {
         const dayAbbrev = daysOfWeek[dateObj.getDay()];
 
         const generatedName = `${dayAbbrev} - ${activeTruck.name} - ${tripNumber}`;
+
+        if (skipNextAutoNameRef.current) {
+          skipNextAutoNameRef.current = false;
+          if (formData.name !== generatedName) {
+            // The saved name doesn't match the auto-generated pattern, so it's a
+            // custom name — lock it so future truck/date changes don't clobber it.
+            nameManuallyEditedRef.current = true;
+          }
+          return;
+        }
 
         setFormData(prev => {
           if (prev.name !== generatedName) {
@@ -485,6 +501,58 @@ export function TripForm() {
       }));
       setStops(prev => [...prev, newStop]);
     }
+  };
+
+  // Removes the currently-moving stop from this trip's own state, and - if this
+  // trip is already saved - persists that removal immediately so the invoice
+  // doesn't end up double-booked on both trips.
+  const removeMovingStopFromThisTrip = async (invoiceId: string) => {
+    const nextInvoiceIds = formData.invoiceIds.filter(iid => iid !== invoiceId);
+    const nextStops = stops.filter(s => s.invoiceId !== invoiceId);
+    setFormData(prev => ({ ...prev, invoiceIds: nextInvoiceIds }));
+    setStops(nextStops);
+    if (isEditMode && id) {
+      await updateTrip(id, { invoiceIds: nextInvoiceIds, stops: nextStops });
+    }
+  };
+
+  const handleMoveToExistingTrip = async (destTripId: string) => {
+    if (!movingStop?.invoiceId) return;
+    const destTrip = trips.find(t => t.id === destTripId);
+    if (!destTrip) return;
+
+    await removeMovingStopFromThisTrip(movingStop.invoiceId);
+    await updateTrip(destTripId, {
+      invoiceIds: [...destTrip.invoiceIds, movingStop.invoiceId],
+      stops: [...(destTrip.stops || []), movingStop]
+    });
+
+    toast.success('Invoice Moved', { description: `Moved to "${destTrip.name}".` });
+    setMovingStop(null);
+  };
+
+  const handleCreateTripAndMove = async (data: { name: string; date: string; truckId: string }) => {
+    if (!movingStop?.invoiceId) return;
+    const truck = trucks.find(t => t.id === data.truckId);
+
+    const newTripId = await addTrip({
+      name: data.name,
+      date: data.date,
+      truckId: data.truckId,
+      truckName: truck?.name || '',
+      status: TripStatus.PROPOSED,
+      invoiceIds: [movingStop.invoiceId],
+      stops: [movingStop]
+    });
+
+    if (!newTripId) {
+      toast.error('Could Not Create Trip', { description: 'The invoice was not moved.' });
+      return;
+    }
+
+    await removeMovingStopFromThisTrip(movingStop.invoiceId);
+    toast.success('Trip Created & Invoice Moved', { description: `Moved to "${data.name}".` });
+    setMovingStop(null);
   };
 
   const handleDragStart = (e: React.DragEvent, index: number) => {
@@ -722,15 +790,31 @@ export function TripForm() {
                   {idx + 1}
                 </div>
 
-                {/* Category Icon */}
-                <div className="p-2 bg-zinc-100 rounded-xl shrink-0 group-hover:bg-brand-primary/10 transition-colors">
-                  {stop.type === 'Refuel' && <Fuel className="w-4 h-4 text-amber-500" />}
-                  {stop.type === 'Sleep' && <Bed className="w-4 h-4 text-blue-500" />}
-                  {stop.type === 'Rest' && <Coffee className="w-4 h-4 text-emerald-500" />}
-                  {stop.type === 'Delivery' && <Package className="w-4 h-4 text-zinc-600" />}
-                  {stop.type === 'Pickup' && <Truck className="w-4 h-4 text-indigo-500" />}
-                  {!['Refuel', 'Sleep', 'Rest', 'Delivery', 'Pickup'].includes(stop.type || '') && <Clock className="w-4 h-4 text-purple-500" />}
-                </div>
+                {/* Category Icon - for invoice stops this is an actual button that opens
+                    the "move to another trip" picker; custom (non-invoice) stops keep the
+                    plain, non-interactive type icon since there's no invoice to move. */}
+                {isInvoice ? (
+                  <button
+                    type="button"
+                    title="Move this invoice to another trip"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setMovingStop(stop);
+                    }}
+                    className="p-2 bg-zinc-100 hover:bg-brand-primary hover:text-white rounded-xl shrink-0 transition-colors cursor-pointer group/move"
+                  >
+                    <ArrowRightLeft className="w-4 h-4 text-zinc-600 group-hover/move:text-white" />
+                  </button>
+                ) : (
+                  <div className="p-2 bg-zinc-100 rounded-xl shrink-0 group-hover:bg-brand-primary/10 transition-colors">
+                    {stop.type === 'Refuel' && <Fuel className="w-4 h-4 text-amber-500" />}
+                    {stop.type === 'Sleep' && <Bed className="w-4 h-4 text-blue-500" />}
+                    {stop.type === 'Rest' && <Coffee className="w-4 h-4 text-emerald-500" />}
+                    {stop.type === 'Delivery' && <Package className="w-4 h-4 text-zinc-600" />}
+                    {stop.type === 'Pickup' && <Truck className="w-4 h-4 text-indigo-500" />}
+                    {!['Refuel', 'Sleep', 'Rest', 'Delivery', 'Pickup'].includes(stop.type || '') && <Clock className="w-4 h-4 text-purple-500" />}
+                  </div>
+                )}
 
                 {/* Stop details */}
                 <div className="flex-1 min-w-0">
@@ -1247,13 +1331,17 @@ export function TripForm() {
               <div className="space-y-4">
                 {/* Trip name */}
                 <div className="space-y-1">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Trip Name (Auto-Generated)</label>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Trip Name</label>
                   <input
+                    title="Trip Name"
                     type="text"
                     required
-                    disabled
                     value={formData.name}
-                    className="w-full px-4 py-2.5 bg-zinc-50 border border-zinc-200 text-zinc-500 rounded-xl cursor-not-allowed text-sm font-bold shadow-inner"
+                    onChange={(e) => {
+                      nameManuallyEditedRef.current = true;
+                      setFormData({ ...formData, name: e.target.value });
+                    }}
+                    className="w-full px-4 py-2.5 border border-zinc-200 rounded-xl focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent transition-all text-sm font-bold"
                     placeholder="Auto-generating name based on selected truck..."
                   />
                 </div>
@@ -1439,6 +1527,20 @@ export function TripForm() {
                 setStops(prev => [...prev, newStop]);
               }
             }}
+          />
+        )}
+
+        {movingStop && (
+          <MoveInvoiceModal
+            isOpen={true}
+            onClose={() => setMovingStop(null)}
+            invoiceLabel={`#${movingStop.number} - ${movingStop.client}`}
+            currentTripId={isEditMode ? id : undefined}
+            trips={trips}
+            trucks={trucks}
+            defaultDate={formData.date}
+            onMoveToExisting={handleMoveToExistingTrip}
+            onCreateAndMove={handleCreateTripAndMove}
           />
         )}
 

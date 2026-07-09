@@ -9,6 +9,7 @@ import { useTeamDashboard } from './useTeamDashboard';
 import { useMyTasks } from '../todos/hooks/useMyTasks';
 import { MyTasksDrawer } from '../todos/components/MyTasksDrawer';
 import { TodayPlannerDialog } from './TodayPlannerDialog';
+import { TripOverviewTable } from './components/TripOverviewTable';
 import { auth, db } from '../../lib/firebase';
 import { NRLogo } from '../../components/Logo';
 import { Trip, TripStatus } from '../../types';
@@ -83,7 +84,8 @@ export function TeamDashboard() {
       'Loader': 2,
       'Delivered Checker': 3,
       'Stock Counter': 4,
-      'Invoice Management': 5
+      'Invoice Management': 5,
+      'Trip Overview': 6
     };
 
     return [...rawRoles].sort((a, b) => {
@@ -424,6 +426,7 @@ export function TeamDashboard() {
                 currentRole === 'Assembler' ? 'bg-blue-500' :
                 currentRole === 'Loader' ? 'bg-orange-500' :
                 currentRole === 'Invoice Management' ? 'bg-sky-500' :
+                currentRole === 'Trip Overview' ? 'bg-rose-500' :
                 'bg-purple-500'
               }`} />
               <h2 className="text-base font-black text-zinc-950 uppercase tracking-tight font-sans">
@@ -435,6 +438,7 @@ export function TeamDashboard() {
                currentRole === 'Assembler' ? 'Assemble flat-pack items, components check sheets, and track modular KD parts breakdown.' :
                currentRole === 'Loader' ? 'Monitor load priority, check vehicle staging schedules, and verify loaded cargo.' :
                currentRole === 'Invoice Management' ? 'Browse the full invoice library. Filter by district, status, or client to find what you need fast.' :
+               currentRole === 'Trip Overview' ? 'See every trip with its status and bundled invoices, and drill into invoice line items.' :
                'Perform destination check-lists, drop logs, and complete physical deliveries on site.'}
             </p>
           </div>
@@ -662,6 +666,8 @@ export function TeamDashboard() {
                   </div>
                 )}
               </div>
+            ) : currentRole === 'Trip Overview' ? (
+              <TripOverviewTable trips={trips} invoices={invoices} />
             ) : currentRole === 'Stock Counter' ? (
               <div className="bg-white rounded-3xl p-6 border border-zinc-200 shadow-sm relative text-left space-y-4">
                 {/* Card Header */}
@@ -1120,6 +1126,7 @@ export function TeamDashboard() {
                           roleOpt === 'Assembler' ? 'bg-blue-500' :
                           roleOpt === 'Loader' ? 'bg-orange-500' :
                           roleOpt === 'Invoice Management' ? 'bg-sky-500' :
+                          roleOpt === 'Trip Overview' ? 'bg-rose-500' :
                           'bg-purple-500'
                         }`} />
                         <span className="text-xs font-black uppercase tracking-tight">
@@ -1139,6 +1146,7 @@ export function TeamDashboard() {
                          roleOpt === 'Assembler' ? 'Assess warehouse custom assemblies, components status checklist, and KD parts lists.' :
                          roleOpt === 'Loader' ? 'Optimize vehicle weights, check staging dispatches, and verify trailer cargo loader priority.' :
                          roleOpt === 'Invoice Management' ? 'Browse the full invoice library filtered by district, status, or client name.' :
+                         roleOpt === 'Trip Overview' ? 'View every trip with its status and bundled invoices, and drill into invoice line items.' :
                          'Coordinate route sequences, log digital drop receipts status and capture client delivery signatures.'}
                       </p>
                     </button>

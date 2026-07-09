@@ -18,6 +18,7 @@ import { db, auth } from '../../lib/firebase';
 import { doc, getDoc, updateDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { DetailedInvoice } from '../../services/geminiService';
 import { useProducts } from '../products/hooks/useProducts';
+import { useSettings } from '../settings/hooks/useSettings';
 import { APIProvider } from '@vis.gl/react-google-maps';
 import { GoogleMapsAutocomplete } from '../../components/GoogleMapsAutocomplete';
 import { buildSchoolLookupAddress, buildPinSearchAddress, geocodeAddress, upsertCachedPin } from '../../lib/geocoding';
@@ -34,6 +35,7 @@ export function ExtractionReview() {
   const [error, setError] = useState<string | null>(null);
   const isEditing = window.location.pathname.includes('/edit');
   const { syncLineItemsAsProducts } = useProducts();
+  const { settings } = useSettings();
   // The delivery address as loaded, used to detect whether the user edited it so
   // Refresh Pins can preserve hand-picked addresses. See src/lib/geocoding.ts.
   const initialDeliveryAddressRef = useRef('');
@@ -262,9 +264,15 @@ export function ExtractionReview() {
           ? (currentDelivery || buildSchoolLookupAddress(pinSource) || fallbackAddress)
           : (buildSchoolLookupAddress(pinSource) || fallbackAddress);
 
-        let geo = await geocodeAddress(primaryAddress);
+        // Biases geocoding toward the warehouse's region so a same-named school
+        // in another province doesn't outrank the real, nearby one.
+        const warehouseBias = settings?.warehouseLat !== undefined && settings?.warehouseLng !== undefined
+          ? { lat: settings.warehouseLat, lng: settings.warehouseLng }
+          : undefined;
+
+        let geo = await geocodeAddress(primaryAddress, warehouseBias);
         if (!geo && primaryAddress !== fallbackAddress) {
-          geo = await geocodeAddress(fallbackAddress);
+          geo = await geocodeAddress(fallbackAddress, warehouseBias);
         }
 
         if (geo) {

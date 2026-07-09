@@ -136,7 +136,7 @@ export function TripList() {
   const { settings } = useSettings();
   // Orphan-planner cleanup (no trips left for a date) lives centrally in useDayPlanners
   // so it applies wherever planners are read from, not just this screen.
-  const { planners, saveEntries: savePlannerEntries } = useDayPlanners();
+  const { planners, saveEntries: savePlannerEntries, moveEntries: movePlannerEntries } = useDayPlanners();
   const [plannerModalDate, setPlannerModalDate] = useState<string | null>(null);
   // Recorded on planner entries when the account owner ticks them, so it's clear who
   // completed it even when that's the owner themselves (not just team members).
@@ -234,6 +234,12 @@ export function TripList() {
     prevGeocodedCountRef.current = 0;
     setIsRefreshingPins(true);
 
+    // Biases geocoding toward the warehouse's region so a same-named school in
+    // another province doesn't outrank the real, nearby one (see geocoding.ts).
+    const warehouseBias = settings?.warehouseLat !== undefined && settings?.warehouseLng !== undefined
+      ? { lat: settings.warehouseLat, lng: settings.warehouseLng }
+      : undefined;
+
     const toRefresh = [...invoices];
     for (const inv of toRefresh) {
       const manualAddress = inv.deliveryAddressManual ? inv.deliveryAddress?.trim() : '';
@@ -242,11 +248,11 @@ export function TripList() {
       // Otherwise force the school-name lookup so an outdated saved address gets
       // refreshed to the latest Google result.
       const lookupAddress = manualAddress || buildSchoolLookupAddress(inv) || buildPinSearchAddress(inv);
-      let geo = await geocodeAddress(lookupAddress);
+      let geo = await geocodeAddress(lookupAddress, warehouseBias);
       // If the primary search found nothing, fall back to the full priority chain
       // (delivery address, street address, then client name).
       if (!geo && lookupAddress !== buildPinSearchAddress(inv)) {
-        geo = await geocodeAddress(buildPinSearchAddress(inv));
+        geo = await geocodeAddress(buildPinSearchAddress(inv), warehouseBias);
       }
 
       if (geo) {
@@ -1118,7 +1124,10 @@ export function TripList() {
             entries={planners.find(p => p.date === plannerModalDate)?.entries || []}
             onClose={() => setPlannerModalDate(null)}
             onSave={(updatedEntries) => savePlannerEntries(plannerModalDate, updatedEntries)}
-            onDateChange={(newDate) => setPlannerModalDate(newDate)}
+            onMoveToDate={(newDate) => {
+              movePlannerEntries(plannerModalDate, newDate);
+              setPlannerModalDate(newDate);
+            }}
             completedByName={ownerDisplayName}
           />
         )}

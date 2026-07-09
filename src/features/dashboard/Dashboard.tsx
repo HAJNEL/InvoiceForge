@@ -11,13 +11,13 @@ import { useDashboardAnalytics } from './hooks/useDashboardAnalytics';
 import { KpiStatsRow } from './components/KpiStatsRow';
 import { DispatchSchedule } from './components/DispatchSchedule';
 import { BusinessIntelligencePanel } from './components/BusinessIntelligencePanel';
-import { RecentActivityCard } from './components/RecentActivityCard';
-import { RecentInvoicesTable } from './components/RecentInvoicesTable';
 import { DeliveredInvoicesModal } from './components/DeliveredInvoicesModal';
 import { PartiallyCompletedInvoicesModal } from './components/PartiallyCompletedInvoicesModal';
 import { DispatchTripsModal } from './components/DispatchTripsModal';
 import { SelfInvoiceModal } from './components/SelfInvoiceModal';
+import { FuelLogModal } from './components/FuelLogModal';
 import { useSelfInvoices } from './hooks/useSelfInvoices';
+import { useFuelLogs } from './hooks/useFuelLogs';
 
 export function Dashboard() {
   const { user } = useAuth();
@@ -40,10 +40,11 @@ export function Dashboard() {
     }
   }, [user, navigate]);
 
-  const { invoices, loading: invoicesLoading, deleteInvoice, updateInvoice } = useInvoices();
+  const { invoices, loading: invoicesLoading, updateInvoice } = useInvoices();
   const { trucks, loading: trucksLoading } = useTrucks();
   const { trips, loading: tripsLoading, updateTrip } = useTrips();
   const { selfInvoices } = useSelfInvoices();
+  const { fuelLogs } = useFuelLogs();
 
   // Drives the two toggle icons on the Invoiced KPI card: the most recently created
   // self-invoice's amount, vs. the cumulative total of everything already Completed.
@@ -61,17 +62,10 @@ export function Dashboard() {
     return trucks.slice(startIndex, startIndex + trucksPerPage);
   }, [trucks, trucksPage]);
 
-  const [invoicesPage, setInvoicesPage] = useState(1);
-  const invoicesPerPage = 5;
-  const totalInvoicesPages = Math.ceil(invoices.length / invoicesPerPage);
-  const paginatedInvoices = useMemo(() => {
-    const startIndex = (invoicesPage - 1) * invoicesPerPage;
-    return invoices.slice(startIndex, startIndex + invoicesPerPage);
-  }, [invoices, invoicesPage]);
-
   const [showDeliveredModal, setShowDeliveredModal] = useState(false);
   const [showPartiallyCompletedModal, setShowPartiallyCompletedModal] = useState(false);
   const [showSelfInvoiceModal, setShowSelfInvoiceModal] = useState(false);
+  const [showFuelModal, setShowFuelModal] = useState(false);
   const [weekOffset, setWeekOffset] = useState(0);
   const [selectedCellInfo, setSelectedCellInfo] = useState<{
     dateString: string;
@@ -92,7 +86,6 @@ export function Dashboard() {
     stats,
     completedInvoices,
     partiallyCompletedInvoices,
-    recentActivity,
     weekNumber,
     getTripsForCell
   } = useDashboardAnalytics({ invoices, trucks, trips, weekOffset });
@@ -137,8 +130,10 @@ export function Dashboard() {
         onDeliveredClick={() => setShowDeliveredModal(true)}
         onPartiallyCompletedClick={() => setShowPartiallyCompletedModal(true)}
         onInvoicedClick={() => setShowSelfInvoiceModal(true)}
+        onFuelClick={() => setShowFuelModal(true)}
         lastInvoicedAmount={lastInvoicedAmount}
         historyInvoicedTotal={historyInvoicedTotal}
+        fuelLogs={fuelLogs}
       />
 
       {/* Weekly Dispatch Schedule */}
@@ -169,28 +164,14 @@ export function Dashboard() {
         />
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <BusinessIntelligencePanel
-          invoiceCount={invoices.length}
-          invoiceTotalsOverTime={invoiceTotalsOverTime}
-          topCustomersData={topCustomersData}
-          pipelineData={pipelineData}
-          truckUtilizationData={truckUtilizationData}
-          districtData={districtData}
-          productData={productData}
-        />
-
-        <RecentActivityCard recentActivity={recentActivity} />
-      </div>
-
-      <RecentInvoicesTable
-        invoices={invoices}
-        paginatedInvoices={paginatedInvoices}
-        invoicesPage={invoicesPage}
-        setInvoicesPage={setInvoicesPage}
-        totalInvoicesPages={totalInvoicesPages}
-        invoicesPerPage={invoicesPerPage}
-        deleteInvoice={deleteInvoice}
+      <BusinessIntelligencePanel
+        invoiceCount={invoices.length}
+        invoiceTotalsOverTime={invoiceTotalsOverTime}
+        topCustomersData={topCustomersData}
+        pipelineData={pipelineData}
+        truckUtilizationData={truckUtilizationData}
+        districtData={districtData}
+        productData={productData}
       />
 
       {showDeliveredModal && (
@@ -213,6 +194,13 @@ export function Dashboard() {
           invoices={invoices}
           updateInvoice={updateInvoice}
           onClose={() => setShowSelfInvoiceModal(false)}
+        />
+      )}
+
+      {showFuelModal && (
+        <FuelLogModal
+          trucks={trucks}
+          onClose={() => setShowFuelModal(false)}
         />
       )}
     </div>
