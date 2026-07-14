@@ -13,7 +13,6 @@ export function FuelLogModal({ trucks, onClose }: {
 
   const [truckId, setTruckId] = useState(trucks[0]?.id || '');
   const [liters, setLiters] = useState('');
-  const [cost, setCost] = useState('');
   const [fuelPrice, setFuelPrice] = useState('');
   const [odometerReading, setOdometerReading] = useState('');
   const [refuelDate, setRefuelDate] = useState(() => new Date().toISOString().slice(0, 10));
@@ -24,13 +23,12 @@ export function FuelLogModal({ trucks, onClose }: {
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
-  const isValid = truckId && liters && cost && fuelPrice && odometerReading && refuelDate
-    && Number(liters) > 0 && Number(cost) > 0 && Number(fuelPrice) > 0 && Number(odometerReading) >= 0;
+  const isValid = truckId && liters && fuelPrice && odometerReading && refuelDate
+    && Number(liters) > 0 && Number(fuelPrice) > 0 && Number(odometerReading) >= 0;
 
   const resetForm = () => {
     setTruckId(trucks[0]?.id || '');
     setLiters('');
-    setCost('');
     setFuelPrice('');
     setOdometerReading('');
     setRefuelDate(new Date().toISOString().slice(0, 10));
@@ -40,7 +38,6 @@ export function FuelLogModal({ trucks, onClose }: {
     setEditingId(log.id);
     setTruckId(log.truckId);
     setLiters(String(log.liters));
-    setCost(String(log.cost));
     setFuelPrice(String(log.fuelPrice));
     setOdometerReading(String(log.odometerReading));
     setRefuelDate(log.refuelDate);
@@ -58,7 +55,7 @@ export function FuelLogModal({ trucks, onClose }: {
       const payload = {
         truckId,
         liters: Number(liters),
-        cost: Number(cost),
+        cost: Number(liters) * Number(fuelPrice),
         fuelPrice: Number(fuelPrice),
         odometerReading: Number(odometerReading),
         refuelDate,
@@ -187,20 +184,6 @@ export function FuelLogModal({ trucks, onClose }: {
                 placeholder="0.00"
                 value={fuelPrice}
                 onChange={(e) => setFuelPrice(e.target.value)}
-                className="w-full px-3 py-2.5 border border-zinc-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent transition-all"
-              />
-            </div>
-
-            <div className="space-y-1">
-              <label className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Cost</label>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                title="Total cost of this refuel"
-                placeholder="0.00"
-                value={cost}
-                onChange={(e) => setCost(e.target.value)}
                 className="w-full px-3 py-2.5 border border-zinc-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent transition-all"
               />
             </div>
