@@ -1,9 +1,11 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { Plus, Trash2, Edit3, Loader2, AlertCircle, Calendar as CalendarIcon, Navigation, CheckCircle2, Package, X, History, AlertTriangle, Check, ChevronLeft, ChevronRight, RefreshCw, Search, Maximize2, Minimize2, MapPin, ClipboardList } from 'lucide-react';
+import { Plus, Trash2, Edit3, Loader2, AlertCircle, Calendar as CalendarIcon, Navigation, CheckCircle2, Package, X, History, AlertTriangle, Check, ChevronLeft, ChevronRight, RefreshCw, Search, Maximize2, Minimize2, MapPin, ClipboardList, Send } from 'lucide-react';
 import { toast } from 'sonner';
 import { PartialConfirmModal } from '../../components/PartialConfirmModal';
+import { PartialConfirmModalMobile } from '../../components/PartialConfirmModalMobile';
 import { APIProvider } from '@vis.gl/react-google-maps';
 import { cn } from '../../lib/utils';
+import { useIsMobile } from '../../hooks/useIsMobile';
 import { useTrips } from './hooks/useTrips';
 import { useTrucks } from '../trucks/hooks/useTrucks';
 import { useInvoices, UIInvoice } from '../invoices/hooks/useInvoices';
@@ -15,10 +17,13 @@ import { useNavigate } from 'react-router-dom';
 import { GeocodedInvoice } from './TripListComponents/types';
 import { CapacityProgressBar } from './TripListComponents/CapacityProgressBar';
 import { StockModal } from './TripListComponents/StockModal';
+import { StockModalMobile } from './TripListComponents/StockModalMobile';
 import { MapComponent } from './TripListComponents/MapComponent';
 import { StatusBadge } from './TripListComponents/StatusBadge';
 import { InvoiceDetailsPanel } from './TripListComponents/InvoiceDetailsPanel';
 import { DayPlannerModal } from './TripListComponents/DayPlannerModal';
+import { DayPlannerModalMobile } from './TripListComponents/DayPlannerModalMobile';
+import { TripListMobile } from './TripListComponents/TripListMobile';
 import { restoreInventoryForItems } from '../../utils/inventory';
 import { buildSchoolLookupAddress, buildPinSearchAddress, geocodeAddress } from '../../lib/geocoding';
 
@@ -26,6 +31,7 @@ const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_PLATFORM_KEY || '';
 const hasValidKey = Boolean(GOOGLE_MAPS_API_KEY);
 
 const CYCLE_ORDER = [
+  TripStatus.PENDING,
   TripStatus.PROPOSED,
   TripStatus.ASSEMBLED,
   TripStatus.ON_ROUTE,
@@ -101,6 +107,7 @@ function MapPinFiltersControls({
         <option value="all">All Statuses</option>
         <option value="partially_complete">Partially Complete</option>
         <option value="draft">Draft</option>
+        <option value="pending">Pending</option>
         <option value="proposed">Proposed</option>
         <option value="assembled">Assembled</option>
         <option value="on_route">On Route</option>
@@ -299,6 +306,10 @@ export function TripList() {
   const [selectedStatus, setSelectedStatus] = useState('all');
   const [lineItemFilter, setLineItemFilter] = useState('');
 
+  // Sort order for the mobile trip list
+  const [sortBy, setSortBy] = useState<'date' | 'name' | 'value'>('date');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+
   // Fullscreen map mode: shows the same pin filters plus a left sidebar with the
   // selected invoice's details, instead of the details card below the map.
   const [isMapFullscreen, setIsMapFullscreen] = useState(false);
@@ -439,14 +450,14 @@ export function TripList() {
     }
   };
 
-  // Groups of trips by date
+  // Groups of trips by date (desktop table — untouched by the mobile sort controls)
   const groupedTripsByDate = useMemo(() => {
     const groups: Record<string, { trip: Trip; totalValue: number }[]> = {};
-    
+
     displayedTrips.forEach((trip) => {
       const tripInvoices = invoices.filter(inv => trip.invoiceIds?.includes(inv.id));
       const totalValue = tripInvoices.reduce((sum, inv) => sum + (inv.amount || 0), 0);
-      
+
       const dateKey = trip.date || 'no-date';
       if (!groups[dateKey]) {
         groups[dateKey] = [];
@@ -474,6 +485,37 @@ export function TripList() {
     });
   }, [groupedTripsByDate, showHistory]);
 
+  // Mobile-only variants: honor the "Sort By" dropdown in the mobile filter sheet
+  // (default Scheduled Date, descending), independent of the desktop table's ordering.
+  const mobileGroupedTripsByDate = useMemo(() => {
+    const groups: Record<string, { trip: Trip; totalValue: number }[]> = {};
+    Object.entries(groupedTripsByDate).forEach(([dateKey, entries]) => {
+      groups[dateKey] = [...entries];
+    });
+
+    Object.keys(groups).forEach((dateKey) => {
+      if (sortBy === 'name') {
+        groups[dateKey].sort((a, b) => sortOrder === 'asc'
+          ? a.trip.name.localeCompare(b.trip.name)
+          : b.trip.name.localeCompare(a.trip.name));
+      } else if (sortBy === 'value') {
+        groups[dateKey].sort((a, b) => sortOrder === 'asc'
+          ? a.totalValue - b.totalValue
+          : b.totalValue - a.totalValue);
+      }
+    });
+
+    return groups;
+  }, [groupedTripsByDate, sortBy, sortOrder]);
+
+  const mobileSortedDateKeys = useMemo(() => {
+    const keys = Object.keys(mobileGroupedTripsByDate);
+    if (sortBy === 'date') {
+      return keys.sort((a, b) => sortOrder === 'asc' ? a.localeCompare(b) : b.localeCompare(a));
+    }
+    return keys.sort((a, b) => a.localeCompare(b));
+  }, [mobileGroupedTripsByDate, sortBy, sortOrder]);
+
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 5; // Date cards/groups per page
 
@@ -485,6 +527,8 @@ export function TripList() {
     setLineItemFilter('');
     setSelectedDistrict('all');
     setSelectedStatus('all');
+    setSortBy('date');
+    setSortOrder('desc');
   }, [showHistory]);
 
   const totalPages = Math.ceil(sortedDateKeys.length / itemsPerPage);
@@ -493,6 +537,271 @@ export function TripList() {
     const startIndex = (currentPage - 1) * itemsPerPage;
     return sortedDateKeys.slice(startIndex, startIndex + itemsPerPage);
   }, [sortedDateKeys, currentPage, itemsPerPage]);
+
+  const mobilePaginatedDateKeys = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    return mobileSortedDateKeys.slice(startIndex, startIndex + itemsPerPage);
+  }, [mobileSortedDateKeys, currentPage, itemsPerPage]);
+
+  const isMobile = useIsMobile();
+
+  // --- Handlers shared with TripListMobile (identical logic to the inline JSX below,
+  // just extracted into named functions since the mobile card list can't reuse IIFEs
+  // embedded in desktop table cells) ---
+
+  const getNextStatus = (currentStatus: TripStatus): TripStatus => {
+    const currentIndex = CYCLE_ORDER.indexOf(currentStatus);
+    if (currentIndex === -1) return TripStatus.PROPOSED;
+    const nextIndex = (currentIndex + 1) % CYCLE_ORDER.length;
+    return CYCLE_ORDER[nextIndex];
+  };
+
+  const handleCycleStatus = (trip: Trip) => {
+    if (isPendingSubmitting[trip.id]) return;
+    const currentActive = pendingStatuses[trip.id] !== undefined ? pendingStatuses[trip.id] : trip.status;
+    const next = getNextStatus(currentActive);
+    setPendingStatuses(prev => ({ ...prev, [trip.id]: next }));
+  };
+
+  const handleCancelPendingStatus = (tripId: string) => {
+    setPendingStatuses(prev => {
+      const updated = { ...prev };
+      delete updated[tripId];
+      return updated;
+    });
+  };
+
+  const handleConfirmStatus = async (trip: Trip) => {
+    const targetStatus = pendingStatuses[trip.id];
+    if (!targetStatus) return;
+    setIsPendingSubmitting(prev => ({ ...prev, [trip.id]: true }));
+    try {
+      let invoiceStatus = 'proposed';
+      if (targetStatus === TripStatus.PENDING) {
+        invoiceStatus = 'pending';
+      } else if (targetStatus === TripStatus.ASSEMBLED) {
+        invoiceStatus = 'assembled';
+      } else if (targetStatus === TripStatus.ON_ROUTE) {
+        invoiceStatus = 'on_route';
+      } else if (targetStatus === TripStatus.DELIVERED || targetStatus === TripStatus.COMPLETED) {
+        invoiceStatus = 'delivered';
+      }
+
+      // Reverting to an early planning stage (Pending/Proposed) returns any assembled
+      // stock to inventory so it is not double-counted when the trip is re-assembled.
+      const isRevertToPlanning = targetStatus === TripStatus.PROPOSED || targetStatus === TripStatus.PENDING;
+      if (isRevertToPlanning && needsInventoryRestore(trip.status) && trip.invoiceIds?.length) {
+        const itemMap: Record<string, { stockCode: string; qty: number }> = {};
+        trip.invoiceIds.forEach(id => {
+          const inv = invoices.find(i => i.id === id);
+          inv?.lineItems?.forEach(li => {
+            const code = String(li.stockCode || '').trim().toUpperCase();
+            if (!code || code === 'N/A') return;
+            if (itemMap[code]) {
+              itemMap[code].qty += li.qty;
+            } else {
+              itemMap[code] = { stockCode: li.stockCode, qty: li.qty };
+            }
+          });
+        });
+        await restoreInventoryForItems(Object.values(itemMap), user?.uid || '');
+      }
+
+      await updateTrip(trip.id, {
+        status: targetStatus,
+        ...(isRevertToPlanning ? { checkedItems: {}, partialItems: {} } : {}),
+        updatedAt: new Date().toISOString()
+      });
+
+      if (trip.invoiceIds && trip.invoiceIds.length > 0) {
+        await Promise.all(
+          trip.invoiceIds.map(id => updateInvoice(id, {
+            status: invoiceStatus,
+            updatedAt: new Date().toISOString()
+          }))
+        );
+      }
+
+      setPendingStatuses(prev => {
+        const updated = { ...prev };
+        delete updated[trip.id];
+        return updated;
+      });
+    } catch (err) {
+      console.error("Failed to update status directly:", err);
+    } finally {
+      setIsPendingSubmitting(prev => ({ ...prev, [trip.id]: false }));
+    }
+  };
+
+  // Publish a pending trip: promote the trip and all its linked invoices to 'proposed'
+  // so they become visible to the team dashboard.
+  const handlePublishTrip = async (trip: Trip) => {
+    if (isPendingSubmitting[trip.id]) return;
+    setIsPendingSubmitting(prev => ({ ...prev, [trip.id]: true }));
+    try {
+      await updateTrip(trip.id, {
+        status: TripStatus.PROPOSED,
+        updatedAt: new Date().toISOString()
+      });
+      if (trip.invoiceIds && trip.invoiceIds.length > 0) {
+        await Promise.all(
+          trip.invoiceIds.map(id => updateInvoice(id, {
+            status: 'proposed',
+            updatedAt: new Date().toISOString()
+          }))
+        );
+      }
+      // Drop any queued cycle change so the badge reflects the freshly published status.
+      setPendingStatuses(prev => {
+        const updated = { ...prev };
+        delete updated[trip.id];
+        return updated;
+      });
+      toast.success('Trip Published', { description: `"${trip.name}" is now visible to your team.` });
+    } catch (err) {
+      console.error("Failed to publish trip:", err);
+      toast.error('Publish Failed', { description: 'Could not publish this trip. Please try again.' });
+    } finally {
+      setIsPendingSubmitting(prev => ({ ...prev, [trip.id]: false }));
+    }
+  };
+
+  const handleFlaggedClick = (trip: Trip) => {
+    const partialItems = trip.partialItems;
+    const tripPartialKeys = partialItems
+      ? Object.keys(partialItems).filter(k => partialItems[k]?.isPartial)
+      : [];
+    if (!partialItems || tripPartialKeys.length === 0) return;
+
+    const firstKey = tripPartialKeys[0];
+    const pi = partialItems[firstKey];
+    const matchedInv = invoices.find(inv =>
+      inv.lineItems?.some(li =>
+        String(li.stockCode).trim().toLowerCase() === String(pi.stockCode).trim().toLowerCase() &&
+        String(li.description).trim().toLowerCase() === String(pi.description).trim().toLowerCase()
+      )
+    );
+    if (matchedInv) {
+      const keys = tripPartialKeys.filter(k => {
+        const item = partialItems[k];
+        return matchedInv.lineItems?.some(li =>
+          String(li.stockCode).trim().toLowerCase() === String(item.stockCode).trim().toLowerCase() &&
+          String(li.description).trim().toLowerCase() === String(item.description).trim().toLowerCase()
+        );
+      });
+      setPartialModalData({
+        isOpen: true,
+        invoice: matchedInv,
+        trip: trip,
+        itemKeys: keys
+      });
+    } else {
+      toast.error('Mapping Error', { description: 'Could not link this partial item to a loaded invoice.' });
+    }
+  };
+
+  const plannerCountByDate = useMemo(() => {
+    const map: Record<string, number> = {};
+    planners.forEach(p => {
+      map[p.date] = p.entries?.length || 0;
+    });
+    return map;
+  }, [planners]);
+
+  if (isMobile) {
+    return (
+      <APIProvider apiKey={GOOGLE_MAPS_API_KEY} version="weekly">
+        <TripListMobile
+          routedTrip={routedTrip}
+          setRoutedTrip={setRoutedTrip}
+          handleRefreshPins={handleRefreshPins}
+          isRefreshingPins={isRefreshingPins}
+          invoicesLoading={invoicesLoading}
+          showHistory={showHistory}
+          setShowHistory={setShowHistory}
+          onCreateTrip={() => navigate('/trips/new')}
+          GOOGLE_MAPS_API_KEY={GOOGLE_MAPS_API_KEY}
+          activeInvoices={activeInvoices}
+          invoices={invoices}
+          geocodedInvoices={geocodedInvoices}
+          setGeocodedInvoices={setGeocodedInvoices}
+          handleMapInvoiceClick={handleMapInvoiceClick}
+          warehouse={settings}
+          highlightedInvoiceIds={highlightedInvoiceIds}
+          liveSelectedInvoice={liveSelectedInvoice}
+          setSelectedInvoice={setSelectedInvoice}
+          onViewInvoice={(id) => navigate(`/invoices/${id}`)}
+          searchTerm={searchTerm} setSearchTerm={setSearchTerm}
+          lineItemFilter={lineItemFilter} setLineItemFilter={setLineItemFilter}
+          selectedDistrict={selectedDistrict} setSelectedDistrict={setSelectedDistrict}
+          selectedStatus={selectedStatus} setSelectedStatus={setSelectedStatus}
+          sortBy={sortBy} setSortBy={setSortBy}
+          sortOrder={sortOrder} setSortOrder={setSortOrder}
+          districtsList={districtsList}
+          tripsLoading={tripsLoading}
+          displayedTrips={displayedTrips}
+          paginatedDateKeys={mobilePaginatedDateKeys}
+          groupedTripsByDate={mobileGroupedTripsByDate}
+          formatTripDateGroupHeader={formatTripDateGroupHeader}
+          getTruckById={(truckId) => trucks.find(t => t.id === truckId)}
+          plannerCountByDate={plannerCountByDate}
+          onOpenPlanner={(dateKey) => setPlannerModalDate(dateKey)}
+          highlightedTripId={highlightedTripId}
+          setHighlightedTripId={setHighlightedTripId}
+          pendingStatuses={pendingStatuses}
+          isPendingSubmitting={isPendingSubmitting}
+          onCycleStatus={handleCycleStatus}
+          onConfirmStatus={handleConfirmStatus}
+          onCancelPendingStatus={handleCancelPendingStatus}
+          onPublishTrip={handlePublishTrip}
+          onShowRoute={(trip) => setRoutedTrip(trip)}
+          onEditTrip={(trip) => navigate(`/trips/edit/${trip.id}`)}
+          onDeleteTrip={(trip) => handleDeleteTrip(trip)}
+          onFlaggedClick={handleFlaggedClick}
+          currentPage={currentPage}
+          totalPages={totalPages}
+          setCurrentPage={setCurrentPage}
+        />
+
+        {selectedInvoiceForStock && (
+          <StockModalMobile
+            invoice={selectedInvoiceForStock}
+            onClose={() => setSelectedInvoiceForStock(null)}
+          />
+        )}
+
+        {partialModalData.isOpen && (
+          <PartialConfirmModalMobile
+            isOpen={partialModalData.isOpen}
+            onClose={() => setPartialModalData(prev => ({ ...prev, isOpen: false }))}
+            invoice={partialModalData.invoice}
+            trip={partialModalData.trip}
+            itemKeys={partialModalData.itemKeys}
+            onSuccess={() => {
+              // Successfully processed, page will update via live subscription
+            }}
+          />
+        )}
+
+        {plannerModalDate && (
+          <DayPlannerModalMobile
+            key={plannerModalDate}
+            date={plannerModalDate}
+            dateLabel={formatTripDateGroupHeader(plannerModalDate)}
+            entries={planners.find(p => p.date === plannerModalDate)?.entries || []}
+            onClose={() => setPlannerModalDate(null)}
+            onSave={(updatedEntries) => savePlannerEntries(plannerModalDate, updatedEntries)}
+            onMoveToDate={(newDate) => {
+              movePlannerEntries(plannerModalDate, newDate);
+              setPlannerModalDate(newDate);
+            }}
+            completedByName={ownerDisplayName}
+          />
+        )}
+      </APIProvider>
+    );
+  }
 
   if (!hasValidKey) {
     return (
@@ -868,9 +1177,25 @@ export function TripList() {
                                               ...prev,
                                               [trip.id]: next
                                             }));
-                                          }} 
+                                          }}
                                         />
-                                        
+
+                                        {trip.status === TripStatus.PENDING && !hasPending && (
+                                          isSubmitting ? (
+                                            <Loader2 className="w-4 h-4 text-violet-600 animate-spin shrink-0" />
+                                          ) : (
+                                            <button
+                                              type="button"
+                                              onClick={() => handlePublishTrip(trip)}
+                                              className="px-2 py-1 bg-violet-50 hover:bg-violet-100 border border-violet-200 text-violet-700 font-sans text-[10px] font-black uppercase rounded-lg flex items-center gap-1 cursor-pointer transition-all hover:scale-105 active:scale-95 animate-fade-in shrink-0"
+                                              title="Publish trip and its invoices to the team (Proposed)"
+                                            >
+                                              <Send className="w-3.5 h-3.5 text-violet-600 stroke-[3]" />
+                                              Publish
+                                            </button>
+                                          )
+                                        )}
+
                                         {hasPending && (
                                           <div className="flex items-center gap-1.5 animate-fade-in shrink-0">
                                             {isSubmitting ? (
@@ -880,69 +1205,7 @@ export function TripList() {
                                                 {/* Direct Confirm Button next to status badge */}
                                                 <button
                                                   type="button"
-                                                  onClick={async () => {
-                                                    const targetStatus = pendingStatuses[trip.id];
-                                                    if (!targetStatus) return;
-                                                    setIsPendingSubmitting(prev => ({ ...prev, [trip.id]: true }));
-                                                    try {
-                                                      let invoiceStatus = 'proposed';
-                                                      if (targetStatus === TripStatus.ASSEMBLED) {
-                                                        invoiceStatus = 'assembled';
-                                                      } else if (targetStatus === TripStatus.ON_ROUTE) {
-                                                        invoiceStatus = 'on_route';
-                                                      } else if (targetStatus === TripStatus.DELIVERED || targetStatus === TripStatus.COMPLETED) {
-                                                        invoiceStatus = 'delivered';
-                                                      }
-
-                                                      // Restore inventory when reverting to proposed from assembled or later
-                                                      if (targetStatus === TripStatus.PROPOSED && needsInventoryRestore(trip.status) && trip.invoiceIds?.length) {
-                                                        const itemMap: Record<string, { stockCode: string; qty: number }> = {};
-                                                        trip.invoiceIds.forEach(id => {
-                                                          const inv = invoices.find(i => i.id === id);
-                                                          inv?.lineItems?.forEach(li => {
-                                                            const code = String(li.stockCode || '').trim().toUpperCase();
-                                                            if (!code || code === 'N/A') return;
-                                                            if (itemMap[code]) {
-                                                              itemMap[code].qty += li.qty;
-                                                            } else {
-                                                              itemMap[code] = { stockCode: li.stockCode, qty: li.qty };
-                                                            }
-                                                          });
-                                                        });
-                                                        await restoreInventoryForItems(Object.values(itemMap), user?.uid || '');
-                                                      }
-
-                                                      // 1. Update Trip Status in Firestore.
-                                                      // Reverting to Proposed clears the checklist so the
-                                                      // trip returns to the Assembler's workspace fresh.
-                                                      await updateTrip(trip.id, {
-                                                        status: targetStatus,
-                                                        ...(targetStatus === TripStatus.PROPOSED ? { checkedItems: {}, partialItems: {} } : {}),
-                                                        updatedAt: new Date().toISOString()
-                                                      });
-
-                                                      // 2. Update all associated Invoice Statuses to the matching status
-                                                      if (trip.invoiceIds && trip.invoiceIds.length > 0) {
-                                                        await Promise.all(
-                                                          trip.invoiceIds.map(id => updateInvoice(id, { 
-                                                            status: invoiceStatus,
-                                                            updatedAt: new Date().toISOString()
-                                                          }))
-                                                        );
-                                                      }
-
-                                                      // Clear pending status
-                                                      setPendingStatuses(prev => {
-                                                        const updated = { ...prev };
-                                                        delete updated[trip.id];
-                                                        return updated;
-                                                      });
-                                                    } catch (err) {
-                                                      console.error("Failed to update status directly:", err);
-                                                    } finally {
-                                                      setIsPendingSubmitting(prev => ({ ...prev, [trip.id]: false }));
-                                                    }
-                                                  }}
+                                                  onClick={() => handleConfirmStatus(trip)}
                                                   className="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-700 font-sans text-[10px] font-black uppercase rounded-lg flex items-center gap-1 cursor-pointer transition-all hover:scale-105 active:scale-95 animate-fade-in"
                                                   title="Confirm Status Update"
                                                 >

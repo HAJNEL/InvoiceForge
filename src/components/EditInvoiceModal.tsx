@@ -370,6 +370,7 @@ export function EditInvoiceModal({ isOpen, onClose, invoice, trips = [], onSucce
                 className="w-full p-2.5 bg-zinc-50 border border-zinc-200 rounded-xl font-black focus:ring-2 focus:ring-brand-accent/20 focus:bg-white cursor-pointer"
               >
                 <option value="draft">Draft</option>
+                <option value="pending">Pending</option>
                 <option value="proposed">Proposed</option>
                 <option value="assembled">Assembled</option>
                 <option value="on_route">On Route</option>

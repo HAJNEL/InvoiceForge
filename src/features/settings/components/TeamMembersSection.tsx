@@ -8,6 +8,8 @@ import { useTeamMembers } from '../hooks/useTeamMembers';
 import { sendNotification, TEST_NOTIFICATION } from '../../../lib/notifications';
 import { TeamMember } from '../../../types';
 import { cn } from '../../../lib/utils';
+import { useIsMobile } from '../../../hooks/useIsMobile';
+import { TeamMembersSectionMobile } from './TeamMembersSectionMobile';
 
 // Pushover user keys are typically 30 alphanumeric characters. Used for a soft
 // (non-blocking) format warning — Pushover's API remains the source of truth.
@@ -21,6 +23,8 @@ export function TeamMembersSection() {
     updateTeamMember, 
     deleteTeamMember
   } = useTeamMembers();
+
+  const isMobile = useIsMobile();
 
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 5;
@@ -234,6 +238,18 @@ export function TeamMembersSection() {
     !formValues.lastName.trim() || 
     (!editingMember && (!formValues.email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formValues.email))) ||
     Object.keys(fieldErrors).length > 0;
+
+  if (isMobile) {
+    return (
+      <TeamMembersSectionMobile
+        members={members}
+        listLoading={listLoading}
+        addTeamMember={addTeamMember}
+        updateTeamMember={updateTeamMember}
+        deleteTeamMember={deleteTeamMember}
+      />
+    );
+  }
 
   return (
     <div className="bg-white rounded-3xl shadow-sm border border-zinc-200 overflow-hidden relative">

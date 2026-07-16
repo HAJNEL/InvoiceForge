@@ -68,6 +68,7 @@ export interface Client {
 }
 
 export enum TripStatus {
+  PENDING = 'pending',
   PROPOSED = 'proposed',
   ASSEMBLED = 'assembled',
   ON_ROUTE = 'on-route',
@@ -138,6 +139,9 @@ export interface Settings {
   warehouseLng?: number;
   sidebarLogoBase64?: string;
   pushoverUserKey?: string;
+  // Set when the account owner has opted in to Google Calendar sync (mirrors
+  // TeamMember.calendarSyncEnabled for team members).
+  calendarSyncEnabled?: boolean;
   updatedAt: string;
 }
 
@@ -233,6 +237,11 @@ export interface TeamMember {
   status: 'pending' | 'active' | 'deleted';
   userId?: string | null;
   pushoverUserKey?: string;
+  // Personal details a team member can edit on their own profile page.
+  phone?: string;
+  photoBase64?: string;
+  // Set when the member has opted in to Google Calendar sync (Phase 2).
+  calendarSyncEnabled?: boolean;
   createdAt: string;
   updatedAt: string;
   roles?: string[];

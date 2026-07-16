@@ -4,8 +4,11 @@ import { useAuth } from '../../core/hooks/useAuth';
 import { useTeamMembers } from '../settings/hooks/useTeamMembers';
 import { useTasks } from './hooks/useTasks';
 import { TaskModal, AssigneeOption } from './components/TaskModal';
+import { TaskModalMobile } from './components/TaskModalMobile';
 import { Task } from '../../types';
 import { cn } from '../../lib/utils';
+import { useIsMobile } from '../../hooks/useIsMobile';
+import { TodoBoardMobile } from './TodoBoardMobile';
 
 // Deterministic avatar color from a string, so each assignee keeps a stable chip color.
 const AVATAR_COLORS = [
@@ -74,6 +77,30 @@ export function TodoBoard() {
     if (editingTask) return updateTask(editingTask, data);
     return addTask(data);
   };
+
+  const isMobile = useIsMobile();
+
+  if (isMobile) {
+    return (
+      <>
+        <TodoBoardMobile
+          tasks={tasks}
+          loading={loading}
+          toggleDone={toggleDone}
+          deleteTask={deleteTask}
+          onAdd={openAdd}
+          onEdit={openEdit}
+        />
+        <TaskModalMobile
+          open={modalOpen}
+          editingTask={editingTask}
+          assigneeOptions={assigneeOptions}
+          onClose={() => setModalOpen(false)}
+          onSubmit={handleSubmit}
+        />
+      </>
+    );
+  }
 
   const renderRow = (task: Task) => (
     <div

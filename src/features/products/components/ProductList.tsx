@@ -23,10 +23,15 @@ import { useProducts, Product, ProductComponent } from '../hooks/useProducts';
 import { useInvoices } from '../../invoices/hooks/useInvoices';
 import { useStock } from '../../stock/hooks/useStock';
 import { KnockdownSetupDialog } from '../../stock/components/KnockdownSetupDialog';
+import { KnockdownSetupDialogMobile } from '../../stock/components/KnockdownSetupDialogMobile';
 import { ProductImportDialog } from './ProductImportDialog';
 import { ProductComponentsDialog } from './ProductComponentsDialog';
+import { ProductListMobile } from './ProductListMobile';
+import { ProductImportDialogMobile } from './ProductImportDialogMobile';
+import { ProductComponentsDialogMobile } from './ProductComponentsDialogMobile';
 import { cn } from '../../../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
+import { useIsMobile } from '../../../hooks/useIsMobile';
 
 type ActiveTab = 'products' | 'knockdown' | 'consumables';
 
@@ -221,6 +226,71 @@ export function ProductList() {
 
   const showAddButton = activeTab !== 'knockdown';
   const itemCount = activeTab === 'knockdown' ? filteredKnockdown.length : filteredProducts.length;
+
+  const isMobile = useIsMobile();
+  if (isMobile) {
+    return (
+      <>
+        <ProductListMobile
+          inventoryMap={inventoryMap}
+          loading={loading}
+          error={error}
+          deleteProduct={deleteProduct}
+          knockdownLoading={knockdownLoading}
+          deleteStockItem={deleteStockItem}
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          searchQuery={searchQuery}
+          setSearchQuery={setSearchQuery}
+          currentPage={currentPage}
+          setCurrentPage={setCurrentPage}
+          totalPages={totalPages}
+          catalogCount={catalogProducts.length}
+          consumableCount={consumableProducts.length}
+          knockdownCount={knockdownItems.length}
+          paginatedProducts={paginatedProducts}
+          paginatedKnockdown={paginatedKnockdown}
+          itemCount={itemCount}
+          unitsOrderedMap={unitsOrderedMap}
+          isSyncing={isSyncing}
+          syncMessage={syncMessage}
+          onSyncInvoices={handleSyncInvoices}
+          onOpenImport={() => setIsImportOpen(true)}
+          onOpenKnockdownSetup={(item) => { setEditingKnockdownItem(item ?? null); setIsKnockdownSetupOpen(true); }}
+          onOpenLinkComponents={(p) => setLinkingProduct(p)}
+          saveProduct={saveProduct}
+          updateProduct={updateProduct}
+        />
+
+        {/* Knockdown Product Setup Dialog (shared with stock/ — mobile variant) */}
+        <KnockdownSetupDialogMobile
+          isOpen={isKnockdownSetupOpen}
+          onClose={() => { setIsKnockdownSetupOpen(false); setEditingKnockdownItem(null); }}
+          onSaveSuccess={() => { setIsKnockdownSetupOpen(false); setEditingKnockdownItem(null); }}
+          editItem={editingKnockdownItem ?? undefined}
+        />
+
+        <ProductImportDialogMobile
+          isOpen={isImportOpen}
+          onClose={() => setIsImportOpen(false)}
+          tab={activeTab}
+          saveProduct={saveProduct}
+          saveStockItem={saveStockItem}
+        />
+
+        {linkingProduct && (
+          <ProductComponentsDialogMobile
+            isOpen={!!linkingProduct}
+            onClose={() => setLinkingProduct(null)}
+            product={linkingProduct}
+            knockdownItems={knockdownItems}
+            consumableItems={allConsumables}
+            onSave={handleSaveComponents}
+          />
+        )}
+      </>
+    );
+  }
 
   return (
     <div className="space-y-6">

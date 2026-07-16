@@ -1,6 +1,8 @@
 import { useState, useMemo } from 'react';
 import { RefreshCcw, Plus, MoreVertical, ChevronLeft, ChevronRight } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import { useIsMobile } from '../../hooks/useIsMobile';
+import { RecurringListMobile } from './RecurringListMobile';
 
 const recurring = [
   { id: '1', name: 'Monthly Platform Fee', client: 'Stripe Inc.', amount: 1200.00, frequency: 'Monthly', nextDate: 'Jun 11, 2026', status: 'active' },
@@ -8,6 +10,7 @@ const recurring = [
 ];
 
 export function RecurringList() {
+  const isMobile = useIsMobile();
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 5;
 
@@ -17,6 +20,19 @@ export function RecurringList() {
     const startIndex = (currentPage - 1) * itemsPerPage;
     return recurring.slice(startIndex, startIndex + itemsPerPage);
   }, [currentPage, itemsPerPage]);
+
+  if (isMobile) {
+    return (
+      <RecurringListMobile
+        paginatedRecurring={paginatedRecurring}
+        totalCount={recurring.length}
+        currentPage={currentPage}
+        setCurrentPage={setCurrentPage}
+        totalPages={totalPages}
+        itemsPerPage={itemsPerPage}
+      />
+    );
+  }
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">

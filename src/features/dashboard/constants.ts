@@ -1,6 +1,7 @@
 export const STATUS_DISPLAY_MAP: Record<string, string> = {
   'partially_complete': 'Partially Complete',
   draft: 'Draft',
+  pending: 'Pending',
   proposed: 'Proposed',
   assembled: 'Assembled',
   'on-route': 'On Route',

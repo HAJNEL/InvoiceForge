@@ -24,6 +24,8 @@ import { DetailedInvoice } from '../../services/xaiService';
 import { useProducts } from '../products/hooks/useProducts';
 import { useSettings } from '../settings/hooks/useSettings';
 import { buildSchoolLookupAddress, buildPinSearchAddress, geocodeAddress, upsertCachedPin } from '../../lib/geocoding';
+import { useIsMobile } from '../../hooks/useIsMobile';
+import { BulkImportMobile } from './BulkImportMobile';
 
 interface UploadFile {
   id: string;
@@ -42,6 +44,7 @@ export function BulkImport() {
   const navigate = useNavigate();
   const { syncLineItemsAsProducts } = useProducts();
   const { settings } = useSettings();
+  const isMobile = useIsMobile();
   // Biases geocoding toward the warehouse's region so a same-named school in
   // another province doesn't outrank the real, nearby one (see geocoding.ts).
   const warehouseBias = settings?.warehouseLat !== undefined && settings?.warehouseLng !== undefined
@@ -344,6 +347,24 @@ export function BulkImport() {
   });
 
   const allReady = files.length > 0 && files.every(f => f.status === 'ready');
+
+  if (isMobile) {
+    return (
+      <BulkImportMobile
+        files={files}
+        useAI={useAI}
+        setUseAI={setUseAI}
+        getRootProps={getRootProps}
+        getInputProps={getInputProps}
+        isDragActive={isDragActive}
+        removeFile={removeFile}
+        setFiles={setFiles}
+        navigateToReview={(invoiceId) => navigate(`/invoices/${invoiceId}/review`)}
+        navigateToList={() => navigate('/invoices')}
+        allReady={allReady}
+      />
+    );
+  }
 
   return (
     <div className="space-y-8 max-w-4xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500">

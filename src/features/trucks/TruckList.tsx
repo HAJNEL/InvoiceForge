@@ -25,8 +25,11 @@ import { useTrucks, Truck } from './hooks/useTrucks';
 import { useServiceHistory, ServiceRecord } from './hooks/useServiceHistory';
 import { cn, formatCurrency } from '../../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
+import { useIsMobile } from '../../hooks/useIsMobile';
+import { TruckListMobile } from './TruckListMobile';
 
 export function TruckList() {
+  const isMobile = useIsMobile();
   const { trucks, loading, addTruck, updateTruck, deleteTruck } = useTrucks();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingTruck, setEditingTruck] = useState<Truck | null>(null);
@@ -174,6 +177,36 @@ export function TruckList() {
     if (diffDays <= 30) return { label: `${diffDays} days left`, color: 'text-amber-600 bg-amber-50 border-amber-100', icon: Clock };
     return { label: 'Up to date', color: 'text-emerald-600 bg-emerald-50 border-emerald-100', icon: CheckCircle2 };
   };
+
+  if (isMobile) {
+    return (
+      <TruckListMobile
+        trucks={trucks}
+        loading={loading}
+        searchQuery={searchQuery}
+        setSearchQuery={setSearchQuery}
+        paginatedTrucks={paginatedTrucks}
+        filteredCount={filteredTrucks.length}
+        currentPage={currentPage}
+        setCurrentPage={setCurrentPage}
+        totalPages={totalPages}
+        itemsPerPage={itemsPerPage}
+        getRenewalStatus={getRenewalStatus}
+        isModalOpen={isModalOpen}
+        editingTruck={editingTruck}
+        formData={formData}
+        setFormData={setFormData}
+        isSubmitting={isSubmitting}
+        onOpenModal={handleOpenModal}
+        onCloseModal={() => setIsModalOpen(false)}
+        onSubmit={handleSubmit}
+        onDelete={handleDelete}
+        serviceModalTruck={serviceModalTruck}
+        onOpenServiceModal={setServiceModalTruck}
+        onCloseServiceModal={() => setServiceModalTruck(null)}
+      />
+    );
+  }
 
   if (loading) {
     return (

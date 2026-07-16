@@ -26,6 +26,8 @@ import { collection, query, where, onSnapshot, doc, deleteDoc, updateDoc, setDoc
 import { db } from '../../lib/firebase';
 import { useAuth } from '../../core/hooks/useAuth';
 import { handleFirestoreError, OperationType } from '../../lib/firestore-errors';
+import { useIsMobile } from '../../hooks/useIsMobile';
+import { StockScreenMobile } from './StockScreenMobile';
 
 export interface InvoiceRecord {
   id: string;
@@ -574,6 +576,48 @@ export function StockScreen() {
     await updateTypeAndQty(itemId, { qty: editQtyValue });
     setEditingItemId(null);
   };
+
+  const isMobile = useIsMobile();
+  if (isMobile) {
+    return (
+      <StockScreenMobile
+        loading={loading}
+        error={error}
+        updateTypeAndQty={updateTypeAndQty}
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        inventorySubTab={inventorySubTab}
+        setInventorySubTab={setInventorySubTab}
+        searchQuery={searchQuery}
+        setSearchQuery={setSearchQuery}
+        isSetupOpen={isSetupOpen}
+        setIsSetupOpen={setIsSetupOpen}
+        loadingTakes={loadingTakes}
+        loadingInv={loadingInv}
+        stockTakes={stockTakes}
+        invoices={invoices}
+        inventoryItems={inventoryItems}
+        selectedStatuses={selectedStatuses}
+        setSelectedStatuses={setSelectedStatuses}
+        invoiceCountsByStatus={invoiceCountsByStatus}
+        builderFilter={builderFilter}
+        setBuilderFilter={setBuilderFilter}
+        filteredStockItems={filteredStockItems}
+        knockdownList={knockdownList}
+        invoiceStockAnalyses={invoiceStockAnalyses}
+        totalOutstandingDemands={totalOutstandingDemands}
+        extrasList={extrasList}
+        counts={counts}
+        handleApproveItemInTake={handleApproveItemInTake}
+        handleRejectItemInTake={handleRejectItemInTake}
+        handleDeleteInventoryItem={handleDeleteInventoryItem}
+        handleDeleteStockTake={handleDeleteStockTake}
+        handleUpdateInventoryQty={handleUpdateInventoryQty}
+        handleMoveCategory={handleMoveCategory}
+        handleDeleteItem={handleDeleteItem}
+      />
+    );
+  }
 
   return (
     <div className="space-y-6 text-zinc-900 font-sans tracking-tight">

@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
-import { 
-  LayoutDashboard, 
-  FileText, 
-  Settings, 
-  LogOut, 
+import {
+  LayoutDashboard,
+  FileText,
+  Settings,
+  LogOut,
   Bell,
   Search,
   Menu,
@@ -16,7 +16,9 @@ import {
   ListTodo,
   Users,
   BarChart3,
-  CalendarDays
+  CalendarDays,
+  CalendarCheck,
+  Gauge
 } from 'lucide-react';
 import { auth } from '../lib/firebase';
 import { cn } from '../lib/utils';
@@ -24,6 +26,11 @@ import { motion } from 'motion/react';
 import { NRLogo } from '../components/Logo';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { useSettings } from '../features/settings/hooks/useSettings';
+import { useTrips } from '../features/trips/hooks/useTrips';
+import { useCalendarSync } from '../features/team-dashboard/useCalendarSync';
+import { CalendarSyncModal } from '../features/team-dashboard/CalendarSyncModal';
+import { useIsMobile } from '../hooks/useIsMobile';
+import { MobileLayout } from './MobileLayout';
 
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
@@ -35,16 +42,25 @@ const navigation = [
   { name: 'Products', href: '/products', icon: Package },
   { name: 'Trucks', href: '/trucks', icon: Truck },
   { name: 'Reports', href: '/reports', icon: BarChart3 },
+  { name: 'KPI', href: '/kpi', icon: Gauge },
   { name: 'Settings', href: '/settings', icon: Settings },
 ];
 
 export function Layout() {
   const [isSidebarOpen, setSidebarOpen] = useState(true);
+  const [isSyncOpen, setIsSyncOpen] = useState(false);
   const { settings } = useSettings();
+  const { trips } = useTrips();
+  const calSync = useCalendarSync(trips, Boolean(settings?.calendarSyncEnabled), 'settings');
   const navigate = useNavigate();
   const location = useLocation();
+  const isMobile = useIsMobile();
 
   const isInvoicePage = location.pathname.startsWith('/invoices');
+
+  if (isMobile) {
+    return <MobileLayout />;
+  }
 
   const handleLogout = async () => {
     await auth.signOut();
@@ -137,6 +153,21 @@ export function Layout() {
             >
               <Users className="w-5 h-5" />
             </button>
+            {calSync.enabled && (
+              <button
+                type="button"
+                title={calSync.unsyncedCount > 0 ? `${calSync.unsyncedCount} trip(s) to sync to Google Calendar` : 'Sync trips to Google Calendar'}
+                onClick={() => setIsSyncOpen(true)}
+                className="p-2 text-zinc-500 hover:bg-zinc-100 rounded-lg transition-colors relative"
+              >
+                <CalendarCheck className="w-5 h-5" />
+                {calSync.unsyncedCount > 0 && (
+                  <span className="absolute top-0.5 right-0.5 min-w-4 h-4 px-1 bg-brand-accent text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                    {calSync.unsyncedCount}
+                  </span>
+                )}
+              </button>
+            )}
             <button title='ok' className="p-2 text-zinc-500 hover:bg-zinc-100 rounded-lg transition-colors relative">
               <Bell className="w-5 h-5" />
               <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border-2 border-white"></span>
@@ -161,6 +192,16 @@ export function Layout() {
           </div>
         </main>
       </div>
+
+      <CalendarSyncModal
+        open={isSyncOpen}
+        onClose={() => setIsSyncOpen(false)}
+        unsyncedTrips={calSync.unsyncedTrips}
+        syncedTrips={calSync.syncedTrips}
+        syncedMap={calSync.syncedMap}
+        syncing={calSync.syncing}
+        onSync={calSync.syncTrips}
+      />
     </div>
   );
 }

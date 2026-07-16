@@ -6,12 +6,14 @@ import {
   ArrowLeft, Plus, AlertCircle,
   X, Package, FileText, Search, Truck, Navigation, Calendar as CalendarIcon, TrendingUp,
   Check, RotateCcw, Share2, AlertTriangle, Clock, Fuel, Bed, Coffee, GripVertical,
-  Maximize2, Minimize2, MapPin, Trash2, ArrowRightLeft
+  Maximize2, Minimize2, MapPin, Trash2, ArrowRightLeft, Send, Printer
 } from 'lucide-react';
 import { PartialConfirmModal } from '../../components/PartialConfirmModal';
+import { PartialConfirmModalMobile } from '../../components/PartialConfirmModalMobile';
 import { EditInvoiceModal } from '../../components/EditInvoiceModal';
 import { APIProvider } from '@vis.gl/react-google-maps';
 import { cn } from '../../lib/utils';
+import { useIsMobile } from '../../hooks/useIsMobile';
 import { useTrips } from './hooks/useTrips';
 import { useTrucks } from '../trucks/hooks/useTrucks';
 import { useInvoices, UIInvoice } from '../invoices/hooks/useInvoices';
@@ -22,7 +24,10 @@ import { GeocodedInvoice } from './tripFormComponents/types';
 import { CapacityProgressBar } from './tripFormComponents/CapacityProgressBar';
 import { InteractiveTripMap } from './tripFormComponents/InteractiveTripMap';
 import { CustomStopModal } from './tripFormComponents/CustomStopModal';
+import { CustomStopModalMobile } from './tripFormComponents/CustomStopModalMobile';
 import { MoveInvoiceModal } from './tripFormComponents/MoveInvoiceModal';
+import { MoveInvoiceModalMobile } from './tripFormComponents/MoveInvoiceModalMobile';
+import { TripFormMobile } from './tripFormComponents/TripFormMobile';
 import { InvoiceDetailsPanel } from './TripListComponents/InvoiceDetailsPanel';
 
 const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_PLATFORM_KEY || '';
@@ -55,8 +60,6 @@ export function TripForm() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [originalInvoiceIds, setOriginalInvoiceIds] = useState<string[]>([]);
   const hasInitializedRef = useRef(false);
-  const nameManuallyEditedRef = useRef(false);
-  const skipNextAutoNameRef = useRef(false);
   const [checkedItems, setCheckedItems] = useState<{ [key: string]: boolean }>({});
   const [copied, setCopied] = useState(false);
 
@@ -76,7 +79,7 @@ export function TripForm() {
       name: '',
       date: prefillDate || new Date().toISOString().split('T')[0],
       truckId: prefillTruck || lastTruckId,
-      status: TripStatus.PROPOSED as TripStatus,
+      status: TripStatus.PENDING as TripStatus,
       invoiceIds: [] as string[]
     };
   });
@@ -184,7 +187,6 @@ export function TripForm() {
         }
 
         hasInitializedRef.current = true;
-        skipNextAutoNameRef.current = true;
         if (trip.truckId) {
           localStorage.setItem('last_selected_truck_id', trip.truckId);
         }
@@ -283,61 +285,6 @@ export function TripForm() {
       }
     }
   }, [trucks, formData.truckId, isEditMode]);
-
-  // Auto-generate trip name on truck selection or date change based on convention: (Day abbreviation) - (Truck Name) - (trip number)
-  useEffect(() => {
-    if (!nameManuallyEditedRef.current && (!isEditMode || hasInitializedRef.current) && formData.truckId && formData.date && trucks.length > 0) {
-      const activeTruck = trucks.find(t => t.id === formData.truckId);
-      if (activeTruck) {
-        // Find other trips for this truck on the same day
-        const sameDayTripsForTruck = trips.filter(
-          t => t.date === formData.date && t.truckId === formData.truckId
-        );
-        
-        // Sort them chronologically by createdAt to establish sequence
-        const sortedTrips = [...sameDayTripsForTruck].sort((a, b) => 
-          (a.createdAt || '').localeCompare(b.createdAt || '')
-        );
-
-        let tripNumber: number;
-        if (isEditMode && id) {
-          const currentIndex = sortedTrips.findIndex(t => t.id === id);
-          if (currentIndex !== -1) {
-            tripNumber = currentIndex + 1;
-          } else {
-            // If the edited trip has newly moved to this day/truck, put it at the end of the sequence
-            tripNumber = sortedTrips.length + 1;
-          }
-        } else {
-          tripNumber = sortedTrips.length + 1;
-        }
-
-        const [year, month, day] = formData.date.split('-').map(Number);
-        const dateObj = new Date(year, month - 1, day);
-        const daysOfWeek = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-        const dayAbbrev = daysOfWeek[dateObj.getDay()];
-
-        const generatedName = `${dayAbbrev} - ${activeTruck.name} - ${tripNumber}`;
-
-        if (skipNextAutoNameRef.current) {
-          skipNextAutoNameRef.current = false;
-          if (formData.name !== generatedName) {
-            // The saved name doesn't match the auto-generated pattern, so it's a
-            // custom name — lock it so future truck/date changes don't clobber it.
-            nameManuallyEditedRef.current = true;
-          }
-          return;
-        }
-
-        setFormData(prev => {
-          if (prev.name !== generatedName) {
-            return { ...prev, name: generatedName };
-          }
-          return prev;
-        });
-      }
-    }
-  }, [formData.truckId, formData.date, trucks, trips, isEditMode, id]);
 
   // Sync geocodedInvoices to localStorage whenever it is updated
   useEffect(() => {
@@ -467,6 +414,251 @@ export function TripForm() {
     });
   };
 
+  // Print a professional A4 trip manifest (route sequence + loading manifest)
+  const handlePrintTrip = () => {
+    const escapeHtml = (value: unknown): string => {
+      return String(value ?? '').replace(/[&<>"']/g, (ch) => (
+        { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch] as string
+      ));
+    };
+
+    const printWindow = window.open('', '_blank', 'width=1000,height=1300');
+    if (!printWindow) {
+      toast.error('Popup Blocked', { description: 'Please allow popups for this site to print the trip manifest.' });
+      return;
+    }
+
+    const tripName = formData.name || 'Untitled Trip';
+    const tripDate = formData.date
+      ? new Date(formData.date + 'T00:00:00').toLocaleDateString('en-ZA', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+      : '—';
+    const truckName = selectedTruck ? selectedTruck.name : 'Unassigned';
+    const truckLimit = selectedTruck?.maxValue ? `R ${selectedTruck.maxValue.toLocaleString()}` : '—';
+    const statusLabel = formData.status.toUpperCase().replace(/-/g, ' ');
+    const generatedAt = new Date().toLocaleString('en-ZA');
+
+    const stopRows = stops.map((stop, idx) => {
+      const isInvoice = Boolean(stop.invoiceId);
+      const label = isInvoice ? `Invoice #${stop.number}` : (stop.type || 'Stop');
+      const clientName = isInvoice
+        ? (invoices.find(inv => inv.id === stop.invoiceId)?.schoolName || stop.client || 'Unknown')
+        : (stop.location || stop.client || stop.type || '');
+      const timeWindow = [stop.startTime, stop.endTime].filter(Boolean).join(' – ') || '—';
+      const amount = isInvoice ? `R ${(stop.amount || 0).toLocaleString()}` : '—';
+      return `
+        <tr>
+          <td class="col-seq">${idx + 1}</td>
+          <td>
+            <div class="stop-label">${escapeHtml(label)}</div>
+            <div class="stop-sub">${escapeHtml(clientName)}</div>
+          </td>
+          <td>${escapeHtml(stop.address || stop.location || '—')}</td>
+          <td>${escapeHtml(timeWindow)}</td>
+          <td>${escapeHtml(stop.duration || '—')}</td>
+          <td class="col-amount">${escapeHtml(amount)}</td>
+        </tr>`;
+    }).join('');
+
+    const manifestRows = groupedLineItems.map(item => `
+        <tr>
+          <td class="mono">${escapeHtml(item.stockCode || 'N/A')}</td>
+          <td>${escapeHtml(item.description || '')}</td>
+          <td class="col-amount mono">${item.qty}</td>
+          <td class="col-amount mono">R ${item.value.toLocaleString()}</td>
+        </tr>`).join('');
+
+    const html = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Trip Manifest - ${escapeHtml(tripName)}</title>
+<style>
+  @page { size: A4; margin: 14mm; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', Arial, Helvetica, sans-serif;
+    color: #18181b;
+    margin: 0;
+    font-size: 11px;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    border-bottom: 3px solid #18181b;
+    padding-bottom: 12px;
+    margin-bottom: 18px;
+  }
+  .header h1 {
+    font-size: 20px;
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: -0.02em;
+    margin: 0 0 4px 0;
+  }
+  .header .subtitle {
+    font-size: 11px;
+    color: #71717a;
+    font-weight: 600;
+  }
+  .header .doc-label {
+    text-align: right;
+    font-size: 10px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #a1a1aa;
+  }
+  .meta-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+    margin-bottom: 20px;
+  }
+  .meta-box {
+    border: 1px solid #e4e4e7;
+    border-radius: 8px;
+    padding: 8px 10px;
+  }
+  .meta-box .label {
+    font-size: 8.5px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #a1a1aa;
+    margin-bottom: 3px;
+  }
+  .meta-box .value {
+    font-size: 12px;
+    font-weight: 700;
+    color: #18181b;
+  }
+  h2.section-title {
+    font-size: 12px;
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    border-bottom: 2px solid #18181b;
+    padding-bottom: 6px;
+    margin: 22px 0 8px 0;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  th {
+    text-align: left;
+    font-size: 8.5px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #71717a;
+    border-bottom: 1px solid #d4d4d8;
+    padding: 5px 6px;
+  }
+  td {
+    padding: 6px;
+    border-bottom: 1px solid #f0f0f1;
+    vertical-align: top;
+    font-size: 10.5px;
+  }
+  .col-seq { width: 24px; font-weight: 800; color: #71717a; }
+  .col-amount { text-align: right; font-weight: 700; }
+  .mono { font-family: 'Consolas', monospace; }
+  .stop-label { font-weight: 700; }
+  .stop-sub { color: #71717a; font-size: 9.5px; margin-top: 1px; }
+  .empty-note {
+    padding: 14px 0;
+    color: #a1a1aa;
+    font-style: italic;
+    font-size: 10.5px;
+  }
+  .footer {
+    margin-top: 26px;
+    padding-top: 8px;
+    border-top: 1px solid #e4e4e7;
+    font-size: 9px;
+    color: #a1a1aa;
+    display: flex;
+    justify-content: space-between;
+  }
+</style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      <h1>${escapeHtml(tripName)}</h1>
+      <div class="subtitle">Delivery Trip Manifest</div>
+    </div>
+    <div class="doc-label">Trip Manifest<br/>${escapeHtml(statusLabel)}</div>
+  </div>
+
+  <div class="meta-grid">
+    <div class="meta-box">
+      <div class="label">Scheduled Date</div>
+      <div class="value">${escapeHtml(tripDate)}</div>
+    </div>
+    <div class="meta-box">
+      <div class="label">Assigned Truck</div>
+      <div class="value">${escapeHtml(truckName)}</div>
+    </div>
+    <div class="meta-box">
+      <div class="label">Truck Value Limit</div>
+      <div class="value">${escapeHtml(truckLimit)}</div>
+    </div>
+    <div class="meta-box">
+      <div class="label">Merchandise Value</div>
+      <div class="value">R ${currentSelectionTotal.toLocaleString()}</div>
+    </div>
+  </div>
+
+  <h2 class="section-title">Route Sequence (${stops.length} ${stops.length === 1 ? 'Stop' : 'Stops'})</h2>
+  ${stops.length === 0 ? '<p class="empty-note">No stops planned for this trip.</p>' : `
+  <table>
+    <thead>
+      <tr>
+        <th class="col-seq">#</th>
+        <th>Stop</th>
+        <th>Address</th>
+        <th>Time Window</th>
+        <th>Duration</th>
+        <th class="col-amount">Amount</th>
+      </tr>
+    </thead>
+    <tbody>${stopRows}</tbody>
+  </table>`}
+
+  <h2 class="section-title">Consolidated Loading Manifest</h2>
+  ${groupedLineItems.length === 0 ? '<p class="empty-note">No line items to load for this trip.</p>' : `
+  <table>
+    <thead>
+      <tr>
+        <th>Stock Code</th>
+        <th>Description</th>
+        <th class="col-amount">Qty</th>
+        <th class="col-amount">Value</th>
+      </tr>
+    </thead>
+    <tbody>${manifestRows}</tbody>
+  </table>`}
+
+  <div class="footer">
+    <span>Generated ${escapeHtml(generatedAt)}</span>
+    <span>InvoiceForge Trip Planner</span>
+  </div>
+</body>
+</html>`;
+
+    printWindow.document.write(html);
+    printWindow.document.close();
+    printWindow.focus();
+    setTimeout(() => {
+      printWindow.print();
+    }, 250);
+  };
+
   // Toggle selection of invoice in trip form
   const handleToggleInvoice = (invId: string) => {
     const isSelected = formData.invoiceIds.includes(invId);
@@ -540,7 +732,7 @@ export function TripForm() {
       date: data.date,
       truckId: data.truckId,
       truckName: truck?.name || '',
-      status: TripStatus.PROPOSED,
+      status: TripStatus.PENDING,
       invoiceIds: [movingStop.invoiceId],
       stops: [movingStop]
     });
@@ -588,7 +780,7 @@ export function TripForm() {
   // top-bar "Submit Trip" button can trigger it directly without a form event
   // (that button sits outside the <form>, since the map overlay covers the form
   // while fullscreen).
-  const submitTrip = async () => {
+  const submitTrip = async (statusOverride?: TripStatus) => {
     if (!formData.name.trim()) {
       toast.error('Missing Trip Name', { description: 'Please enter a name for this trip before saving.' });
       return;
@@ -598,10 +790,15 @@ export function TripForm() {
       return;
     }
 
+    // When publishing, the trip (and all its invoices) move from 'pending' to 'proposed'
+    // so the team can finally see the trip in their dashboard.
+    const effectiveStatus = statusOverride ?? formData.status;
+
     setIsSubmitting(true);
     try {
       const payload = {
         ...formData,
+        status: effectiveStatus,
         truckName: selectedTruck ? selectedTruck.name : '',
         stops: stops, // Persist rich stop sequence & Custom Category stops and timelines
         manifestItems: groupedLineItems.map(item => ({
@@ -618,8 +815,18 @@ export function TripForm() {
         await addTrip(payload);
       }
 
-      // Handle custom draft/proposed transitions when a trip is saved:
-      // 1. Any draft status invoice added to the trip turns to 'proposed'
+      // Handle custom draft/status transitions when a trip is saved.
+      // Newly added invoices adopt the trip's current invoice-facing status. A brand
+      // new (or still-unpublished) trip is 'pending', so its invoices become 'pending'
+      // and stay hidden from the team until the trip is published to 'proposed'.
+      const tripInvoiceStatus =
+        effectiveStatus === TripStatus.ASSEMBLED ? 'assembled' :
+        effectiveStatus === TripStatus.ON_ROUTE ? 'on_route' :
+        (effectiveStatus === TripStatus.DELIVERED || effectiveStatus === TripStatus.COMPLETED) ? 'delivered' :
+        effectiveStatus === TripStatus.PROPOSED ? 'proposed' :
+        'pending';
+
+      // 1. Any draft status invoice added to the trip adopts the trip's status
       const addedInvoiceIds = formData.invoiceIds.filter(invId => !originalInvoiceIds.includes(invId));
       const draftAddedInvoices = addedInvoiceIds.filter(invId => {
         const liveInv = invoices.find(inv => inv.id === invId);
@@ -628,7 +835,7 @@ export function TripForm() {
       });
       if (draftAddedInvoices.length > 0) {
         await Promise.all(
-          draftAddedInvoices.map(invId => updateInvoice(invId, { status: 'proposed' }))
+          draftAddedInvoices.map(invId => updateInvoice(invId, { status: tripInvoiceStatus }))
         );
       }
 
@@ -641,12 +848,20 @@ export function TripForm() {
       }
 
       // If status is set directly to DELIVERED or COMPLETED, update all the linked invoices
-      if (formData.status === TripStatus.DELIVERED || formData.status === TripStatus.COMPLETED) {
+      if (effectiveStatus === TripStatus.DELIVERED || effectiveStatus === TripStatus.COMPLETED) {
         if (formData.invoiceIds && formData.invoiceIds.length > 0) {
           await Promise.all(
             formData.invoiceIds.map(invId => updateInvoice(invId, { status: 'delivered' }))
           );
         }
+      }
+
+      // Publishing (moving to PROPOSED) syncs every linked invoice to 'proposed' so the
+      // whole trip becomes visible to the team at once.
+      if (effectiveStatus === TripStatus.PROPOSED && formData.invoiceIds && formData.invoiceIds.length > 0) {
+        await Promise.all(
+          formData.invoiceIds.map(invId => updateInvoice(invId, { status: 'proposed' }))
+        );
       }
 
       navigate('/trips');
@@ -662,6 +877,14 @@ export function TripForm() {
     e.preventDefault();
     await submitTrip();
   };
+
+  // Publish saves the current edits and promotes the trip (and its invoices) from
+  // 'pending' to 'proposed', making it visible to the team dashboard.
+  const handlePublish = async () => {
+    await submitTrip(TripStatus.PROPOSED);
+  };
+
+  const isPending = formData.status === TripStatus.PENDING;
 
   // Route Sequences card: shared between the standard left panel layout and the
   // fullscreen map's left sidebar. `compact` tightens spacing and swaps the text
@@ -993,6 +1216,7 @@ export function TripForm() {
                   <option value="all">All Statuses</option>
                   <option value="partially_complete">Partially Complete</option>
                   <option value="draft">Draft</option>
+                  <option value="pending">Pending</option>
                   <option value="proposed">Proposed</option>
                   <option value="assembled">Assembled</option>
                   <option value="on_route">On Route</option>
@@ -1017,12 +1241,24 @@ export function TripForm() {
                   type="button"
                   title={isEditMode ? 'Update Delivery Trip' : 'Save Delivery Trip'}
                   disabled={isSubmitting}
-                  onClick={submitTrip}
+                  onClick={() => submitTrip()}
                   className="flex items-center gap-2 bg-brand-primary text-white px-4 py-2 rounded-xl font-bold text-xs hover:bg-brand-primary/95 transition-all shadow-sm disabled:opacity-50"
                 >
                   {isSubmitting ? <Plus className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
                   {isEditMode ? 'Update Trip' : 'Submit Trip'}
                 </button>
+                {isEditMode && isPending && (
+                  <button
+                    type="button"
+                    title="Publish this trip and its invoices to the team (Proposed)"
+                    disabled={isSubmitting}
+                    onClick={handlePublish}
+                    className="flex items-center gap-2 bg-violet-600 text-white px-4 py-2 rounded-xl font-bold text-xs hover:bg-violet-700 transition-all shadow-sm disabled:opacity-50"
+                  >
+                    <Send className="w-4 h-4" />
+                    Publish
+                  </button>
+                )}
                 <button
                   type="button"
                   title="Exit Fullscreen (Esc)"
@@ -1077,6 +1313,7 @@ export function TripForm() {
                   <option value="all">All Statuses</option>
                   <option value="partially_complete">Partially Complete</option>
                   <option value="draft">Draft</option>
+                  <option value="pending">Pending</option>
                   <option value="proposed">Proposed</option>
                   <option value="assembled">Assembled</option>
                   <option value="on_route">On Route</option>
@@ -1301,6 +1538,16 @@ export function TripForm() {
                       <RotateCcw className="w-5 h-5 transition-transform group-hover:-rotate-45" />
                     </button>
 
+                    {/* Print FAB */}
+                    <button
+                      type="button"
+                      onClick={handlePrintTrip}
+                      title="Print Trip Manifest (A4)"
+                      className="w-12 h-12 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-650 hover:text-zinc-900 shadow-lg border border-zinc-200 flex items-center justify-center transition-all hover:scale-110 active:scale-95"
+                    >
+                      <Printer className="w-5 h-5" />
+                    </button>
+
                     {/* Share FAB */}
                     <button
                       type="button"
@@ -1338,11 +1585,10 @@ export function TripForm() {
                     required
                     value={formData.name}
                     onChange={(e) => {
-                      nameManuallyEditedRef.current = true;
                       setFormData({ ...formData, name: e.target.value });
                     }}
                     className="w-full px-4 py-2.5 border border-zinc-200 rounded-xl focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent transition-all text-sm font-bold"
-                    placeholder="Auto-generating name based on selected truck..."
+                    placeholder="Enter trip name..."
                   />
                 </div>
 
@@ -1445,11 +1691,26 @@ export function TripForm() {
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="w-full sm:w-2/3 bg-brand-primary hover:bg-brand-primary/95 text-white py-3 px-6 rounded-2xl font-black text-sm transition-all shadow-md flex items-center justify-center gap-2 hover:shadow-lg disabled:opacity-50"
+                  className={cn(
+                    "w-full bg-brand-primary hover:bg-brand-primary/95 text-white py-3 px-6 rounded-2xl font-black text-sm transition-all shadow-md flex items-center justify-center gap-2 hover:shadow-lg disabled:opacity-50",
+                    isEditMode && isPending ? "sm:w-1/3" : "sm:w-2/3"
+                  )}
                 >
                   {isSubmitting && <Plus className="w-4 h-4 animate-spin" />}
                   {isEditMode ? 'Update Delivery Trip' : 'Save Delivery Trip'}
                 </button>
+                {isEditMode && isPending && (
+                  <button
+                    type="button"
+                    title="Publish this trip and its invoices to the team (Proposed)"
+                    disabled={isSubmitting}
+                    onClick={handlePublish}
+                    className="w-full sm:w-1/3 bg-violet-600 hover:bg-violet-700 text-white py-3 px-6 rounded-2xl font-black text-sm transition-all shadow-md flex items-center justify-center gap-2 hover:shadow-lg disabled:opacity-50"
+                  >
+                    <Send className="w-4 h-4" />
+                    Publish
+                  </button>
+                )}
               </div>
             </div>
           </div>

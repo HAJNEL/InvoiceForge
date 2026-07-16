@@ -388,7 +388,7 @@ export function MapComponent({ invoices, allInvoices, geocodedInvoices, setGeoco
               Selected Trip Stop
             </div>
           )}
-          {['partially_complete', 'draft', 'proposed', 'assembled', 'on_route', 'delivered', 'complete']
+          {['partially_complete', 'draft', 'pending', 'proposed', 'assembled', 'on_route', 'delivered', 'complete']
             .filter(status => {
               if (showHistory) {
                 return status === 'delivered' || status === 'complete';

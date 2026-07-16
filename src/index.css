@@ -60,3 +60,21 @@
   animation: fadeInColors 0.2s ease-out forwards;
 }
 
+@keyframes slideInUp {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+.animate-slide-in-up {
+  animation: slideInUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.mobile-tap-target {
+  min-height: 44px;
+  min-width: 44px;
+}
+

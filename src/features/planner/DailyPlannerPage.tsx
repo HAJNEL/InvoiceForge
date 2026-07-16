@@ -9,6 +9,8 @@ import { useTrips } from '../trips/hooks/useTrips';
 import { useDayPlanners } from '../trips/hooks/useDayPlanners';
 import { DayPlannerModal } from '../trips/TripListComponents/DayPlannerModal';
 import { DayPlannerEditor } from '../trips/TripListComponents/DayPlannerEditor';
+import { useIsMobile } from '../../hooks/useIsMobile';
+import { DailyPlannerPageMobile } from './DailyPlannerPageMobile';
 
 type ViewMode = 'month' | 'week' | 'day';
 
@@ -123,6 +125,31 @@ export function DailyPlannerPage() {
   }, [currentDate]);
 
   const loading = tripsLoading || plannersLoading;
+
+  const isMobile = useIsMobile();
+  if (isMobile) {
+    return (
+      <DailyPlannerPageMobile
+        viewMode={viewMode}
+        setViewMode={setViewMode}
+        currentDate={currentDate}
+        goToday={goToday}
+        goPrev={goPrev}
+        goNext={goNext}
+        headerLabel={headerLabel}
+        loading={loading}
+        monthGridDays={monthGridDays}
+        weekDays={weekDays}
+        entriesByDate={entriesByDate}
+        isDayUsable={isDayUsable}
+        saveEntries={saveEntries}
+        moveEntries={moveEntries}
+        completedByName={ownerDisplayName}
+        toDateKey={toDateKey}
+        parseDateKey={parseDateKey}
+      />
+    );
+  }
 
   const renderDot = (dateKey: string) => {
     const count = entriesByDate[dateKey]?.length ?? 0;

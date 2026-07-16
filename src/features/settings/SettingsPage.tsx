@@ -9,6 +9,9 @@ import { testZohoConnection } from '../../lib/zoho';
 import { Settings, ZohoCredentials } from '../../types';
 import { NRLogo } from '../../components/Logo';
 import { TeamMembersSection } from './components/TeamMembersSection';
+import { CalendarSyncCard } from './components/CalendarSyncCard';
+import { useIsMobile } from '../../hooks/useIsMobile';
+import { SettingsPageMobile } from './SettingsPageMobile';
 
 const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_PLATFORM_KEY || '';
 
@@ -38,6 +41,7 @@ export function SettingsPage() {
   const { credentials: zohoCredentials, loading: zohoLoading, saveCredentials: saveZohoCredentials } = useZohoCredentials();
   const [address, setAddress] = useState('');
   const [saveStatus, setSaveStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const isMobile = useIsMobile();
 
   useEffect(() => {
     if (settings?.warehouseAddress) {
@@ -58,6 +62,22 @@ export function SettingsPage() {
       <div className="p-8 text-center text-red-500">
         Google Maps API Key is missing. Please add it to secrets.
       </div>
+    );
+  }
+
+  if (isMobile) {
+    return (
+      <SettingsPageMobile
+        settings={settings}
+        saveSettings={saveSettings}
+        zohoCredentials={zohoCredentials}
+        zohoLoading={zohoLoading}
+        saveZohoCredentials={saveZohoCredentials}
+        address={address}
+        setAddress={setAddress}
+        saveStatus={saveStatus}
+        setSaveStatus={setSaveStatus}
+      />
     );
   }
 
@@ -183,6 +203,13 @@ export function SettingsPage() {
                 )}
               </div>
             </div>
+          </div>
+        </div>
+
+        {/* Google Calendar Sync Card */}
+        <div className="bg-white rounded-3xl shadow-sm border border-zinc-200 overflow-hidden">
+          <div className="p-8">
+            <CalendarSyncCard settings={settings} onSave={saveSettings} />
           </div>
         </div>
 

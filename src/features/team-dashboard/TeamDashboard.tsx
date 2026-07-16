@@ -2,17 +2,22 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { toast } from 'sonner';
 import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import {
-  Search, Calendar, CalendarDays, ChevronRight, LogOut, Loader2, Shield, Info, AlertTriangle, Truck, RefreshCw,
-  Package, ClipboardList, ChevronDown, X, Menu, ListTodo, FileText, MapPin, Filter, ArrowLeft
+  Search, Calendar, CalendarDays, ChevronLeft, ChevronRight, LogOut, Loader2, Info, AlertTriangle, Truck, RefreshCw,
+  Package, ClipboardList, ChevronDown, X, Menu, ListTodo, FileText, MapPin, Filter, ArrowLeft, UserCircle, CalendarCheck
 } from 'lucide-react';
 import { useTeamDashboard } from './useTeamDashboard';
 import { useMyTasks } from '../todos/hooks/useMyTasks';
 import { MyTasksDrawer } from '../todos/components/MyTasksDrawer';
 import { TodayPlannerDialog } from './TodayPlannerDialog';
+import { TodayPlannerDialogMobile } from './TodayPlannerDialogMobile';
 import { TripOverviewTable } from './components/TripOverviewTable';
 import { auth, db } from '../../lib/firebase';
 import { NRLogo } from '../../components/Logo';
 import { Trip, TripStatus } from '../../types';
+import { useIsMobile } from '../../hooks/useIsMobile';
+import { TeamDashboardMobile } from './TeamDashboardMobile';
+import { useCalendarSync } from './useCalendarSync';
+import { CalendarSyncModal } from './CalendarSyncModal';
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -58,7 +63,9 @@ export function TeamDashboard() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isTasksOpen, setIsTasksOpen] = useState(false);
   const [isPlannerOpen, setIsPlannerOpen] = useState(false);
+  const [isSyncOpen, setIsSyncOpen] = useState(false);
   const { openCount: openTaskCount } = useMyTasks();
+  const calSync = useCalendarSync(trips, Boolean(profile?.calendarSyncEnabled));
 
   // Today's plan entries only - recomputed against the current date whenever the
   // dialog is opened, in the exact order the owner arranged them.
@@ -113,6 +120,16 @@ export function TeamDashboard() {
   const handleSelectRole = (role: string) => {
     setActiveRole(role);
     setSearchParams({ role });
+  };
+
+  // Cycle the active role through the member's assigned roles (wrapping around).
+  // direction: 1 = next (right), -1 = previous (left).
+  const handleCycleRole = (direction: 1 | -1) => {
+    if (rolesWithFallback.length <= 1) return;
+    const idx = rolesWithFallback.indexOf(currentRole);
+    const base = idx === -1 ? 0 : idx;
+    const nextIdx = (base + direction + rolesWithFallback.length) % rolesWithFallback.length;
+    handleSelectRole(rolesWithFallback[nextIdx]);
   };
 
   // Catalog-based stock count item lists
@@ -276,7 +293,11 @@ export function TeamDashboard() {
       matchesFilter = trip.status === TripStatus.ON_ROUTE;
     }
 
-    return matchesSearch && matchesFilter;
+    // Pending trips are still being planned and must stay hidden from the team
+    // until they are published (promoted to 'proposed').
+    const isVisibleToTeam = trip.status !== TripStatus.PENDING;
+
+    return matchesSearch && matchesFilter && isVisibleToTeam;
   });
 
   // Calculate items checked statistical fraction for each trip
@@ -302,6 +323,56 @@ export function TeamDashboard() {
       percentage
     };
   };
+
+  const isMobile = useIsMobile();
+  if (isMobile) {
+    return (
+      <>
+        <MyTasksDrawer open={isTasksOpen} onClose={() => setIsTasksOpen(false)} />
+        <TodayPlannerDialogMobile
+          open={isPlannerOpen}
+          onClose={() => setIsPlannerOpen(false)}
+          entries={todayPlannerEntries}
+          dateLabel={todayLabel}
+          onToggle={(entryId) => toggleDayPlannerEntry(todayDateKey(), entryId)}
+        />
+        <CalendarSyncModal
+          open={isSyncOpen}
+          onClose={() => setIsSyncOpen(false)}
+          unsyncedTrips={calSync.unsyncedTrips}
+          syncedTrips={calSync.syncedTrips}
+          syncedMap={calSync.syncedMap}
+          syncing={calSync.syncing}
+          onSync={calSync.syncTrips}
+        />
+        <TeamDashboardMobile
+          profile={profile}
+          trips={trips}
+          invoices={invoices}
+          invoicesCount={invoicesCount}
+          isOwner={isOwner}
+          loading={loading}
+          errorWord={errorWord}
+          knockdownItems={knockdownItems}
+          catalogProducts={catalogProducts}
+          inventoryItems={inventoryItems}
+          rolesWithFallback={rolesWithFallback}
+          currentRole={currentRole}
+          onSelectRole={handleSelectRole}
+          todayPlannerEntriesCount={todayPlannerEntries.length}
+          onOpenPlanner={() => setIsPlannerOpen(true)}
+          onOpenTasks={() => setIsTasksOpen(true)}
+          openTaskCount={openTaskCount}
+          onBackToMainAccount={() => navigate('/dashboard')}
+          onLogout={handleLogout}
+          onOpenProfile={() => navigate('/team-dashboard/profile')}
+          calendarSyncEnabled={calSync.enabled}
+          unsyncedCalendarCount={calSync.unsyncedCount}
+          onOpenCalendarSync={() => setIsSyncOpen(true)}
+        />
+      </>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-zinc-50 flex flex-col justify-start">
@@ -343,7 +414,7 @@ export function TeamDashboard() {
           <span className="text-xs font-black uppercase text-zinc-950 tracking-wider">Team Dashboard</span>
         </div>
 
-        {/* Right cluster: Today's Plan + My Tasks + user menu */}
+        {/* Right cluster: Today's Plan + Calendar Sync + My Tasks + user menu */}
         <div className="flex items-center gap-2">
         {/* Today's Plan button */}
         <button
@@ -359,6 +430,23 @@ export function TeamDashboard() {
             </span>
           )}
         </button>
+
+        {/* Google Calendar sync button (only when the member has enabled sync) */}
+        {calSync.enabled && (
+          <button
+            type="button"
+            onClick={() => setIsSyncOpen(true)}
+            className="p-2 rounded-xl text-zinc-700 hover:bg-zinc-100 transition-all cursor-pointer relative"
+            title={calSync.unsyncedCount > 0 ? `${calSync.unsyncedCount} trip(s) to sync to Google Calendar` : 'Sync trips to Google Calendar'}
+          >
+            <CalendarCheck className="w-5 h-5 stroke-[2.5]" />
+            {calSync.unsyncedCount > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 min-w-4 h-4 px-1 bg-brand-accent text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                {calSync.unsyncedCount}
+              </span>
+            )}
+          </button>
+        )}
 
         {/* My Tasks button */}
         <button
@@ -379,24 +467,38 @@ export function TeamDashboard() {
         <div className="relative">
           <button
             type="button"
+            title="Account menu"
             onClick={() => setShowLogoutMenu(!showLogoutMenu)}
-            className="w-8 h-8 rounded-full bg-zinc-100 border border-zinc-250 flex items-center justify-center font-bold text-xs uppercase text-zinc-700 hover:bg-zinc-200 transition-all"
+            className="w-8 h-8 rounded-full bg-zinc-100 border border-zinc-250 flex items-center justify-center font-bold text-xs uppercase text-zinc-700 hover:bg-zinc-200 transition-all overflow-hidden"
           >
-            {profile?.firstName?.charAt(0) || auth.currentUser?.email?.charAt(0).toUpperCase()}
+            {profile?.photoBase64 ? (
+              <img src={profile.photoBase64} alt="Profile" className="w-full h-full object-cover" />
+            ) : (
+              profile?.firstName?.charAt(0) || auth.currentUser?.email?.charAt(0).toUpperCase()
+            )}
           </button>
-          
+
           {showLogoutMenu && (
             <div className="absolute right-0 mt-2 w-48 bg-white border border-zinc-200 rounded-2xl shadow-xl py-2 z-50 text-left animate-fade-in pre-render-shadow">
               <div className="px-4 py-2 border-b border-zinc-100 mb-1">
                 <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Signed in as{isOwner ? ' (Owner)' : ''}</p>
                 <p className="text-xs font-black text-zinc-800 truncate leading-snug">{profile?.firstName} {profile?.lastName}</p>
               </div>
-              <button 
+              <button
+                type="button"
+                onClick={() => { setShowLogoutMenu(false); navigate('/team-dashboard/profile'); }}
+                className="w-full px-4 py-2 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 flex items-center gap-2 transition-all cursor-pointer text-left"
+              >
+                <UserCircle className="w-4 h-4" />
+                View Profile
+              </button>
+              <button
+                type="button"
                 onClick={handleLogout}
                 className="w-full px-4 py-2 text-xs font-semibold text-red-650 hover:bg-red-50 flex items-center gap-2 transition-all cursor-pointer text-left"
               >
                 <LogOut className="w-4 h-4" />
-                `Sign Out / Exit`
+                Sign Out / Exit
               </button>
             </div>
           )}
@@ -412,15 +514,38 @@ export function TeamDashboard() {
         dateLabel={todayLabel}
         onToggle={(entryId) => toggleDayPlannerEntry(todayDateKey(), entryId)}
       />
+      <CalendarSyncModal
+        open={isSyncOpen}
+        onClose={() => setIsSyncOpen(false)}
+        unsyncedTrips={calSync.unsyncedTrips}
+        syncedTrips={calSync.syncedTrips}
+        syncedMap={calSync.syncedMap}
+        syncing={calSync.syncing}
+        onSync={calSync.syncTrips}
+      />
 
       {/* Main viewport block scaled to thumb-centered width limit */}
       <main className="flex-grow w-full max-w-xl mx-auto px-4 py-6 space-y-6">
         
-        {/* Display the role selected at the top of the screen in a card professionally */}
-        <div className="bg-white rounded-3xl p-6 border border-zinc-200/80 shadow-sm relative overflow-hidden flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-left animate-fade-in">
-          <div className="space-y-1.5">
-            <span className="text-[10px] text-zinc-400 font-extrabold uppercase tracking-widest font-mono">ACTIVE WORKSERSTATION ROLE</span>
-            <div className="flex items-center gap-2.5">
+        {/* Role carousel: tap left/right to move through the member's assigned roles,
+            with the current role shown in the center. */}
+        <div className="bg-white rounded-3xl p-6 border border-zinc-200/80 shadow-sm relative overflow-hidden flex items-center gap-3 sm:gap-4 text-center animate-fade-in">
+          {/* Previous role */}
+          <button
+            type="button"
+            onClick={() => handleCycleRole(-1)}
+            disabled={rolesWithFallback.length <= 1}
+            title="Previous role"
+            aria-label="Previous role"
+            className="shrink-0 w-10 h-10 rounded-2xl flex items-center justify-center border border-zinc-200 text-zinc-700 hover:bg-zinc-100 hover:border-zinc-300 transition-all disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+          >
+            <ChevronLeft className="w-5 h-5" />
+          </button>
+
+          {/* Current role (center) */}
+          <div className="flex-1 min-w-0 space-y-1.5">
+            <span className="text-[10px] text-zinc-400 font-extrabold uppercase tracking-widest font-mono">Active Workstation Role</span>
+            <div className="flex items-center justify-center gap-2.5">
               <span className={`w-3 h-3 rounded-full animate-pulse shrink-0 ${
                 currentRole === 'Stock Counter' ? 'bg-emerald-500' :
                 currentRole === 'Assembler' ? 'bg-blue-500' :
@@ -429,11 +554,11 @@ export function TeamDashboard() {
                 currentRole === 'Trip Overview' ? 'bg-rose-500' :
                 'bg-purple-500'
               }`} />
-              <h2 className="text-base font-black text-zinc-950 uppercase tracking-tight font-sans">
+              <h2 className="text-base font-black text-zinc-950 uppercase tracking-tight font-sans truncate">
                 {currentRole}
               </h2>
             </div>
-            <p className="text-xs text-zinc-500 leading-relaxed max-w-sm">
+            <p className="text-xs text-zinc-500 leading-relaxed max-w-sm mx-auto">
               {currentRole === 'Stock Counter' ? 'Verify and submit physical shelter stock take counts back to central ledger pending owner sign off.' :
                currentRole === 'Assembler' ? 'Assemble flat-pack items, components check sheets, and track modular KD parts breakdown.' :
                currentRole === 'Loader' ? 'Monitor load priority, check vehicle staging schedules, and verify loaded cargo.' :
@@ -441,15 +566,35 @@ export function TeamDashboard() {
                currentRole === 'Trip Overview' ? 'See every trip with its status and bundled invoices, and drill into invoice line items.' :
                'Perform destination check-lists, drop logs, and complete physical deliveries on site.'}
             </p>
+            {rolesWithFallback.length > 1 && (
+              <div className="flex items-center justify-center gap-1.5 pt-1">
+                {rolesWithFallback.map((roleOpt) => (
+                  <button
+                    key={roleOpt}
+                    type="button"
+                    onClick={() => handleSelectRole(roleOpt)}
+                    title={roleOpt}
+                    aria-label={roleOpt}
+                    aria-current={roleOpt === currentRole}
+                    className={`h-1.5 rounded-full transition-all cursor-pointer ${
+                      roleOpt === currentRole ? 'w-5 bg-zinc-800' : 'w-1.5 bg-zinc-300 hover:bg-zinc-400'
+                    }`}
+                  />
+                ))}
+              </div>
+            )}
           </div>
-          
+
+          {/* Next role */}
           <button
             type="button"
-            onClick={() => setIsSidebarOpen(true)}
-            className="sm:self-center shrink-0 inline-flex items-center gap-1.5 px-4.5 py-2.5 bg-zinc-900 hover:bg-zinc-800 text-white rounded-2xl text-xs font-black uppercase tracking-wider transition-all shadow-xs cursor-pointer"
+            onClick={() => handleCycleRole(1)}
+            disabled={rolesWithFallback.length <= 1}
+            title="Next role"
+            aria-label="Next role"
+            className="shrink-0 w-10 h-10 rounded-2xl flex items-center justify-center border border-zinc-200 text-zinc-700 hover:bg-zinc-100 hover:border-zinc-300 transition-all disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
           >
-            <Shield className="w-4 h-4 text-white" />
-            Switch Role
+            <ChevronRight className="w-5 h-5" />
           </button>
         </div>
 

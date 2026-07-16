@@ -526,7 +526,7 @@ export function InteractiveTripMap({
             <Filter className="w-3 h-3 text-zinc-400" />
             Filter Statuses:
           </span>
-          {['partially_complete', 'draft', 'proposed', 'assembled', 'on_route'].map(status => {
+          {['partially_complete', 'draft', 'pending', 'proposed', 'assembled', 'on_route'].map(status => {
             const isSelected = selectedLegendStatuses.length === 0 || selectedLegendStatuses.includes(status);
             const colorConfig = STATUS_COLORS[status] || { bg: '#71717a', border: '#3f3f46', label: status };
             const label = colorConfig.label;

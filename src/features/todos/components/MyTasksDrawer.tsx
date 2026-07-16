@@ -1,6 +1,8 @@
 import { X, Check, ListTodo } from 'lucide-react';
 import { useMyTasks } from '../hooks/useMyTasks';
 import { cn } from '../../../lib/utils';
+import { useIsMobile } from '../../../hooks/useIsMobile';
+import { MyTasksDrawerMobile } from './MyTasksDrawerMobile';
 
 interface MyTasksDrawerProps {
   open: boolean;
@@ -12,6 +14,9 @@ interface MyTasksDrawerProps {
 // owner's board updates live via onSnapshot.
 export function MyTasksDrawer({ open, onClose }: MyTasksDrawerProps) {
   const { tasks, loading, toggleDone } = useMyTasks();
+  const isMobile = useIsMobile();
+
+  if (isMobile) return <MyTasksDrawerMobile open={open} onClose={onClose} />;
 
   return (
     <>

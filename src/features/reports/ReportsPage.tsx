@@ -12,6 +12,8 @@ import {
 import { BarChart3, Loader2, TrendingUp, Route, Wrench, Package, AlertTriangle } from 'lucide-react';
 import { useInvoices } from '../invoices/hooks/useInvoices';
 import { formatCurrency } from '../../lib/utils';
+import { useIsMobile } from '../../hooks/useIsMobile';
+import { ReportsPageMobile } from './ReportsPageMobile';
 import {
   buildWeeklyRevenueSeries,
   parseJobDate,
@@ -70,12 +72,26 @@ export function ReportsPage() {
     [jobs]
   );
 
+  const isMobile = useIsMobile();
+
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[400px] space-y-4">
         <Loader2 className="w-8 h-8 text-brand-accent animate-spin" />
         <p className="text-zinc-500 text-sm">Loading reports...</p>
       </div>
+    );
+  }
+
+  if (isMobile) {
+    return (
+      <ReportsPageMobile
+        weeksRange={weeksRange}
+        setWeeksRange={setWeeksRange}
+        chartData={chartData}
+        totals={totals}
+        missingDistanceCount={missingDistanceCount}
+      />
     );
   }
 

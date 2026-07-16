@@ -28,8 +28,10 @@ import { ProductList } from './features/products/components/ProductList';
 import { TeamRegister } from './features/auth/TeamRegister';
 import { TeamDashboard } from './features/team-dashboard/TeamDashboard';
 import { TeamTripDetail } from './features/team-dashboard/TeamTripDetail';
+import { TeamProfile } from './features/team-dashboard/TeamProfile';
 import { TodoBoard } from './features/todos/TodoBoard';
 import { ReportsPage } from './features/reports/ReportsPage';
+import { KpiPage } from './features/kpi/KpiPage';
 import { DailyPlannerPage } from './features/planner/DailyPlannerPage';
 
 export default function App() {
@@ -126,6 +128,7 @@ export default function App() {
         <Route path="/shared-checklist/:tripId" element={<SharedChecklist />} />
         <Route path="/register/team" element={<TeamRegister />} />
         <Route path="/team-dashboard" element={user ? <TeamDashboard /> : <Navigate to="/login" />} />
+        <Route path="/team-dashboard/profile" element={user ? <TeamProfile /> : <Navigate to="/login" />} />
         <Route path="/team-dashboard/trips/:tripId" element={user ? <TeamTripDetail /> : <Navigate to="/login" />} />
         <Route path="/login" element={!user ? <Login /> : (isTeamMember ? <Navigate to="/team-dashboard" /> : <Navigate to="/dashboard" />)} />
         <Route path="/register" element={!user ? <Register /> : (isTeamMember ? <Navigate to="/team-dashboard" /> : <Navigate to="/dashboard" />)} />
@@ -149,6 +152,7 @@ export default function App() {
           <Route path="/invoices/:id/review" element={<ExtractionReview />} />
           <Route path="/trucks" element={<TruckList />} />
           <Route path="/reports" element={<ReportsPage />} />
+          <Route path="/kpi" element={<KpiPage />} />
           <Route path="/trips" element={<TripList />} />
           <Route path="/todos" element={<TodoBoard />} />
           <Route path="/daily-planner" element={<DailyPlannerPage />} />
