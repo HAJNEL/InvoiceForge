@@ -1,15 +1,16 @@
 import { useState, useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
-import { 
-  Upload, 
-  File, 
-  X, 
-  CheckCircle2, 
-  Loader2, 
+import {
+  Upload,
+  File,
+  X,
+  CheckCircle2,
+  Loader2,
   ArrowRight,
   BrainCircuit,
   Eye,
-  AlertCircle
+  AlertCircle,
+  RefreshCw
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
@@ -23,7 +24,7 @@ import { handleFirestoreError, OperationType } from '../../lib/firestore-errors'
 import { DetailedInvoice } from '../../services/xaiService';
 import { useProducts } from '../products/hooks/useProducts';
 import { useSettings } from '../settings/hooks/useSettings';
-import { buildSchoolLookupAddress, buildPinSearchAddress, geocodeAddress, upsertCachedPin } from '../../lib/geocoding';
+import { normalizeSchoolName, resolveInvoicePin, upsertCachedPin } from '../../lib/geocoding';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { BulkImportMobile } from './BulkImportMobile';
 
@@ -36,6 +37,7 @@ interface UploadFile {
   extractedData?: string;
   error?: string;
   isDuplicate?: boolean;
+  missingSchoolName?: boolean;
 }
 
 export function BulkImport() {
@@ -163,7 +165,7 @@ export function BulkImport() {
         };
 
         if (normalizedData.district) normalizedData.district = String(normalizedData.district).substring(0, 190);
-        if (normalizedData.schoolName) normalizedData.schoolName = String(normalizedData.schoolName).substring(0, 190);
+        if (normalizedData.schoolName) normalizedData.schoolName = normalizeSchoolName(String(normalizedData.schoolName)).substring(0, 190);
         if (normalizedData.streetAddress) normalizedData.streetAddress = String(normalizedData.streetAddress).substring(0, 490);
         if (normalizedData.suburb) normalizedData.suburb = String(normalizedData.suburb).substring(0, 190);
 
@@ -171,6 +173,11 @@ export function BulkImport() {
         if (normalizedData.lineItems && !Array.isArray(normalizedData.lineItems)) {
           delete normalizedData.lineItems;
         }
+
+        // The school name drives the map pin lookup - flag it so the user is
+        // told extraction missed it and can retry instead of silently
+        // importing an invoice that will never resolve a delivery pin.
+        const missingSchoolName = !String(normalizedData.schoolName || '').trim();
 
         // Step 2.5: Check for duplicates
         setFiles(prev => prev.map(f => f.id === id ? { 
@@ -241,13 +248,7 @@ export function BulkImport() {
             deliveryAddressLine2: normalizedData.deliveryAddressLine2,
           };
 
-          const primaryAddress = buildSchoolLookupAddress(pinSource) || buildPinSearchAddress(pinSource);
-          const fallbackAddress = buildPinSearchAddress(pinSource);
-
-          let geo = await geocodeAddress(primaryAddress, warehouseBias);
-          if (!geo && primaryAddress !== fallbackAddress) {
-            geo = await geocodeAddress(fallbackAddress, warehouseBias);
-          }
+          const geo = await resolveInvoicePin(pinSource, warehouseBias);
 
           if (geo) {
             // Persist the resolved address onto the invoice (skip for duplicates, which
@@ -273,13 +274,14 @@ export function BulkImport() {
           console.error('Error auto-geocoding newly uploaded invoice:', geocodeErr);
         }
 
-        setFiles(prev => prev.map(f => f.id === id ? { 
-          ...f, 
-          progress: 100, 
-          status: 'ready', 
+        setFiles(prev => prev.map(f => f.id === id ? {
+          ...f,
+          progress: 100,
+          status: 'ready',
           extractedData: finalInvoiceId,
           isDuplicate: isDuplicate,
-          processingStep: isDuplicate ? 'Duplicate (Skipped)' : 'Extracted'
+          missingSchoolName: !isDuplicate && missingSchoolName,
+          processingStep: isDuplicate ? 'Duplicate (Skipped)' : (missingSchoolName ? 'No School Name Found' : 'Extracted')
         } : f));
       } else {
         // For non-PDFs (fallback)
@@ -337,6 +339,19 @@ export function BulkImport() {
     setFiles(prev => prev.filter(f => f.id !== id));
   };
 
+  const retryFile = (id: string) => {
+    const target = files.find(f => f.id === id);
+    if (!target) return;
+    setFiles(prev => prev.map(f => f.id === id ? {
+      ...f,
+      progress: 0,
+      status: 'uploading',
+      missingSchoolName: false,
+      error: undefined
+    } : f));
+    processFile({ id, file: target.file });
+  };
+
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     multiple: true,
@@ -358,6 +373,7 @@ export function BulkImport() {
         getInputProps={getInputProps}
         isDragActive={isDragActive}
         removeFile={removeFile}
+        retryFile={retryFile}
         setFiles={setFiles}
         navigateToReview={(invoiceId) => navigate(`/invoices/${invoiceId}/review`)}
         navigateToList={() => navigate('/invoices')}
@@ -445,6 +461,20 @@ export function BulkImport() {
           </div>
         )}
 
+        {files.some(f => f.status === 'ready' && f.missingSchoolName) && (
+          <div className="p-4 bg-orange-50 border border-orange-200 text-orange-900 rounded-2xl flex items-start gap-4 animate-in fade-in slide-in-from-top-2 duration-300 shadow-sm">
+            <div className="p-2.5 bg-orange-100 rounded-xl text-orange-600 shrink-0">
+              <AlertCircle className="w-5 h-5 animate-pulse" />
+            </div>
+            <div>
+              <h4 className="font-bold text-sm text-orange-950">School Name Not Found</h4>
+              <p className="text-xs text-orange-700 mt-1 leading-relaxed">
+                One or more invoices were extracted without a school name, which is needed to place them on the map. Use the retry icon to run extraction again, or open Review to enter it manually.
+              </p>
+            </div>
+          </div>
+        )}
+
         <AnimatePresence mode="popLayout">
           {files.length === 0 ? (
             <motion.div 
@@ -508,6 +538,11 @@ export function BulkImport() {
                                 </div>
                                 <span className="text-[8px] font-medium text-zinc-400 mt-0.5">Not added again</span>
                               </>
+                            ) : f.missingSchoolName ? (
+                              <div className="flex items-center gap-1 text-orange-600 bg-orange-50 px-2 py-0.5 rounded border border-orange-200">
+                                <AlertCircle className="w-3 h-3 text-orange-500" />
+                                <span className="text-[9px] font-black uppercase tracking-wider">No School Name</span>
+                              </div>
                             ) : (
                               <div className="flex items-center gap-1 text-emerald-600">
                                 <CheckCircle2 className="w-3 h-3" />
@@ -545,7 +580,7 @@ export function BulkImport() {
 
                   <div className="flex items-center gap-2">
                     {f.status === 'ready' && (
-                      <button 
+                      <button
                         onClick={() => navigate(`/invoices/${f.extractedData}/review`)}
                         className="p-2 hover:bg-zinc-100 rounded-lg text-zinc-500 transition-colors"
                         title={f.isDuplicate ? "View existing invoice" : "Review extraction"}
@@ -553,9 +588,19 @@ export function BulkImport() {
                         <Eye className="w-4 h-4" />
                       </button>
                     )}
-                    <button 
+                    {f.status === 'ready' && f.missingSchoolName && (
+                      <button
+                        onClick={() => retryFile(f.id)}
+                        className="p-2 hover:bg-orange-50 hover:text-orange-600 rounded-lg text-zinc-500 transition-colors"
+                        title="Retry extraction to find the school name"
+                      >
+                        <RefreshCw className="w-4 h-4" />
+                      </button>
+                    )}
+                    <button
                       onClick={() => removeFile(f.id)}
                       className="p-2 hover:bg-red-50 hover:text-red-500 rounded-lg text-zinc-400 transition-colors"
+                      title="Remove file"
                     >
                       <X className="w-4 h-4" />
                     </button>

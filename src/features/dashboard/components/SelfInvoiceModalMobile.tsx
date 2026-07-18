@@ -16,7 +16,7 @@ import { sendZohoInvoice, listZohoContacts, ZohoContactSummary } from '../../../
 import { ZohoCustomerPickerModalMobile } from './ZohoCustomerPickerModalMobile';
 import { useClientDistances } from '../hooks/useClientDistances';
 import { useSettings } from '../../settings/hooks/useSettings';
-import { STATUS_DISPLAY_MAP } from '../constants';
+import { STATUS_DISPLAY_MAP, isPartialInvoice } from '../constants';
 import { calculateJobRevenue, invoiceToRevenueJob } from '../../reports/weeklyRevenue';
 import { exportClientInvoiceReport } from '../utils/exportClientInvoiceReport';
 import { MobileNavStack, NavStackFrame } from '../../../components/mobile/MobileNavStack';
@@ -160,7 +160,10 @@ export function SelfInvoiceModalMobile({ invoices, updateInvoice, onClose }: {
     const usedIds = new Set(
       selfInvoices.filter(si => si.id !== editingSelfInvoiceId).flatMap(si => si.invoiceIds)
     );
-    return invoices.filter(inv => !usedIds.has(inv.id));
+    // Invoices already bundled into the one currently being edited stay visible/deselectable
+    // even if they're partial - only fresh candidates are hidden from the picker.
+    const currentBundleIds = new Set(selfInvoices.find(si => si.id === editingSelfInvoiceId)?.invoiceIds || []);
+    return invoices.filter(inv => !usedIds.has(inv.id) && (currentBundleIds.has(inv.id) || !isPartialInvoice(inv)));
   }, [invoices, selfInvoices, editingSelfInvoiceId]);
 
   useEffect(() => {
@@ -272,7 +275,9 @@ export function SelfInvoiceModalMobile({ invoices, updateInvoice, onClose }: {
   };
 
   const createZohoInvoiceForCustomer = async (si: SelfInvoice, contact: ZohoContactSummary) => {
-    const bundledInvoices = invoices.filter(inv => si.invoiceIds.includes(inv.id));
+    // Partially-delivered invoices aren't billable yet, so they're left off the Zoho invoice
+    // until they reach a real completed status.
+    const bundledInvoices = invoices.filter(inv => si.invoiceIds.includes(inv.id) && !isPartialInvoice(inv));
     if (bundledInvoices.length === 0) {
       await setSelfInvoiceZohoStatus(si.id, { zohoSyncError: 'No bundled invoices to send.' });
       return;

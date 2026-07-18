@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Plus, Trash2, Edit3, Loader2, AlertCircle, Calendar as CalendarIcon, Navigation, CheckCircle2, Package, X, History, AlertTriangle, Check, ChevronLeft, ChevronRight, RefreshCw, Search, Maximize2, Minimize2, MapPin, ClipboardList, Send } from 'lucide-react';
 import { toast } from 'sonner';
 import { PartialConfirmModal } from '../../components/PartialConfirmModal';
@@ -25,7 +25,7 @@ import { DayPlannerModal } from './TripListComponents/DayPlannerModal';
 import { DayPlannerModalMobile } from './TripListComponents/DayPlannerModalMobile';
 import { TripListMobile } from './TripListComponents/TripListMobile';
 import { restoreInventoryForItems } from '../../utils/inventory';
-import { buildSchoolLookupAddress, buildPinSearchAddress, geocodeAddress } from '../../lib/geocoding';
+import { geocodeAddress, resolveInvoicePin } from '../../lib/geocoding';
 
 const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_PLATFORM_KEY || '';
 const hasValidKey = Boolean(GOOGLE_MAPS_API_KEY);
@@ -224,7 +224,6 @@ export function TripList() {
   });
 
   const [isRefreshingPins, setIsRefreshingPins] = useState(false);
-  const prevGeocodedCountRef = useRef(0);
 
   // Re-pins every invoice. For invoices without a manually-entered delivery
   // address it re-looks-up the school name on Google Maps and writes the fresh
@@ -235,67 +234,84 @@ export function TripList() {
   // snapshot reflects the new `deliveryAddress`, the map's own staleness check sees
   // the pin as already up-to-date (searchAddress === deliveryAddress) and doesn't
   // immediately re-geocode it.
+  //
+  // Existing pins (loaded from localStorage above) are NOT cleared up front - a
+  // transient lookup failure for one invoice must never erase a pin that already
+  // worked. Each invoice's cached pin is only replaced once a fresh lookup for it
+  // actually succeeds; if a lookup fails, that invoice's previous pin (if any) is
+  // simply left untouched, so every invoice still has a pin on the map.
+  // Biases geocoding toward the warehouse's region so a same-named school in
+  // another province doesn't outrank the real, nearby one (see geocoding.ts).
+  const getWarehouseBias = () => settings?.warehouseLat !== undefined && settings?.warehouseLng !== undefined
+    ? { lat: settings.warehouseLat, lng: settings.warehouseLng }
+    : undefined;
+
+  // Re-geocodes a single invoice's pin - shared by the bulk "Refresh Pins" button
+  // below and the per-pin refresh button in the invoice details panel. Returns
+  // whether the lookup succeeded so callers can report success/failure.
+  const refreshPinForInvoice = async (inv: UIInvoice, warehouseBias?: { lat: number; lng: number }) => {
+    const manualAddress = inv.deliveryAddressManual ? inv.deliveryAddress?.trim() : '';
+
+    // Manual override: geocode the saved address as-is (don't touch the school).
+    // Otherwise resolve the school name (name-first, district-as-fallback) so an
+    // outdated saved address gets refreshed to the latest Google result.
+    const geo = manualAddress
+      ? await geocodeAddress(manualAddress, warehouseBias)
+      : await resolveInvoicePin(inv, warehouseBias);
+
+    if (!geo) return false;
+
+    // Only auto-managed invoices get their stored deliveryAddress rewritten;
+    // a manual override is left exactly as the user entered it.
+    if (!manualAddress) {
+      // Persist first (latency-compensated snapshot updates almost immediately).
+      await updateInvoice(inv.id, { deliveryAddress: geo.formattedAddress, deliveryAddressManual: false });
+    }
+
+    const pin: GeocodedInvoice = {
+      id: inv.id,
+      number: inv.number,
+      client: inv.client,
+      status: inv.status,
+      address: geo.formattedAddress,
+      // Keep searchAddress equal to whatever buildPinSearchAddress will return
+      // for this invoice, so the map doesn't consider the fresh pin stale.
+      searchAddress: manualAddress || geo.formattedAddress,
+      position: geo.position,
+      district: inv.district,
+      lineItems: inv.lineItems,
+    };
+    setGeocodedInvoices((prev) => [...prev.filter(p => p.id !== pin.id), pin]);
+    return true;
+  };
+
   const handleRefreshPins = async () => {
-    localStorage.removeItem('geocoded_invoices');
-    setGeocodedInvoices([]);
-    prevGeocodedCountRef.current = 0;
     setIsRefreshingPins(true);
+    const warehouseBias = getWarehouseBias();
 
-    // Biases geocoding toward the warehouse's region so a same-named school in
-    // another province doesn't outrank the real, nearby one (see geocoding.ts).
-    const warehouseBias = settings?.warehouseLat !== undefined && settings?.warehouseLng !== undefined
-      ? { lat: settings.warehouseLat, lng: settings.warehouseLng }
-      : undefined;
-
-    const toRefresh = [...invoices];
-    for (const inv of toRefresh) {
-      const manualAddress = inv.deliveryAddressManual ? inv.deliveryAddress?.trim() : '';
-
-      // Manual override: geocode the saved address as-is (don't touch the school).
-      // Otherwise force the school-name lookup so an outdated saved address gets
-      // refreshed to the latest Google result.
-      const lookupAddress = manualAddress || buildSchoolLookupAddress(inv) || buildPinSearchAddress(inv);
-      let geo = await geocodeAddress(lookupAddress, warehouseBias);
-      // If the primary search found nothing, fall back to the full priority chain
-      // (delivery address, street address, then client name).
-      if (!geo && lookupAddress !== buildPinSearchAddress(inv)) {
-        geo = await geocodeAddress(buildPinSearchAddress(inv), warehouseBias);
-      }
-
-      if (geo) {
-        // Only auto-managed invoices get their stored deliveryAddress rewritten;
-        // a manual override is left exactly as the user entered it.
-        if (!manualAddress) {
-          // Persist first (latency-compensated snapshot updates almost immediately).
-          await updateInvoice(inv.id, { deliveryAddress: geo.formattedAddress, deliveryAddressManual: false });
-        }
-
-        const pin: GeocodedInvoice = {
-          id: inv.id,
-          number: inv.number,
-          client: inv.client,
-          status: inv.status,
-          address: geo.formattedAddress,
-          // Keep searchAddress equal to whatever buildPinSearchAddress will return
-          // for this invoice, so the map doesn't consider the fresh pin stale.
-          searchAddress: manualAddress || geo.formattedAddress,
-          position: geo.position,
-          district: inv.district,
-          lineItems: inv.lineItems,
-        };
-        setGeocodedInvoices((prev) => [...prev.filter(p => p.id !== pin.id), pin]);
-      }
-
+    for (const inv of [...invoices]) {
+      await refreshPinForInvoice(inv, warehouseBias);
       // Match MapComponent's request pacing to stay under Google's rate limits.
       await new Promise(r => setTimeout(r, 200));
     }
 
-    // If nothing resolved, the settle-timer effect never fires (count stayed 0),
-    // so clear the overlay here.
-    setGeocodedInvoices((prev) => {
-      if (prev.length === 0) setIsRefreshingPins(false);
-      return prev;
-    });
+    setIsRefreshingPins(false);
+  };
+
+  const [refreshingPinId, setRefreshingPinId] = useState<string | null>(null);
+
+  // Refreshes just the pin currently shown in the invoice details panel, so a
+  // user who spots a stale/wrong pin doesn't have to re-run the bulk refresh.
+  const handleRefreshSelectedPin = async (invoiceId: string) => {
+    const inv = invoices.find(i => i.id === invoiceId);
+    if (!inv) return;
+    setRefreshingPinId(invoiceId);
+    try {
+      const ok = await refreshPinForInvoice(inv, getWarehouseBias());
+      toast[ok ? 'success' : 'error'](ok ? 'Pin refreshed.' : 'Could not find a location for this invoice.');
+    } finally {
+      setRefreshingPinId(null);
+    }
   };
 
   const [selectedInvoiceForStock, setSelectedInvoiceForStock] = useState<UIInvoice | null>(null);
@@ -339,24 +355,6 @@ export function TripList() {
       localStorage.setItem('geocoded_invoices', JSON.stringify(toStore));
     }
   }, [geocodedInvoices, invoices, invoicesLoading]);
-
-  // Detect when a refresh-triggered geocoding batch has settled
-  const refreshSettleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => {
-    if (!isRefreshingPins) return;
-    if (refreshSettleTimerRef.current) clearTimeout(refreshSettleTimerRef.current);
-    // If count is still growing, reset the settle timer
-    if (geocodedInvoices.length !== prevGeocodedCountRef.current) {
-      prevGeocodedCountRef.current = geocodedInvoices.length;
-      refreshSettleTimerRef.current = setTimeout(() => {
-        // Give an extra 2 s after the last batch arrives before hiding the overlay
-        setIsRefreshingPins(false);
-      }, 2000);
-    }
-    return () => {
-      if (refreshSettleTimerRef.current) clearTimeout(refreshSettleTimerRef.current);
-    };
-  }, [geocodedInvoices.length, isRefreshingPins]);
 
   // Map state
   const [selectedInvoice, setSelectedInvoice] = useState<GeocodedInvoice | null>(null);
@@ -732,6 +730,8 @@ export function TripList() {
           liveSelectedInvoice={liveSelectedInvoice}
           setSelectedInvoice={setSelectedInvoice}
           onViewInvoice={(id) => navigate(`/invoices/${id}`)}
+          onRefreshPin={handleRefreshSelectedPin}
+          refreshingPinId={refreshingPinId}
           searchTerm={searchTerm} setSearchTerm={setSearchTerm}
           lineItemFilter={lineItemFilter} setLineItemFilter={setLineItemFilter}
           selectedDistrict={selectedDistrict} setSelectedDistrict={setSelectedDistrict}
@@ -953,6 +953,17 @@ export function TripList() {
                     variant="sidebar"
                     onClose={() => setSelectedInvoice(null)}
                     onViewInvoice={() => navigate(`/invoices/${liveSelectedInvoice.id}`)}
+                    extraActions={
+                      <button
+                        type="button"
+                        title="Refresh this pin's location"
+                        onClick={() => handleRefreshSelectedPin(liveSelectedInvoice.id)}
+                        disabled={refreshingPinId === liveSelectedInvoice.id}
+                        className="flex items-center justify-center gap-2 px-3 py-2 text-[11px] bg-white border border-zinc-200 text-zinc-600 rounded-xl font-bold hover:bg-zinc-50 transition-all shadow-sm disabled:opacity-50"
+                      >
+                        <RefreshCw className={cn("w-4 h-4", refreshingPinId === liveSelectedInvoice.id && "animate-spin")} />
+                      </button>
+                    }
                   />
                 ) : (
                   <div className="h-full flex flex-col items-center justify-center text-center p-8">
@@ -1003,6 +1014,17 @@ export function TripList() {
             variant="card"
             onClose={() => setSelectedInvoice(null)}
             onViewInvoice={() => navigate(`/invoices/${liveSelectedInvoice.id}`)}
+            extraActions={
+              <button
+                type="button"
+                title="Refresh this pin's location"
+                onClick={() => handleRefreshSelectedPin(liveSelectedInvoice.id)}
+                disabled={refreshingPinId === liveSelectedInvoice.id}
+                className="flex items-center justify-center gap-2 px-4 py-2 text-xs bg-white border border-zinc-200 text-zinc-600 rounded-xl font-bold hover:bg-zinc-50 transition-all shadow-sm disabled:opacity-50"
+              >
+                <RefreshCw className={cn("w-4 h-4", refreshingPinId === liveSelectedInvoice.id && "animate-spin")} />
+              </button>
+            }
           />
         )}
 

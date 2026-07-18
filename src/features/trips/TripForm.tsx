@@ -28,6 +28,7 @@ import { CustomStopModalMobile } from './tripFormComponents/CustomStopModalMobil
 import { MoveInvoiceModal } from './tripFormComponents/MoveInvoiceModal';
 import { MoveInvoiceModalMobile } from './tripFormComponents/MoveInvoiceModalMobile';
 import { TripFormMobile } from './tripFormComponents/TripFormMobile';
+import { SchoolMatchModal } from './tripFormComponents/SchoolMatchModal';
 import { InvoiceDetailsPanel } from './TripListComponents/InvoiceDetailsPanel';
 
 const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_PLATFORM_KEY || '';
@@ -106,6 +107,8 @@ export function TripForm() {
   const [editingInvoice, setEditingInvoice] = useState<UIInvoice | null>(null);
   // The invoice stop currently being moved to another trip, via MoveInvoiceModal.
   const [movingStop, setMovingStop] = useState<TripStop | null>(null);
+  // Other open invoices for the same school as the invoice just added, offered via SchoolMatchModal.
+  const [schoolMatchDialog, setSchoolMatchDialog] = useState<{ schoolName: string; candidates: UIInvoice[] } | null>(null);
 
   // Fullscreen map mode: shows the same pin filters plus a left sidebar with the
   // route stops list and selected invoice details, mirroring the trips list screen.
@@ -659,6 +662,37 @@ export function TripForm() {
     }, 250);
   };
 
+  // Statuses treated as "finished" throughout the app (see useInvoices.ts / STATUS_DISPLAY_MAP) —
+  // anything outside this set is still open and worth bundling onto the same trip.
+  const COMPLETED_STATUSES = ['delivered', 'complete', 'completed', 'invoiced'];
+
+  // Builds a trip stop from an invoice and adds it to the current trip's selection.
+  const addInvoiceStop = (invId: string) => {
+    const matched = invoices.find(inv => inv.id === invId);
+    const invoiceAddress = matched ? [matched.deliveryAddressLine1, matched.deliveryAddressLine2, matched.district].filter(Boolean).join(', ') : '';
+    const invoiceStopDetails = matched?.stopDetails || {};
+
+    const newStop: TripStop = {
+      id: 'stop-' + Math.random().toString(36).substr(2, 9),
+      location: invoiceStopDetails.location || invoiceAddress || matched?.client || '',
+      type: invoiceStopDetails.type || 'Delivery',
+      startTime: invoiceStopDetails.startTime || '',
+      endTime: invoiceStopDetails.endTime || '',
+      duration: invoiceStopDetails.duration || '30m',
+      invoiceId: invId,
+      client: matched?.client || '',
+      number: matched?.number || '',
+      amount: matched?.amount || 0,
+      address: invoiceAddress
+    };
+
+    setFormData(prev => ({
+      ...prev,
+      invoiceIds: [...prev.invoiceIds, invId]
+    }));
+    setStops(prev => [...prev, newStop]);
+  };
+
   // Toggle selection of invoice in trip form
   const handleToggleInvoice = (invId: string) => {
     const isSelected = formData.invoiceIds.includes(invId);
@@ -668,31 +702,30 @@ export function TripForm() {
         invoiceIds: prev.invoiceIds.filter(id => id !== invId)
       }));
       setStops(prev => prev.filter(s => s.invoiceId !== invId));
-    } else {
-      const matched = invoices.find(inv => inv.id === invId);
-      const invoiceAddress = matched ? [matched.deliveryAddressLine1, matched.deliveryAddressLine2, matched.district].filter(Boolean).join(', ') : '';
-      const invoiceStopDetails = matched?.stopDetails || {};
-
-      const newStop: TripStop = {
-        id: 'stop-' + Math.random().toString(36).substr(2, 9),
-        location: invoiceStopDetails.location || invoiceAddress || matched?.client || '',
-        type: invoiceStopDetails.type || 'Delivery',
-        startTime: invoiceStopDetails.startTime || '',
-        endTime: invoiceStopDetails.endTime || '',
-        duration: invoiceStopDetails.duration || '30m',
-        invoiceId: invId,
-        client: matched?.client || '',
-        number: matched?.number || '',
-        amount: matched?.amount || 0,
-        address: invoiceAddress
-      };
-
-      setFormData(prev => ({
-        ...prev,
-        invoiceIds: [...prev.invoiceIds, invId]
-      }));
-      setStops(prev => [...prev, newStop]);
+      return;
     }
+
+    addInvoiceStop(invId);
+
+    // Offer to bundle in other still-open invoices for the same school, if any exist.
+    const matched = invoices.find(inv => inv.id === invId);
+    const school = (matched?.schoolName || matched?.client || '').trim();
+    if (school) {
+      const siblings = availableInvoices.filter(inv =>
+        inv.id !== invId &&
+        !formData.invoiceIds.includes(inv.id) &&
+        (inv.schoolName || inv.client || '').trim().toLowerCase() === school.toLowerCase() &&
+        !COMPLETED_STATUSES.includes((inv.status || '').toLowerCase())
+      );
+      if (siblings.length > 0) {
+        setSchoolMatchDialog({ schoolName: school, candidates: siblings });
+      }
+    }
+  };
+
+  const handleConfirmSchoolMatches = (selectedIds: string[]) => {
+    selectedIds.forEach(id => addInvoiceStop(id));
+    setSchoolMatchDialog(null);
   };
 
   // Removes the currently-moving stop from this trip's own state, and - if this
@@ -1802,6 +1835,16 @@ export function TripForm() {
             defaultDate={formData.date}
             onMoveToExisting={handleMoveToExistingTrip}
             onCreateAndMove={handleCreateTripAndMove}
+          />
+        )}
+
+        {schoolMatchDialog && (
+          <SchoolMatchModal
+            isOpen={true}
+            schoolName={schoolMatchDialog.schoolName}
+            candidates={schoolMatchDialog.candidates}
+            onConfirm={handleConfirmSchoolMatches}
+            onClose={() => setSchoolMatchDialog(null)}
           />
         )}
 

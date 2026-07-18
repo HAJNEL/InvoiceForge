@@ -15,3 +15,7 @@ graphify-out/
 *serviceaccount*.json
 service-account*.json
 *-firebase-adminsdk-*.json
+
+# Claude Flow worker scratch clones
+scripts/sandbox/
+"service-account.json" 

@@ -41,6 +41,8 @@ interface TripListMobileProps {
   liveSelectedInvoice: GeocodedInvoice | null;
   setSelectedInvoice: (inv: GeocodedInvoice | null) => void;
   onViewInvoice: (id: string) => void;
+  onRefreshPin: (id: string) => void;
+  refreshingPinId: string | null;
 
   searchTerm: string; setSearchTerm: (v: string) => void;
   lineItemFilter: string; setLineItemFilter: (v: string) => void;
@@ -86,6 +88,7 @@ export function TripListMobile({
   showHistory, setShowHistory, onCreateTrip,
   activeInvoices, invoices, geocodedInvoices, setGeocodedInvoices, handleMapInvoiceClick,
   warehouse, highlightedInvoiceIds, liveSelectedInvoice, setSelectedInvoice, onViewInvoice,
+  onRefreshPin, refreshingPinId,
   searchTerm, setSearchTerm, lineItemFilter, setLineItemFilter,
   selectedDistrict, setSelectedDistrict, selectedStatus, setSelectedStatus,
   sortBy, setSortBy, sortOrder, setSortOrder, districtsList,
@@ -185,6 +188,17 @@ export function TripListMobile({
           variant="card"
           onClose={() => setSelectedInvoice(null)}
           onViewInvoice={() => onViewInvoice(liveSelectedInvoice.id)}
+          extraActions={
+            <button
+              type="button"
+              title="Refresh this pin's location"
+              onClick={() => onRefreshPin(liveSelectedInvoice.id)}
+              disabled={refreshingPinId === liveSelectedInvoice.id}
+              className="flex items-center justify-center gap-2 px-4 py-2 text-xs bg-white border border-zinc-200 text-zinc-600 rounded-xl font-bold hover:bg-zinc-50 transition-all shadow-sm disabled:opacity-50 mobile-tap-target"
+            >
+              <RefreshCw className={cn("w-4 h-4", refreshingPinId === liveSelectedInvoice.id && "animate-spin")} />
+            </button>
+          }
         />
       )}
 
@@ -430,6 +444,17 @@ export function TripListMobile({
                 variant="sidebar"
                 onClose={() => setSelectedInvoice(null)}
                 onViewInvoice={() => onViewInvoice(liveSelectedInvoice.id)}
+                extraActions={
+                  <button
+                    type="button"
+                    title="Refresh this pin's location"
+                    onClick={() => onRefreshPin(liveSelectedInvoice.id)}
+                    disabled={refreshingPinId === liveSelectedInvoice.id}
+                    className="flex items-center justify-center gap-2 px-3 py-2 text-[11px] bg-white border border-zinc-200 text-zinc-600 rounded-xl font-bold hover:bg-zinc-50 transition-all shadow-sm disabled:opacity-50 mobile-tap-target"
+                  >
+                    <RefreshCw className={cn("w-4 h-4", refreshingPinId === liveSelectedInvoice.id && "animate-spin")} />
+                  </button>
+                }
               />
             </div>
           )}

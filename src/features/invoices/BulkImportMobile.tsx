@@ -7,7 +7,8 @@ import {
   ArrowRight,
   BrainCircuit,
   Eye,
-  AlertCircle
+  AlertCircle,
+  RefreshCw
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
@@ -21,6 +22,7 @@ interface UploadFile {
   extractedData?: string;
   error?: string;
   isDuplicate?: boolean;
+  missingSchoolName?: boolean;
 }
 
 interface BulkImportMobileProps {
@@ -31,6 +33,7 @@ interface BulkImportMobileProps {
   getInputProps: () => Record<string, unknown>;
   isDragActive: boolean;
   removeFile: (id: string) => void;
+  retryFile: (id: string) => void;
   setFiles: (updater: (prev: UploadFile[]) => UploadFile[]) => void;
   navigateToReview: (invoiceId: string | undefined) => void;
   navigateToList: () => void;
@@ -45,6 +48,7 @@ export function BulkImportMobile({
   getInputProps,
   isDragActive,
   removeFile,
+  retryFile,
   setFiles,
   navigateToReview,
   navigateToList,
@@ -130,6 +134,20 @@ export function BulkImportMobile({
           </div>
         )}
 
+        {files.some(f => f.status === 'ready' && f.missingSchoolName) && (
+          <div className="p-3 bg-orange-50 border border-orange-200 text-orange-900 rounded-2xl flex items-start gap-3 shadow-sm">
+            <div className="p-2 bg-orange-100 rounded-xl text-orange-600 shrink-0">
+              <AlertCircle className="w-4 h-4" />
+            </div>
+            <div>
+              <h4 className="font-bold text-xs text-orange-950">School Name Not Found</h4>
+              <p className="text-[10px] text-orange-700 mt-1 leading-relaxed">
+                One or more invoices were extracted without a school name. Tap the retry icon to run extraction again, or open Review to enter it manually.
+              </p>
+            </div>
+          </div>
+        )}
+
         <AnimatePresence mode="popLayout">
           {files.length === 0 ? (
             <motion.div
@@ -173,6 +191,15 @@ export function BulkImportMobile({
                           <Eye className="w-4 h-4" />
                         </button>
                       )}
+                      {f.status === 'ready' && f.missingSchoolName && (
+                        <button
+                          onClick={() => retryFile(f.id)}
+                          title="Retry extraction to find the school name"
+                          className="p-2 rounded-lg text-orange-600 mobile-tap-target"
+                        >
+                          <RefreshCw className="w-4 h-4" />
+                        </button>
+                      )}
                       <button
                         onClick={() => removeFile(f.id)}
                         title="Remove file"
@@ -208,6 +235,11 @@ export function BulkImportMobile({
                           <div className="flex items-center gap-1 text-amber-600 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
                             <AlertCircle className="w-3 h-3 text-amber-500" />
                             <span className="text-[9px] font-black uppercase tracking-wider">Duplicate</span>
+                          </div>
+                        ) : f.missingSchoolName ? (
+                          <div className="flex items-center gap-1 text-orange-600 bg-orange-50 px-2 py-0.5 rounded border border-orange-200">
+                            <AlertCircle className="w-3 h-3 text-orange-500" />
+                            <span className="text-[9px] font-black uppercase tracking-wider">No School Name</span>
                           </div>
                         ) : (
                           <div className="flex items-center gap-1 text-emerald-600">

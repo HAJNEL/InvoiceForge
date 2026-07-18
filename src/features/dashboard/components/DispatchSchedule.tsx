@@ -61,6 +61,12 @@ export function DispatchSchedule({
     return totals;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [weekDays, trucks, invoiceAmountById]);
+
+  const weekTotal = useMemo(() => {
+    let total = 0;
+    dayTotals.forEach(amount => { total += amount; });
+    return total;
+  }, [dayTotals]);
   return (
     <div className="saas-card overflow-hidden">
       <div className="bg-[#e0f2f1]/50 py-4 px-6 flex flex-col sm:flex-row items-center justify-between gap-4 border-b border-zinc-100">
@@ -237,7 +243,11 @@ export function DispatchSchedule({
             )}
 
             <div className="mt-4 flex items-center justify-between text-[10px] font-bold uppercase tracking-widest text-zinc-400">
-              <p>Click on grid cells to view, change, or schedule trips on that day</p>
+              {showDailyTotals ? (
+                <p className="text-brand-primary">Week Total: R {formatCurrency(weekTotal)}</p>
+              ) : (
+                <p>Click on grid cells to view, change, or schedule trips on that day</p>
+              )}
               <div className="flex gap-4">
                 <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-brand-primary"></div> Scheduled Trips</span>
                 <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-zinc-200"></div> No Trips</span>
