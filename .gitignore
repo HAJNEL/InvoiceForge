@@ -18,4 +18,8 @@ service-account*.json
 
 # Claude Flow worker scratch clones
 scripts/sandbox/
-"service-account.json" 
+"service-account.json"
+
+# GitHub PAT for scheduled Claude tasks (gh CLI auth in sandbox) — NEVER commit
+.github-token
+

@@ -1,0 +1,7 @@
+{
+  "databaseId": "ai-studio-7d2df143-2f7b-450a-a32f-95be94a638fb",
+  "allowedPaths": [
+    "C:\\Users\\YourName\\Projects\\InvoiceForge"
+  ],
+  "allowGitPush": true
+}
