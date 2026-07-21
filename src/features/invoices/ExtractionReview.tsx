@@ -21,7 +21,9 @@ import { useProducts } from '../products/hooks/useProducts';
 import { useSettings } from '../settings/hooks/useSettings';
 import { APIProvider } from '@vis.gl/react-google-maps';
 import { GoogleMapsAutocomplete } from '../../components/GoogleMapsAutocomplete';
-import { buildSchoolLookupAddress, buildPinSearchAddress, geocodeAddress, upsertCachedPin } from '../../lib/geocoding';
+import { buildPinSearchAddress, geocodeAddress, resolveInvoicePin, upsertCachedPin } from '../../lib/geocoding';
+import { useIsMobile } from '../../hooks/useIsMobile';
+import { ExtractionReviewMobile } from './ExtractionReviewMobile';
 
 const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_PLATFORM_KEY || '';
 const hasValidMapsKey = Boolean(GOOGLE_MAPS_API_KEY);
@@ -36,6 +38,7 @@ export function ExtractionReview() {
   const isEditing = window.location.pathname.includes('/edit');
   const { syncLineItemsAsProducts } = useProducts();
   const { settings } = useSettings();
+  const isMobile = useIsMobile();
   // The delivery address as loaded, used to detect whether the user edited it so
   // Refresh Pins can preserve hand-picked addresses. See src/lib/geocoding.ts.
   const initialDeliveryAddressRef = useRef('');
@@ -256,28 +259,28 @@ export function ExtractionReview() {
           deliveryAddressLine2: invoice.deliveryAddressLine2,
         };
 
-        // Manual override → geocode the user's chosen address. Otherwise force the
-        // school-name lookup so editing the school moves the pin (the stored auto
-        // deliveryAddress is ignored here and refreshed from the school).
-        const fallbackAddress = buildPinSearchAddress({ ...pinSource, deliveryAddress: undefined });
-        const primaryAddress = deliveryAddressManual
-          ? (currentDelivery || buildSchoolLookupAddress(pinSource) || fallbackAddress)
-          : (buildSchoolLookupAddress(pinSource) || fallbackAddress);
-
         // Biases geocoding toward the warehouse's region so a same-named school
         // in another province doesn't outrank the real, nearby one.
         const warehouseBias = settings?.warehouseLat !== undefined && settings?.warehouseLng !== undefined
           ? { lat: settings.warehouseLat, lng: settings.warehouseLng }
           : undefined;
 
-        let geo = await geocodeAddress(primaryAddress, warehouseBias);
-        if (!geo && primaryAddress !== fallbackAddress) {
-          geo = await geocodeAddress(fallbackAddress, warehouseBias);
-        }
+        // Manual override → geocode the user's chosen address as-is. Otherwise
+        // resolve the school name (name-first, district-as-fallback) so editing
+        // the school moves the pin - the stored auto deliveryAddress is ignored
+        // here and refreshed from the school.
+        const geo = deliveryAddressManual
+          ? await geocodeAddress(currentDelivery || buildPinSearchAddress({ ...pinSource, deliveryAddress: undefined }), warehouseBias)
+          : await resolveInvoicePin(pinSource, warehouseBias);
 
         if (geo) {
           // Persist the resolved address onto the invoice, then cache the pin.
-          await updateDoc(docRef, { deliveryAddress: geo.formattedAddress, deliveryAddressManual });
+          // A manual entry is kept exactly as the user typed it - only the
+          // auto-resolved (school-lookup) case gets overwritten with Google's
+          // formatted address, since there's no user input to preserve there.
+          if (!deliveryAddressManual) {
+            await updateDoc(docRef, { deliveryAddress: geo.formattedAddress, deliveryAddressManual });
+          }
 
           upsertCachedPin({
             id,
@@ -379,6 +382,29 @@ export function ExtractionReview() {
   }
 
   if (!invoice) return null;
+
+  if (isMobile) {
+    const mobileContent = (
+      <ExtractionReviewMobile
+        invoice={invoice}
+        isEditing={isEditing}
+        saving={saving}
+        error={error}
+        hasValidMapsKey={hasValidMapsKey}
+        updateField={updateField}
+        updateLineItems={updateLineItems}
+        handleAddLineItem={handleAddLineItem}
+        handleDeleteLineItem={handleDeleteLineItem}
+        handleSave={handleSave}
+        onBack={() => navigate(isEditing ? `/invoices/${id}` : '/invoices/import')}
+      />
+    );
+    return hasValidMapsKey ? (
+      <APIProvider apiKey={GOOGLE_MAPS_API_KEY} version="weekly">
+        {mobileContent}
+      </APIProvider>
+    ) : mobileContent;
+  }
 
   const content = (
     <div className="space-y-8 animate-in fade-in duration-500 pb-20">

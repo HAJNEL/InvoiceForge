@@ -44,12 +44,35 @@ export function sanitizeDistrict(district: string | undefined): string {
   return trimmed && trimmed.toLowerCase() !== 'unassigned' ? trimmed : '';
 }
 
+// OCR/AI extraction sometimes yields the Afrikaans "PRIMÊRE SKOOL" (primary school)
+// instead of "Primary School" - the term Google Maps actually indexes South African
+// schools under, and the one that reads correctly on an otherwise-English invoice.
+// Used both to normalize the school name on import and to build search queries.
+export function normalizeSchoolName(schoolName: string): string {
+  return schoolName.replace(/prim(?:e|é|ê)re\s+skool/gi, 'Primary School');
+}
+
 // The Google-resolved school address, when we have one. It is stored verbatim as
 // `deliveryAddress` on the invoice doc, so a manual edit of that field moves the pin.
 export function buildSchoolLookupAddress(inv: PinAddressSource): string | null {
   const schoolName = inv.schoolName?.trim();
   if (!schoolName) return null;
-  return [schoolName, sanitizeDistrict(inv.district), 'South Africa'].filter(Boolean).join(', ');
+  return [normalizeSchoolName(schoolName), sanitizeDistrict(inv.district), 'South Africa'].filter(Boolean).join(', ');
+}
+
+// The street-address/client-name fallback used once there's no school name to go
+// on at all (or the school-name lookup in resolveInvoicePin below found nothing).
+function buildAddressLineFallback(inv: PinAddressSource): string {
+  const district = sanitizeDistrict(inv.district);
+  const fullAddress = [
+    inv.deliveryAddressLine1,
+    inv.deliveryAddressLine2,
+    district,
+    'South Africa'
+  ].filter(Boolean).join(', ');
+  if (fullAddress && fullAddress.length >= 5) return fullAddress;
+
+  return [inv.client, district, 'South Africa'].filter(Boolean).join(', ');
 }
 
 // Builds the search address an invoice's pin should be geocoded to, given its
@@ -62,16 +85,7 @@ export function buildPinSearchAddress(inv: PinAddressSource): string {
   const schoolAddress = buildSchoolLookupAddress(inv);
   if (schoolAddress) return schoolAddress;
 
-  const district = sanitizeDistrict(inv.district);
-  const fullAddress = [
-    inv.deliveryAddressLine1,
-    inv.deliveryAddressLine2,
-    district,
-    'South Africa'
-  ].filter(Boolean).join(', ');
-  if (fullAddress && fullAddress.length >= 5) return fullAddress;
-
-  return [inv.client, district, 'South Africa'].filter(Boolean).join(', ');
+  return buildAddressLineFallback(inv);
 }
 
 export interface GeocodeResult {
@@ -103,9 +117,11 @@ export async function geocodeAddress(address: string, bias?: GeocodeBias): Promi
       key
     });
     if (bias) {
-      // ~1 degree box around the bias point (roughly 100km) - biases toward the
-      // warehouse's region without hard-excluding a legitimately distant match.
-      const delta = 0.5;
+      // ~75km box around the bias point, matching the Auto Distance button's own
+      // AutocompleteService radius - biases toward the warehouse's region without
+      // hard-excluding a legitimately distant match (bounds is only a soft
+      // preference for the Geocoding API, never a hard restriction).
+      const delta = 0.67;
       params.set('bounds', `${bias.lat - delta},${bias.lng - delta}|${bias.lat + delta},${bias.lng + delta}`);
     }
     const res = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?${params.toString()}`);
@@ -124,6 +140,35 @@ export async function geocodeAddress(address: string, bias?: GeocodeBias): Promi
     console.error(`[geocoding] Lookup failed for "${address}":`, err);
     return null;
   }
+}
+
+// Resolves an invoice's map pin the same way the "Auto Distance" button (see
+// SelfInvoiceModal.tsx's getTopPlaceMatch) resolves a school for its distance
+// lookup: search by the school name ALONE first, tightly biased toward the
+// warehouse, and only bring in the district as a fallback if that plain-name
+// search finds nothing. Combining school+district into one query up front can
+// turn a search that would otherwise cleanly match into a noisier one - if the
+// extracted district is wrong, empty, or just not how Google indexes the place,
+// folding it into the first attempt can make a real, findable school fail (or
+// worse, resolve to some other place entirely) instead of just falling through
+// to this same name-only attempt. Never silently defaults to a fixed location -
+// returns null (no pin) rather than guessing, same as geocodeAddress itself.
+export async function resolveInvoicePin(inv: PinAddressSource, bias?: GeocodeBias): Promise<GeocodeResult | null> {
+  const schoolName = inv.schoolName?.trim() ? normalizeSchoolName(inv.schoolName.trim()) : '';
+  if (schoolName) {
+    let geo = await geocodeAddress(`${schoolName}, South Africa`, bias);
+    if (geo) return geo;
+
+    const district = sanitizeDistrict(inv.district);
+    if (district) {
+      geo = await geocodeAddress(`${schoolName}, ${district}, South Africa`, bias);
+      if (geo) return geo;
+    }
+  }
+
+  // No school name, or the school-name lookup found nothing - fall back to
+  // whatever other address material is available (street address, then client name).
+  return geocodeAddress(buildAddressLineFallback(inv), bias);
 }
 
 export function loadCachedPins(): CachedPin[] {

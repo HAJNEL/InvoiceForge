@@ -3,6 +3,7 @@ import { TripStatus } from '../../../types';
 
 export function StatusBadge({ status, onClick }: { status: TripStatus; onClick?: () => void }) {
   const styles = {
+    [TripStatus.PENDING]: "bg-violet-50 text-violet-600 border-violet-100",
     [TripStatus.PROPOSED]: "bg-blue-50 text-blue-600 border-blue-100",
     [TripStatus.ASSEMBLED]: "bg-indigo-50 text-indigo-600 border-indigo-100",
     [TripStatus.ON_ROUTE]: "bg-amber-50 text-amber-600 border-amber-100",

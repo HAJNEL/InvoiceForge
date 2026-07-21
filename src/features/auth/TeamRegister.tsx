@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { createUserWithEmailAndPassword } from 'firebase/auth';
+import { createUserWithEmailAndPassword, signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
 import { collection, query, where, getDocs, doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore';
 import { auth, db } from '../../lib/firebase';
-import { 
-  FileText, Mail, Lock, Eye, EyeOff, CheckCircle2, 
-  XSquare, ArrowRight, Loader2, HelpCircle 
+import {
+  FileText, Mail, Lock, Eye, EyeOff, CheckCircle2,
+  XSquare, ArrowRight, Loader2, HelpCircle, Chrome
 } from 'lucide-react';
 import { TeamMember, Settings } from '../../types';
 
@@ -126,6 +126,52 @@ export function TeamRegister() {
     }
   };
 
+  // Accept the invitation using a Google account. The Google email MUST match the
+  // invited email, otherwise a stranger's Google account could claim the invite.
+  const handleGoogleRegister = async () => {
+    if (!invitation) return;
+    setLoading(true);
+    setErrorMessage('');
+    try {
+      const provider = new GoogleAuthProvider();
+      const { user: newUser } = await signInWithPopup(auth, provider);
+
+      if ((newUser.email || '').toLowerCase() !== invitation.email.toLowerCase()) {
+        await auth.signOut();
+        setErrorMessage(`This invitation is for ${invitation.email}. Please sign in with that Google account.`);
+        return;
+      }
+
+      const newMemberDocRef = doc(db, 'team_members', newUser.uid);
+      const oldMemberDocRef = doc(db, 'team_members', invitation.id);
+      const updatedMemberData: TeamMember = {
+        ...invitation,
+        id: newUser.uid,
+        userId: newUser.uid,
+        status: 'active',
+        updatedAt: new Date().toISOString()
+      };
+      await setDoc(newMemberDocRef, updatedMemberData);
+      if (invitation.id !== newUser.uid) {
+        await deleteDoc(oldMemberDocRef);
+      }
+
+      navigate('/team-dashboard');
+    } catch (err: unknown) {
+      console.error("Google team registration error:", err);
+      const code = (err as { code?: string })?.code;
+      if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
+        // User dismissed the popup — no need to surface a scary error.
+      } else if (err instanceof Error) {
+        setErrorMessage(err.message);
+      } else {
+        setErrorMessage('Failed to register with Google. Please contact your administrator.');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
   if (checkingInvite) {
     return (
       <div className="min-h-screen bg-zinc-50 flex flex-col items-center justify-center p-6 text-center">
@@ -200,8 +246,28 @@ export function TeamRegister() {
               </div>
             </div>
 
+            {/* Google sign-up (must match the invited email) */}
+            <button
+              type="button"
+              onClick={handleGoogleRegister}
+              disabled={loading}
+              className="w-full border border-zinc-200 py-3 rounded-xl font-bold text-[10px] tracking-widest uppercase hover:bg-zinc-50 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+            >
+              <Chrome className="w-4 h-4 text-brand-accent" />
+              Sign up with Google
+            </button>
+
+            <div className="relative my-6">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-zinc-100"></div>
+              </div>
+              <div className="relative flex justify-center text-[10px] uppercase font-bold tracking-widest">
+                <span className="bg-white px-4 text-zinc-400">Or set a password</span>
+              </div>
+            </div>
+
             <form onSubmit={handleRegister} className="space-y-4">
-              
+
               {/* Ready-only Email */}
               <div>
                 <label className="block text-[10px] font-black uppercase tracking-wider text-zinc-400 mb-1">Email Address</label>

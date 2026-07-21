@@ -4,7 +4,7 @@ import { useParams } from 'react-router-dom';
 import { doc, onSnapshot, updateDoc } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { Trip, TripStatus } from '../../types';
-import { Check, Package, RotateCcw, AlertCircle, FileText, Truck, Calendar, Sparkles } from 'lucide-react';
+import { Check, Package, RotateCcw, AlertCircle, FileText, Truck, Calendar, Sparkles, Printer } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
 export function SharedChecklist() {
@@ -86,6 +86,234 @@ export function SharedChecklist() {
       console.error('Failed to reset checks:', err);
       toast.error('Reset Failed', { description: 'Could not reset checklist. Check your connection and try again.' });
     }
+  };
+
+  // Print a professional A4 trip manifest for this shared checklist
+  const handlePrintChecklist = () => {
+    if (!trip) return;
+
+    const escapeHtml = (value: unknown): string => {
+      return String(value ?? '').replace(/[&<>"']/g, (ch) => (
+        { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch] as string
+      ));
+    };
+
+    const printWindow = window.open('', '_blank', 'width=1000,height=1300');
+    if (!printWindow) {
+      toast.error('Popup Blocked', { description: 'Please allow popups for this site to print the trip manifest.' });
+      return;
+    }
+
+    const tripStops = trip.stops || [];
+    const tripManifestItems = trip.manifestItems || [];
+    const tripDate = trip.date
+      ? new Date(trip.date + 'T00:00:00').toLocaleDateString('en-ZA', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+      : '—';
+    const totalValue = tripStops.reduce((sum, stop) => sum + (stop.amount || 0), 0);
+    const statusLabel = String(trip.status).toUpperCase().replace(/-/g, ' ');
+    const generatedAt = new Date().toLocaleString('en-ZA');
+
+    const stopRows = tripStops.map((stop, idx) => `
+        <tr>
+          <td class="col-seq">${idx + 1}</td>
+          <td>
+            <div class="stop-label">${escapeHtml(stop.number ? `#${stop.number}` : (stop.type || 'Stop'))}</div>
+            <div class="stop-sub">${escapeHtml(stop.client || '')}</div>
+          </td>
+          <td>${escapeHtml(stop.address || '—')}</td>
+          <td class="col-amount">${stop.amount ? `R ${stop.amount.toLocaleString()}` : '—'}</td>
+        </tr>`).join('');
+
+    const manifestRows = tripManifestItems.map(item => `
+        <tr>
+          <td class="mono">${escapeHtml(item.stockCode || 'N/A')}</td>
+          <td>${escapeHtml(item.description || '')}</td>
+          <td class="col-amount mono">${item.qty}</td>
+        </tr>`).join('');
+
+    const html = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Trip Manifest - ${escapeHtml(trip.name)}</title>
+<style>
+  @page { size: A4; margin: 14mm; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', Arial, Helvetica, sans-serif;
+    color: #18181b;
+    margin: 0;
+    font-size: 11px;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    border-bottom: 3px solid #18181b;
+    padding-bottom: 12px;
+    margin-bottom: 18px;
+  }
+  .header h1 {
+    font-size: 20px;
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: -0.02em;
+    margin: 0 0 4px 0;
+  }
+  .header .subtitle {
+    font-size: 11px;
+    color: #71717a;
+    font-weight: 600;
+  }
+  .header .doc-label {
+    text-align: right;
+    font-size: 10px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #a1a1aa;
+  }
+  .meta-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin-bottom: 20px;
+  }
+  .meta-box {
+    border: 1px solid #e4e4e7;
+    border-radius: 8px;
+    padding: 8px 10px;
+  }
+  .meta-box .label {
+    font-size: 8.5px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #a1a1aa;
+    margin-bottom: 3px;
+  }
+  .meta-box .value {
+    font-size: 12px;
+    font-weight: 700;
+    color: #18181b;
+  }
+  h2.section-title {
+    font-size: 12px;
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    border-bottom: 2px solid #18181b;
+    padding-bottom: 6px;
+    margin: 22px 0 8px 0;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  th {
+    text-align: left;
+    font-size: 8.5px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #71717a;
+    border-bottom: 1px solid #d4d4d8;
+    padding: 5px 6px;
+  }
+  td {
+    padding: 6px;
+    border-bottom: 1px solid #f0f0f1;
+    vertical-align: top;
+    font-size: 10.5px;
+  }
+  .col-seq { width: 24px; font-weight: 800; color: #71717a; }
+  .col-amount { text-align: right; font-weight: 700; }
+  .mono { font-family: 'Consolas', monospace; }
+  .stop-label { font-weight: 700; }
+  .stop-sub { color: #71717a; font-size: 9.5px; margin-top: 1px; }
+  .empty-note {
+    padding: 14px 0;
+    color: #a1a1aa;
+    font-style: italic;
+    font-size: 10.5px;
+  }
+  .footer {
+    margin-top: 26px;
+    padding-top: 8px;
+    border-top: 1px solid #e4e4e7;
+    font-size: 9px;
+    color: #a1a1aa;
+    display: flex;
+    justify-content: space-between;
+  }
+</style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      <h1>${escapeHtml(trip.name)}</h1>
+      <div class="subtitle">Delivery Trip Manifest</div>
+    </div>
+    <div class="doc-label">Trip Manifest<br/>${escapeHtml(statusLabel)}</div>
+  </div>
+
+  <div class="meta-grid">
+    <div class="meta-box">
+      <div class="label">Scheduled Date</div>
+      <div class="value">${escapeHtml(tripDate)}</div>
+    </div>
+    <div class="meta-box">
+      <div class="label">Assigned Truck</div>
+      <div class="value">${escapeHtml(trip.truckName || 'Unassigned')}</div>
+    </div>
+    <div class="meta-box">
+      <div class="label">Merchandise Value</div>
+      <div class="value">R ${totalValue.toLocaleString()}</div>
+    </div>
+  </div>
+
+  <h2 class="section-title">Route Sequence (${tripStops.length} ${tripStops.length === 1 ? 'Stop' : 'Stops'})</h2>
+  ${tripStops.length === 0 ? '<p class="empty-note">No stops recorded for this trip.</p>' : `
+  <table>
+    <thead>
+      <tr>
+        <th class="col-seq">#</th>
+        <th>Stop</th>
+        <th>Address</th>
+        <th class="col-amount">Amount</th>
+      </tr>
+    </thead>
+    <tbody>${stopRows}</tbody>
+  </table>`}
+
+  <h2 class="section-title">Consolidated Loading Manifest</h2>
+  ${tripManifestItems.length === 0 ? '<p class="empty-note">No line items to load for this trip.</p>' : `
+  <table>
+    <thead>
+      <tr>
+        <th>Stock Code</th>
+        <th>Description</th>
+        <th class="col-amount">Qty</th>
+      </tr>
+    </thead>
+    <tbody>${manifestRows}</tbody>
+  </table>`}
+
+  <div class="footer">
+    <span>Generated ${escapeHtml(generatedAt)}</span>
+    <span>InvoiceForge Trip Planner</span>
+  </div>
+</body>
+</html>`;
+
+    printWindow.document.write(html);
+    printWindow.document.close();
+    printWindow.focus();
+    setTimeout(() => {
+      printWindow.print();
+    }, 250);
   };
 
   if (loading) {
@@ -290,6 +518,16 @@ export function SharedChecklist() {
             <Sparkles className="w-3.5 h-3.5 text-yellow-400 rotate-12" />
             <span>Public Live Link active</span>
           </div>
+
+          {/* Print FAB */}
+          <button
+            type="button"
+            onClick={handlePrintChecklist}
+            title="Print Trip Manifest (A4)"
+            className="w-14 h-14 rounded-full bg-white hover:bg-zinc-100 text-zinc-650 hover:text-zinc-900 shadow-2xl border border-zinc-200 flex items-center justify-center transition-all hover:scale-110 active:scale-90"
+          >
+            <Printer className="w-6 h-6" />
+          </button>
 
           {/* Reset Checks FAB */}
           <button

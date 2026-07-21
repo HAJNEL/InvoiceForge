@@ -54,6 +54,9 @@ service cloud.firestore {
     function isValidClientDistance(data) { return true; }
     function isValidZohoCredentials(data) { return true; }
     function isValidFuelLog(data) { return true; }
+    function isValidKpiTemplates(data) { return true; }
+    function isValidKpiReading(data) { return true; }
+    function isValidKpiTruckCapacity(data) { return true; }
 
     match /invoices/{invoiceId} {
       allow get: if isSignedIn() && (resource == null || isOwner(resource.data) || isTeamMemberOfOwner(resource.data.userId));
@@ -149,6 +152,59 @@ service cloud.firestore {
         && incoming().userId == existing().userId;
       
       allow delete: if isOwner(existing());
+
+      // Owner's own Google Calendar sync records (tripId -> {eventId, scheduledDate}),
+      // mirrors team_members/{memberId}/calendar_events below.
+      match /calendar_events/{tripId} {
+        allow read, write: if isSignedIn() && request.auth.uid == settingsId;
+      }
+    }
+
+    // KPI product templates — single doc per owner, keyed by uid
+    match /kpiTemplates/{ownerId} {
+      allow read: if isSignedIn() && request.auth.uid == ownerId;
+
+      allow create: if isSignedIn()
+        && request.auth.uid == ownerId
+        && incoming().userId == request.auth.uid
+        && isValidKpiTemplates(incoming());
+
+      allow update: if isOwner(existing())
+        && isValidKpiTemplates(incoming())
+        && incoming().userId == existing().userId;
+
+      allow delete: if isOwner(existing());
+    }
+
+    // KPI production readings — one doc per reading session
+    match /kpiReadings/{readingId} {
+      allow get, list: if isSignedIn() && (resource == null || isOwner(resource.data));
+
+      allow create: if isSignedIn()
+        && isValidKpiReading(incoming())
+        && incoming().userId == request.auth.uid;
+
+      allow update: if isOwner(existing())
+        && isValidKpiReading(incoming())
+        && incoming().userId == existing().userId;
+
+      allow delete: if isOwner(existing());
+    }
+
+    // KPI truck max-capacity grid — single doc per owner, keyed by uid
+    match /kpiTruckCapacity/{ownerId} {
+      allow read: if isSignedIn() && request.auth.uid == ownerId;
+
+      allow create: if isSignedIn()
+        && request.auth.uid == ownerId
+        && incoming().userId == request.auth.uid
+        && isValidKpiTruckCapacity(incoming());
+
+      allow update: if isOwner(existing())
+        && isValidKpiTruckCapacity(incoming())
+        && incoming().userId == existing().userId;
+
+      allow delete: if isOwner(existing());
     }
 
     match /team_members/{memberId} {
@@ -161,10 +217,22 @@ service cloud.firestore {
         && (incoming().ownerId == request.auth.uid || incoming().userId == request.auth.uid);
         
       allow update: if (isSignedIn() && existing().ownerId == request.auth.uid && isValidTeamMember(incoming()))
-        || (existing() != null && existing().status == 'pending' && incoming().status == 'active' && incoming().userId == request.auth.uid);
+        || (existing() != null && existing().status == 'pending' && incoming().status == 'active' && incoming().userId == request.auth.uid)
+        // A team member may edit only their own personal profile fields. Privileged
+        // fields (ownerId, role, roles, status, email, inviteCode, userId) are locked
+        // because any change to them would appear in affectedKeys() and fail hasOnly().
+        || (isSignedIn() && existing().userId == request.auth.uid
+            && incoming().diff(existing()).affectedKeys()
+                 .hasOnly(['firstName', 'lastName', 'phone', 'photoBase64', 'pushoverUserKey', 'calendarSyncEnabled', 'updatedAt']));
         
-      allow delete: if isSignedIn() 
+      allow delete: if isSignedIn()
         && (existing().ownerId == request.auth.uid || existing().status == 'pending' || existing().userId == request.auth.uid);
+
+      // Per-member Google Calendar sync records (tripId -> {eventId, scheduledDate}).
+      // A member may only read/write their own sync bookkeeping.
+      match /calendar_events/{tripId} {
+        allow read, write: if isSignedIn() && request.auth.uid == memberId;
+      }
     }
 
     match /knockdown_items/{itemId} {

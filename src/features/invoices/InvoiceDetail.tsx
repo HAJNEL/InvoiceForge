@@ -23,10 +23,13 @@ import { Link, useParams, useNavigate } from 'react-router-dom';
 import { useInvoice } from './hooks/useInvoice';
 import { useInvoices } from './hooks/useInvoices';
 import { cn, formatCurrency } from '../../lib/utils';
+import { useIsMobile } from '../../hooks/useIsMobile';
+import { InvoiceDetailMobile } from './InvoiceDetailMobile';
 
 const STATUS_DISPLAY_MAP: Record<string, string> = {
   'partially_complete': 'Partially Complete',
   draft: 'Draft',
+  pending: 'Pending',
   proposed: 'Proposed',
   assembled: 'Assembled',
   'on-route': 'On Route',
@@ -49,6 +52,7 @@ export function InvoiceDetail() {
   const [bypassWarning, setBypassWarning] = useState(false);
   const [distanceInput, setDistanceInput] = useState('');
   const [isSavingDistance, setIsSavingDistance] = useState(false);
+  const isMobile = useIsMobile();
 
   useEffect(() => {
     if (typeof invoice?.distanceKm === 'number') {
@@ -148,6 +152,35 @@ export function InvoiceDetail() {
 
   const invoiceStatuses = ['partially_complete', 'draft', 'proposed', 'assembled', 'on_route', 'delivered', 'complete'];
   const totalQty = invoice.lineItems?.reduce((sum, item) => sum + (parseFloat(item.qty?.toString()) || 0), 0) || 0;
+
+  if (isMobile) {
+    return (
+      <InvoiceDetailMobile
+        id={id}
+        invoice={invoice}
+        invoiceStatuses={invoiceStatuses}
+        totalQty={totalQty}
+        isUpdatingStatus={isUpdatingStatus}
+        showDeliveredPrompt={showDeliveredPrompt}
+        deliveredDateInput={deliveredDateInput}
+        setDeliveredDateInput={setDeliveredDateInput}
+        statusError={statusError}
+        bypassWarning={bypassWarning}
+        distanceInput={distanceInput}
+        setDistanceInput={setDistanceInput}
+        isDistanceValid={isDistanceValid}
+        distanceChanged={distanceChanged}
+        isSavingDistance={isSavingDistance}
+        handleSaveDistance={handleSaveDistance}
+        handleStatusChange={handleStatusChange}
+        handleSaveDeliveredStatus={handleSaveDeliveredStatus}
+        handleDelete={handleDelete}
+        setShowDeliveredPrompt={setShowDeliveredPrompt}
+        setStatusError={setStatusError}
+        setBypassWarning={setBypassWarning}
+      />
+    );
+  }
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-20">
@@ -487,6 +520,7 @@ function StatusBadge({ status, deliveredDate }: { status: string; deliveredDate?
   const styles: Record<string, string> = {
     'partially_complete': "bg-rose-50 text-rose-600 border-rose-100",
     draft: "bg-zinc-100 text-zinc-600 border-zinc-200",
+    pending: "bg-violet-50 text-violet-600 border-violet-100",
     proposed: "bg-amber-50 text-amber-600 border-amber-100",
     assembled: "bg-blue-50 text-blue-600 border-blue-100",
     'on-route': "bg-sky-50 text-sky-600 border-sky-100",

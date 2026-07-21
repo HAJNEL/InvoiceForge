@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Calendar, Truck as TruckIcon, Plus, ChevronLeft, ChevronRight } from 'lucide-react';
-import { cn } from '../../../lib/utils';
+import { Calendar, Truck as TruckIcon, Plus, ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react';
+import { cn, formatCurrency } from '../../../lib/utils';
 import { Truck } from '../../trucks/hooks/useTrucks';
 import { Trip } from '../../../types';
+import { UIInvoice } from '../../invoices/hooks/useInvoices';
 
 interface WeekDay {
   dateString: string;
@@ -14,6 +15,7 @@ interface WeekDay {
 export function DispatchSchedule({
   trucks,
   paginatedTrucks,
+  invoices,
   weekDays,
   weekNumber,
   weekOffset,
@@ -27,6 +29,7 @@ export function DispatchSchedule({
 }: {
   trucks: Truck[];
   paginatedTrucks: Truck[];
+  invoices: UIInvoice[];
   weekDays: WeekDay[];
   weekNumber: number;
   weekOffset: number;
@@ -38,6 +41,32 @@ export function DispatchSchedule({
   getTripsForCell: (truckId: string, dateString: string) => Trip[];
   onCellClick: (info: { dateString: string; dayName: string; truckId: string }) => void;
 }) {
+  // Collapsed by default; toggled via the "Daily Totals" row header cell.
+  const [showDailyTotals, setShowDailyTotals] = useState(false);
+
+  // Sums every trip's invoice value (across the full fleet, not just the paginated page)
+  // for a given day, so the totals row reflects the whole week regardless of pagination.
+  const invoiceAmountById = useMemo(() => new Map(invoices.map(i => [i.id, i.amount || 0])), [invoices]);
+  const dayTotals = useMemo(() => {
+    const totals = new Map<string, number>();
+    for (const day of weekDays) {
+      let total = 0;
+      for (const truck of trucks) {
+        for (const trip of getTripsForCell(truck.id, day.dateString)) {
+          total += (trip.invoiceIds || []).reduce((sum, id) => sum + (invoiceAmountById.get(id) || 0), 0);
+        }
+      }
+      totals.set(day.dateString, total);
+    }
+    return totals;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [weekDays, trucks, invoiceAmountById]);
+
+  const weekTotal = useMemo(() => {
+    let total = 0;
+    dayTotals.forEach(amount => { total += amount; });
+    return total;
+  }, [dayTotals]);
   return (
     <div className="saas-card overflow-hidden">
       <div className="bg-[#e0f2f1]/50 py-4 px-6 flex flex-col sm:flex-row items-center justify-between gap-4 border-b border-zinc-100">
@@ -91,6 +120,28 @@ export function DispatchSchedule({
           <>
             <table className="w-full min-w-[600px] border-collapse relative">
               <thead>
+                <tr>
+                  <th className="w-40 bg-zinc-50/70 border border-zinc-100 py-2 px-4 text-left">
+                    <button
+                      type="button"
+                      title={showDailyTotals ? 'Collapse daily totals' : 'Expand daily totals'}
+                      onClick={() => setShowDailyTotals(prev => !prev)}
+                      className="flex items-center gap-1.5 text-[10px] font-black text-zinc-500 uppercase tracking-widest hover:text-zinc-700 transition-colors cursor-pointer"
+                    >
+                      <ChevronDown className={cn("w-3.5 h-3.5 transition-transform", !showDailyTotals && "-rotate-90")} />
+                      Daily Totals
+                    </button>
+                  </th>
+                  {weekDays.map((day, idx) => (
+                    <th key={idx} className="bg-zinc-50/70 border border-zinc-100 py-2 px-1 text-center font-normal">
+                      {showDailyTotals && (
+                        <span className="text-[11px] font-black text-brand-primary tabular-nums">
+                          R {formatCurrency(dayTotals.get(day.dateString) || 0)}
+                        </span>
+                      )}
+                    </th>
+                  ))}
+                </tr>
                 <tr>
                   <th className="w-40 bg-zinc-50 border border-zinc-100 py-4 px-4 text-left text-[10px] font-black text-zinc-400 uppercase tracking-widest">Truck Name</th>
                   {weekDays.map((day, idx) => (
@@ -192,7 +243,11 @@ export function DispatchSchedule({
             )}
 
             <div className="mt-4 flex items-center justify-between text-[10px] font-bold uppercase tracking-widest text-zinc-400">
-              <p>Click on grid cells to view, change, or schedule trips on that day</p>
+              {showDailyTotals ? (
+                <p className="text-brand-primary">Week Total: R {formatCurrency(weekTotal)}</p>
+              ) : (
+                <p>Click on grid cells to view, change, or schedule trips on that day</p>
+              )}
               <div className="flex gap-4">
                 <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-brand-primary"></div> Scheduled Trips</span>
                 <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-zinc-200"></div> No Trips</span>

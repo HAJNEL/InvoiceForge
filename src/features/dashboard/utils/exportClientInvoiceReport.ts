@@ -8,6 +8,7 @@ import {
   REGIONAL_COMMISSION_RATE, REGIONAL_DIESEL_SURCHARGE_RATE,
 } from '../../reports/weeklyRevenue';
 import { ASSEMBLY_CATEGORY_META, AssemblyCategory, getAssemblyCategory } from '../../reports/assemblyRates';
+import { isPartialInvoice } from '../constants';
 
 const VAT_RATE = 0.15;
 const CURRENCY_FORMAT = '"R"#,##0.00';
@@ -116,7 +117,17 @@ export async function exportClientInvoiceReport(selfInvoice: SelfInvoice, invoic
     });
   }
 
-  const rows = buildReportRows(resolvedInvoices);
+  // Partially-delivered invoices aren't billable yet, so they're left off the
+  // client's Excel report until they reach a real completed status.
+  const billableInvoices = resolvedInvoices.filter(inv => !isPartialInvoice(inv));
+  const partialCount = resolvedInvoices.length - billableInvoices.length;
+  if (partialCount > 0) {
+    toast.warning('Partial invoices excluded', {
+      description: `${partialCount} invoice(s) in this bundle are only partially complete and were excluded from the export.`
+    });
+  }
+
+  const rows = buildReportRows(billableInvoices);
 
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'InvoiceForge';

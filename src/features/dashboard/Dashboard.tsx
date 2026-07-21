@@ -18,10 +18,13 @@ import { SelfInvoiceModal } from './components/SelfInvoiceModal';
 import { FuelLogModal } from './components/FuelLogModal';
 import { useSelfInvoices } from './hooks/useSelfInvoices';
 import { useFuelLogs } from './hooks/useFuelLogs';
+import { useIsMobile } from '../../hooks/useIsMobile';
+import { DashboardMobile } from './DashboardMobile';
 
 export function Dashboard() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
 
   useEffect(() => {
     if (user) {
@@ -99,6 +102,49 @@ export function Dashboard() {
     );
   }
 
+  if (isMobile) {
+    return (
+      <DashboardMobile
+        trucks={trucks}
+        paginatedTrucks={paginatedTrucks}
+        invoices={invoices}
+        updateInvoice={updateInvoice}
+        updateTrip={updateTrip}
+        lastInvoicedAmount={lastInvoicedAmount}
+        historyInvoicedTotal={historyInvoicedTotal}
+        fuelLogs={fuelLogs}
+        trucksPage={trucksPage}
+        setTrucksPage={setTrucksPage}
+        totalTrucksPages={totalTrucksPages}
+        trucksPerPage={trucksPerPage}
+        showDeliveredModal={showDeliveredModal}
+        setShowDeliveredModal={setShowDeliveredModal}
+        showPartiallyCompletedModal={showPartiallyCompletedModal}
+        setShowPartiallyCompletedModal={setShowPartiallyCompletedModal}
+        showSelfInvoiceModal={showSelfInvoiceModal}
+        setShowSelfInvoiceModal={setShowSelfInvoiceModal}
+        showFuelModal={showFuelModal}
+        setShowFuelModal={setShowFuelModal}
+        weekOffset={weekOffset}
+        setWeekOffset={setWeekOffset}
+        selectedCellInfo={selectedCellInfo}
+        setSelectedCellInfo={setSelectedCellInfo}
+        invoiceTotalsOverTime={invoiceTotalsOverTime}
+        topCustomersData={topCustomersData}
+        pipelineData={pipelineData}
+        truckUtilizationData={truckUtilizationData}
+        districtData={districtData}
+        productData={productData}
+        weekDays={weekDays}
+        stats={stats}
+        completedInvoices={completedInvoices}
+        partiallyCompletedInvoices={partiallyCompletedInvoices}
+        weekNumber={weekNumber}
+        getTripsForCell={getTripsForCell}
+      />
+    );
+  }
+
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
       <div className="flex items-center justify-between">
@@ -140,6 +186,7 @@ export function Dashboard() {
       <DispatchSchedule
         trucks={trucks}
         paginatedTrucks={paginatedTrucks}
+        invoices={invoices}
         weekDays={weekDays}
         weekNumber={weekNumber}
         weekOffset={weekOffset}

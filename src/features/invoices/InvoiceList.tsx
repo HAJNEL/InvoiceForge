@@ -23,12 +23,16 @@ import { useTrips } from '../trips/hooks/useTrips';
 import { validateAndSubtractInventory } from '../../utils/inventory';
 import { auth } from '../../lib/firebase';
 import { PartialConfirmModal } from '../../components/PartialConfirmModal';
+import { PartialConfirmModalMobile } from '../../components/PartialConfirmModalMobile';
 import { AlertTriangle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { useIsMobile } from '../../hooks/useIsMobile';
+import { InvoiceListMobile } from './InvoiceListMobile';
 
 const STATUS_DISPLAY_MAP: Record<string, string> = {
   'partially_complete': 'Partially Complete',
   draft: 'Draft',
+  pending: 'Pending',
   proposed: 'Proposed',
   assembled: 'Assembled',
   'on-route': 'On Route',
@@ -179,6 +183,51 @@ export function InvoicesList() {
       return acc;
     }, {});
   }, [paginatedInvoices, groupBy]);
+
+  const isMobile = useIsMobile();
+
+  if (isMobile) {
+    return (
+      <>
+        <InvoiceListMobile
+          loading={loading}
+          error={error}
+          invoices={invoices}
+          trips={trips}
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          searchQuery={searchQuery}
+          setSearchQuery={setSearchQuery}
+          sortBy={sortBy}
+          setSortBy={setSortBy}
+          sortOrder={sortOrder}
+          setSortOrder={setSortOrder}
+          groupBy={groupBy}
+          setGroupBy={setGroupBy}
+          currentPage={currentPage}
+          setCurrentPage={setCurrentPage}
+          totalPages={totalPages}
+          sortedAndFilteredInvoices={sortedAndFilteredInvoices}
+          groupedInvoices={groupedInvoices}
+          deleteInvoice={deleteInvoice}
+          updateInvoice={updateInvoice}
+          onFlaggedClick={(invoice, trip, itemKeys) => setPartialModalData({ isOpen: true, invoice, trip, itemKeys })}
+        />
+        {partialModalData.isOpen && (
+          <PartialConfirmModalMobile
+            isOpen={partialModalData.isOpen}
+            onClose={() => setPartialModalData(prev => ({ ...prev, isOpen: false }))}
+            invoice={partialModalData.invoice}
+            trip={partialModalData.trip}
+            itemKeys={partialModalData.itemKeys}
+            onSuccess={() => {
+              // Updated successfully, list will live updates
+            }}
+          />
+        )}
+      </>
+    );
+  }
 
   if (loading) {
     return (
@@ -685,7 +734,7 @@ export function InvoicesList() {
                     Choose New Status
                   </label>
                   <div className="grid grid-cols-2 gap-2">
-                    {['partially_complete', 'draft', 'proposed', 'assembled', 'on_route', 'delivered', 'complete'].map((status) => {
+                    {['partially_complete', 'draft', 'pending', 'proposed', 'assembled', 'on_route', 'delivered', 'complete'].map((status) => {
                       const displayLabel = STATUS_DISPLAY_MAP[status] || status;
                       const isSelected = newStatusValue === status || 
                         (status === 'partially_complete' && (newStatusValue === 'partially_complete' || newStatusValue === 'partially complete' || newStatusValue === 'loaded')) ||
@@ -837,6 +886,7 @@ function StatusBadge({ status, deliveredDate }: { status: string; deliveredDate?
   const styles: Record<string, string> = {
     'partially_complete': "bg-rose-50 text-rose-600 border-rose-100",
     draft: "bg-zinc-100 text-zinc-600 border-zinc-200",
+    pending: "bg-violet-50 text-violet-600 border-violet-100",
     proposed: "bg-amber-50 text-amber-600 border-amber-100",
     assembled: "bg-blue-50 text-blue-600 border-blue-100",
     'on-route': "bg-sky-50 text-sky-600 border-sky-100",

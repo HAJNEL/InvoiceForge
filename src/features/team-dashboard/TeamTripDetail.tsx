@@ -12,6 +12,8 @@ import { db, auth } from '../../lib/firebase';
 import { Trip, Invoice } from '../../types';
 import { cn } from '../../lib/utils';
 import { subtractSingleItemFromInventory } from '../../utils/inventory';
+import { useIsMobile } from '../../hooks/useIsMobile';
+import { TeamTripDetailMobile } from './TeamTripDetailMobile';
 
 interface InvoiceLineItem {
   stockCode?: string;
@@ -71,6 +73,7 @@ export function TeamTripDetail() {
   const { tripId } = useParams<{ tripId: string }>();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const isMobile = useIsMobile();
 
   const { profile, toggleCheckItem, updateTripStatus, updatePartialItem, knockdownItems, loading: authLoading } = useTeamDashboard();
 
@@ -839,9 +842,59 @@ export function TeamTripDetail() {
 
   const progressPct = totalItemsCount === 0 ? 0 : Math.round((checkedCount / totalItemsCount) * 100);
 
+  if (isMobile) {
+    return (
+      <TeamTripDetailMobile
+        trip={trip}
+        activeRole={activeRole}
+        invoices={invoices}
+        showPreChecklist={showPreChecklist}
+        setShowPreChecklist={setShowPreChecklist}
+        uniquePreChecklistItems={uniquePreChecklistItems}
+        preCheckedState={preCheckedState}
+        preChecklistStats={preChecklistStats}
+        togglePreCheck={togglePreCheck}
+        handleClearPreChecklist={handleClearPreChecklist}
+        handleMarkAllPreChecked={handleMarkAllPreChecked}
+        totalFinancialValue={totalFinancialValue}
+        loaderItems={loaderItems}
+        groupedItems={groupedItems}
+        items={processedItems}
+        checkedState={checkedState}
+        updatingId={updatingId}
+        canModify={canModify}
+        isWritable={isWritable}
+        isStatusCorrect={isStatusCorrect}
+        reqStatusLabel={reqStatus?.label}
+        isViewer={profile?.role === 'viewer'}
+        activeItemToCount={activeItemToCount}
+        setActiveItemToCount={setActiveItemToCount}
+        assemblerEnteredQty={assemblerEnteredQty}
+        setAssemblerEnteredQty={setAssemblerEnteredQty}
+        handleSaveAssemblerCount={handleSaveAssemblerCount}
+        handleClearAssemblerCount={handleClearAssemblerCount}
+        handleToggle={handleToggle}
+        editingPartialKey={editingPartialKey}
+        setEditingPartialKey={setEditingPartialKey}
+        localActualQty={localActualQty}
+        setLocalActualQty={setLocalActualQty}
+        localReason={localReason}
+        setLocalReason={setLocalReason}
+        updatePartialItem={updatePartialItem}
+        qtyFromInvoices={qtyFromInvoices}
+        isTransitioning={isTransitioning}
+        transitionError={transitionError}
+        handleStatusTransition={handleStatusTransition}
+        progressPct={progressPct}
+        totalItemsCount={totalItemsCount}
+        checkedCount={checkedCount}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-zinc-50 flex flex-col justify-start pb-8">
-      
+
       {/* Short Top Bar Header */}
       <header className="sticky top-0 z-40 bg-white border-b border-zinc-200 h-16 px-4 flex items-center shrink-0">
         <button
