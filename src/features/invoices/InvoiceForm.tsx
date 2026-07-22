@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import { 
-  ArrowLeft, 
-  Save, 
-  Plus, 
-  Trash2, 
-  User, 
+import {
+  ArrowLeft,
+  Save,
+  Plus,
+  Trash2,
+  User,
   Calendar,
   Hash
 } from 'lucide-react';
@@ -17,12 +17,12 @@ export function InvoiceForm() {
   ]);
 
   const addLineItem = () => {
-    setLineItems([...lineItems, { 
-      id: Math.random().toString(36).substr(2, 9), 
-      description: '', 
-      quantity: 1, 
-      unitPrice: 0, 
-      amount: 0 
+    setLineItems([...lineItems, {
+      id: Math.random().toString(36).substr(2, 9),
+      description: '',
+      quantity: 1,
+      unitPrice: 0,
+      amount: 0
     }]);
   };
 
@@ -62,10 +62,10 @@ export function InvoiceForm() {
             <p className="text-zinc-500 text-sm mt-1">Manually enter invoice details or use AI extraction.</p>
           </div>
         </div>
-        
+
         <div className="flex items-center gap-3">
-          <button 
-            type="button" 
+          <button
+            type="button"
             className="px-4 py-2 text-sm font-semibold text-zinc-500 hover:text-zinc-700"
             onClick={() => navigate('/invoices')}
           >
@@ -88,26 +88,26 @@ export function InvoiceForm() {
                 <div className="space-y-4">
                   <div className="relative">
                     <Hash className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
-                    <input 
-                      type="text" 
-                      placeholder="Invoice Number (e.g. INV-1001)" 
+                    <input
+                      type="text"
+                      placeholder="Invoice Number (e.g. INV-1001)"
                       className="w-full pl-10 pr-4 py-2.5 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent focus:outline-none transition-all"
                     />
                   </div>
                   <div className="relative">
                     <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
-                    <input 
-                      type="text" 
-                      placeholder="Issue Date" 
+                    <input
+                      type="text"
+                      placeholder="Issue Date"
                       className="w-full pl-10 pr-4 py-2.5 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent focus:outline-none transition-all"
                       onFocus={(e) => e.target.type = 'date'}
                     />
                   </div>
                   <div className="relative">
                     <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
-                    <input 
-                      type="text" 
-                      placeholder="Due Date" 
+                    <input
+                      type="text"
+                      placeholder="Due Date"
                       className="w-full pl-10 pr-4 py-2.5 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent focus:outline-none transition-all"
                       onFocus={(e) => e.target.type = 'date'}
                     />
@@ -125,7 +125,7 @@ export function InvoiceForm() {
                       <option value="plus">+ Add New Client</option>
                     </select>
                   </div>
-                  <textarea 
+                  <textarea
                     placeholder="Billing Address (Auto-filled if client selected)"
                     rows={3}
                     className="w-full px-4 py-2.5 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent focus:outline-none transition-all"
@@ -151,8 +151,8 @@ export function InvoiceForm() {
                      {lineItems.map((item) => (
                        <tr key={item.id}>
                          <td className="py-3">
-                           <input 
-                             type="text" 
+                           <input
+                             type="text"
                              value={item.description}
                              onChange={(e) => updateLineItem(item.id, 'description', e.target.value)}
                              placeholder="Item name or description"
@@ -160,18 +160,18 @@ export function InvoiceForm() {
                            />
                          </td>
                          <td className="py-3">
-                           <input 
+                           <input
                            placeholder='qty'
-                             type="number" 
+                             type="number"
                              value={item.quantity}
                              onChange={(e) => updateLineItem(item.id, 'quantity', parseFloat(e.target.value))}
                              className="w-full px-2 py-2 bg-transparent border-none text-sm text-right focus:outline-none font-mono"
                            />
                          </td>
                          <td className="py-3">
-                           <input 
+                           <input
                             placeholder='number'
-                             type="number" 
+                             type="number"
                              value={item.unitPrice}
                              onChange={(e) => updateLineItem(item.id, 'unitPrice', parseFloat(e.target.value))}
                              className="w-full px-2 py-2 bg-transparent border-none text-sm text-right focus:outline-none font-mono"
@@ -181,7 +181,7 @@ export function InvoiceForm() {
                            R {item.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                          </td>
                          <td className="py-3 text-right">
-                           <button 
+                           <button
                              title='item'
                              type="button"
                              onClick={() => removeLineItem(item.id)}
@@ -194,7 +194,7 @@ export function InvoiceForm() {
                      ))}
                    </tbody>
                 </table>
-                <button 
+                <button
                   type="button"
                   onClick={addLineItem}
                   className="w-full py-3 border-2 border-dashed border-zinc-100 rounded-xl text-xs font-bold uppercase tracking-widest text-zinc-400 hover:border-brand-accent hover:text-brand-accent transition-all flex items-center justify-center gap-2"
@@ -208,7 +208,7 @@ export function InvoiceForm() {
 
           <div className="saas-card p-8">
              <label className="block text-[10px] font-bold uppercase tracking-widest text-zinc-400 mb-4">Additional Notes</label>
-             <textarea 
+             <textarea
                placeholder="Terms, payment instructions, or personal note to client..."
                rows={4}
                className="w-full px-4 py-3 bg-zinc-50 border border-zinc-200 rounded-xl text-sm focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent focus:outline-none transition-all"
@@ -233,7 +233,7 @@ export function InvoiceForm() {
                   <span className="text-2xl font-black tabular-nums">R {subtotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                 </div>
               </div>
-              
+
               <div className="mt-8 space-y-3">
                  <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-widest text-zinc-400">
                     <span>Currency</span>
