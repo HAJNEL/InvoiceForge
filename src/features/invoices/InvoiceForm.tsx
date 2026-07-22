@@ -1,20 +1,29 @@
 import { useState } from 'react';
-import { 
-  ArrowLeft, 
-  Save, 
-  Plus, 
-  Trash2, 
-  User, 
+import {
+  ArrowLeft,
+  Save,
+  Plus,
+  Trash2,
+  User,
   Calendar,
   Hash
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
+import { useInvoices } from './hooks/useInvoices';
 
 export function InvoiceForm() {
   const navigate = useNavigate();
+  const { addInvoice } = useInvoices();
   const [lineItems, setLineItems] = useState([
     { id: '1', description: '', quantity: 1, unitPrice: 0, amount: 0 }
   ]);
+  const [invoiceNumber, setInvoiceNumber] = useState('');
+  const [issueDate, setIssueDate] = useState('');
+  const [dueDate, setDueDate] = useState('');
+  const [billingAddress, setBillingAddress] = useState('');
+  const [notes, setNotes] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
 
   const addLineItem = () => {
     setLineItems([...lineItems, { 
@@ -46,6 +55,39 @@ export function InvoiceForm() {
 
   const subtotal = lineItems.reduce((acc, item) => acc + item.amount, 0);
 
+  const handleSaveInvoice = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isSaving) return;
+    setIsSaving(true);
+    try {
+      const id = await addInvoice({
+        taxInvoice: invoiceNumber,
+        invoiceDate: issueDate,
+        dueDate,
+        deliveryAddress: billingAddress,
+        notes,
+        subTotal: subtotal,
+        line_items: lineItems.map(item => ({
+          description: item.description,
+          quantity: item.quantity,
+          unit_price: item.unitPrice,
+          line_item_value: item.amount,
+        })),
+      });
+      if (id) {
+        toast.success('Invoice saved', { description: 'The invoice was created successfully.' });
+        navigate('/invoices');
+      } else {
+        toast.error('Failed to save invoice', { description: 'Please try again.' });
+      }
+    } catch (err) {
+      console.error('Save invoice error:', err);
+      toast.error('Failed to save invoice', { description: 'An unexpected error occurred.' });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
       <div className="flex items-center justify-between">
@@ -71,15 +113,21 @@ export function InvoiceForm() {
           >
             Discard
           </button>
-          <button className="inline-flex items-center gap-2 px-6 py-2 bg-brand-primary text-white rounded-lg text-sm font-bold tracking-widest uppercase hover:bg-zinc-800 transition-colors shadow-lg shadow-zinc-200">
+          <button
+            type="submit"
+            form="invoice-form"
+            title="Save Invoice"
+            disabled={isSaving}
+            className="inline-flex items-center gap-2 px-6 py-2 bg-brand-primary text-white rounded-lg text-sm font-bold tracking-widest uppercase hover:bg-zinc-800 transition-colors shadow-lg shadow-zinc-200 disabled:opacity-50"
+          >
             <Save className="w-4 h-4" />
-            Save Invoice
+            {isSaving ? 'Saving...' : 'Save Invoice'}
           </button>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <form className="lg:col-span-2 space-y-8">
+        <form id="invoice-form" className="lg:col-span-2 space-y-8" onSubmit={handleSaveInvoice}>
           {/* Main Info */}
           <div className="saas-card p-8 space-y-8">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -88,28 +136,32 @@ export function InvoiceForm() {
                 <div className="space-y-4">
                   <div className="relative">
                     <Hash className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
-                    <input 
-                      type="text" 
-                      placeholder="Invoice Number (e.g. INV-1001)" 
+                    <input
+                      type="text"
+                      placeholder="Invoice Number (e.g. INV-1001)"
+                      value={invoiceNumber}
+                      onChange={(e) => setInvoiceNumber(e.target.value)}
                       className="w-full pl-10 pr-4 py-2.5 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent focus:outline-none transition-all"
                     />
                   </div>
                   <div className="relative">
                     <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
-                    <input 
-                      type="text" 
-                      placeholder="Issue Date" 
+                    <input
+                      type="date"
+                      aria-label="Issue Date"
+                      value={issueDate}
+                      onChange={(e) => setIssueDate(e.target.value)}
                       className="w-full pl-10 pr-4 py-2.5 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent focus:outline-none transition-all"
-                      onFocus={(e) => e.target.type = 'date'}
                     />
                   </div>
                   <div className="relative">
                     <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
-                    <input 
-                      type="text" 
-                      placeholder="Due Date" 
+                    <input
+                      type="date"
+                      aria-label="Due Date"
+                      value={dueDate}
+                      onChange={(e) => setDueDate(e.target.value)}
                       className="w-full pl-10 pr-4 py-2.5 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent focus:outline-none transition-all"
-                      onFocus={(e) => e.target.type = 'date'}
                     />
                   </div>
                 </div>
@@ -125,9 +177,11 @@ export function InvoiceForm() {
                       <option value="plus">+ Add New Client</option>
                     </select>
                   </div>
-                  <textarea 
+                  <textarea
                     placeholder="Billing Address (Auto-filled if client selected)"
                     rows={3}
+                    value={billingAddress}
+                    onChange={(e) => setBillingAddress(e.target.value)}
                     className="w-full px-4 py-2.5 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent focus:outline-none transition-all"
                   ></textarea>
                 </div>
@@ -208,9 +262,11 @@ export function InvoiceForm() {
 
           <div className="saas-card p-8">
              <label className="block text-[10px] font-bold uppercase tracking-widest text-zinc-400 mb-4">Additional Notes</label>
-             <textarea 
+             <textarea
                placeholder="Terms, payment instructions, or personal note to client..."
                rows={4}
+               value={notes}
+               onChange={(e) => setNotes(e.target.value)}
                className="w-full px-4 py-3 bg-zinc-50 border border-zinc-200 rounded-xl text-sm focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent focus:outline-none transition-all"
              ></textarea>
           </div>

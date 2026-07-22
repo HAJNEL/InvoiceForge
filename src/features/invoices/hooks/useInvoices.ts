@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
-import { collection, query, where, onSnapshot, doc, deleteDoc, updateDoc } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, addDoc, deleteDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../../../lib/firebase';
 import { useAuth } from '../../../core/hooks/useAuth';
 import { handleFirestoreError, OperationType } from '../../../lib/firestore-errors';
@@ -51,6 +51,25 @@ export function useInvoices() {
   const [invoices, setInvoices] = useState<UIInvoice[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const addInvoice = useCallback(async (data: Partial<Record<string, unknown>>) => {
+    if (!user) return null;
+    const path = 'invoices';
+    try {
+      const docRef = await addDoc(collection(db, path), {
+        ...data,
+        status: data.status || 'draft',
+        userId: user.uid,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+      return docRef.id;
+    } catch (err) {
+      console.error("Firestore Add Error:", err);
+      handleFirestoreError(err, OperationType.CREATE, path);
+      return null;
+    }
+  }, [user]);
 
   const deleteInvoice = useCallback(async (id: string) => {
     const path = `invoices/${id}`;
@@ -167,5 +186,5 @@ export function useInvoices() {
     return () => unsubscribe();
   }, [user]);
 
-  return { invoices, loading, error, deleteInvoice, updateInvoice };
+  return { invoices, loading, error, addInvoice, deleteInvoice, updateInvoice };
 }
