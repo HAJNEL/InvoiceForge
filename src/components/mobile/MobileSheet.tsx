@@ -1,5 +1,6 @@
-import { ReactNode } from 'react';
+import { ReactNode, useId } from 'react';
 import { X } from 'lucide-react';
+import { useEscapeKey } from '../../hooks/useEscapeKey';
 
 interface MobileSheetProps {
   isOpen: boolean;
@@ -27,12 +28,18 @@ export function MobileSheet({
   children,
   fullHeight = true,
 }: MobileSheetProps) {
+  const titleId = useId();
+  useEscapeKey(onClose, isOpen);
+
   if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-[200] flex flex-col justify-end">
       <div className="absolute inset-0 bg-brand-primary/40 backdrop-blur-sm" onClick={onClose}></div>
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
         className={`relative z-10 bg-white w-full flex flex-col shadow-2xl animate-slide-in-up ${
           fullHeight ? 'h-[100dvh]' : 'max-h-[92dvh] rounded-t-3xl'
         }`}
@@ -41,7 +48,7 @@ export function MobileSheet({
           <div className="flex items-center gap-3 min-w-0">
             {headerLeft}
             <div className="min-w-0">
-              <h3 className="text-base font-black text-brand-primary uppercase tracking-tight truncate">{title}</h3>
+              <h3 id={titleId} className="text-base font-black text-brand-primary uppercase tracking-tight truncate">{title}</h3>
               {subtitle && (
                 <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mt-0.5 truncate">
                   {subtitle}

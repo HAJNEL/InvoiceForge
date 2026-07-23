@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { Loader2, X, FileText, FileCheck } from 'lucide-react';
 import { cn } from '../../../lib/utils';
 import { UIInvoice } from '../../invoices/hooks/useInvoices';
 import { STATUS_DISPLAY_MAP } from '../constants';
+import { useEscapeKey } from '../../../hooks/useEscapeKey';
 
 export function DeliveredInvoicesModal({ invoices, onClose, onUpdateStatus }: {
   invoices: UIInvoice[];
@@ -11,6 +12,8 @@ export function DeliveredInvoicesModal({ invoices, onClose, onUpdateStatus }: {
 }) {
   const [selectedInvoice, setSelectedInvoice] = useState<UIInvoice | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const titleId = useId();
+  useEscapeKey(onClose);
 
   const handleMarkAsInvoiced = async (invoiceId: string) => {
     setUpdatingId(invoiceId);
@@ -30,7 +33,11 @@ export function DeliveredInvoicesModal({ invoices, onClose, onUpdateStatus }: {
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 text-zinc-900">
       <div className="absolute inset-0 bg-zinc-900/45 backdrop-blur-sm" onClick={onClose}></div>
 
-      <div className={cn(
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        className={cn(
         "bg-white rounded-2xl w-full relative z-10 shadow-2xl overflow-hidden transition-all duration-300 flex flex-col max-h-[85vh] md:flex-row",
         selectedInvoice ? "max-w-4xl" : "max-w-xl"
       )}>
@@ -38,7 +45,7 @@ export function DeliveredInvoicesModal({ invoices, onClose, onUpdateStatus }: {
         <div className={cn("flex flex-col flex-1 border-r border-zinc-100 max-h-[85vh]", selectedInvoice ? "md:max-w-md" : "w-full")}>
           <div className="px-6 py-4 border-b border-zinc-100 flex items-center justify-between bg-zinc-50/50">
             <div>
-              <h2 className="text-lg font-bold">Delivered Invoices</h2>
+              <h2 id={titleId} className="text-lg font-bold">Delivered Invoices</h2>
               <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest mt-0.5">Completed &amp; Partially Complete ({invoices.length})</p>
             </div>
             <button onClick={onClose} aria-label="Close" className="p-2 hover:bg-zinc-100 rounded-lg text-zinc-400">

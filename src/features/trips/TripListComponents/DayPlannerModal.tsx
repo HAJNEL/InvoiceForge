@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { X, Calendar } from 'lucide-react';
 import { DayPlannerEntry } from '../../../types';
 import { DayPlannerEditor } from './DayPlannerEditor';
 import { ChangeDateDialog } from './ChangeDateDialog';
+import { useEscapeKey } from '../../../hooks/useEscapeKey';
 
 export function DayPlannerModal({ date, dateLabel, entries, onClose, onSave, onMoveToDate, completedByName }: {
   date: string;
@@ -16,11 +17,13 @@ export function DayPlannerModal({ date, dateLabel, entries, onClose, onSave, onM
   completedByName: string;
 }) {
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const titleId = useId();
+  useEscapeKey(onClose);
 
   return (
     <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-brand-primary/40 backdrop-blur-sm" onClick={onClose}></div>
-      <div className="bg-white rounded-3xl w-full max-w-xl relative z-10 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[85vh]">
+      <div role="dialog" aria-modal="true" aria-labelledby={titleId} className="bg-white rounded-3xl w-full max-w-xl relative z-10 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[85vh]">
         <div className="px-8 py-6 border-b border-zinc-100 flex items-center justify-between bg-zinc-50/50 shrink-0">
           <div className="flex items-center gap-3">
             <button
@@ -32,7 +35,7 @@ export function DayPlannerModal({ date, dateLabel, entries, onClose, onSave, onM
               <Calendar className="w-4 h-4 text-brand-primary" />
             </button>
             <div>
-              <h3 className="text-lg font-black text-brand-primary uppercase tracking-tight">Day Planner</h3>
+              <h3 id={titleId} className="text-lg font-black text-brand-primary uppercase tracking-tight">Day Planner</h3>
               <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mt-0.5">{dateLabel}</p>
             </div>
           </div>
