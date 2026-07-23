@@ -540,23 +540,25 @@ export function InvoicesList() {
                             </td>
                             <td className="px-6 py-4 text-right" onClick={(e) => e.stopPropagation()}>
                               <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-all transform translate-x-2 group-hover:translate-x-0">
-                                <Link 
+                                <Link
                                   to={`/invoices/${invoice.id}`}
                                   className="p-2 hover:bg-white border-transparent hover:border-zinc-200 border rounded-lg text-zinc-500 transition-all"
                                   title="Edit"
+                                  aria-label="Edit invoice"
                                 >
-                                  <Edit3 className="w-3.5 h-3.5" />
+                                  <Edit3 className="w-3.5 h-3.5" aria-hidden="true" />
                                 </Link>
-                                <button 
+                                <button
                                   onClick={() => {
                                     setSelectedInvoiceForStatus(invoice);
                                     setNewStatusValue(invoice.status.toLowerCase());
                                     setDeliveredDateInput(invoice.deliveredDate || new Date().toISOString().split('T')[0]);
                                   }}
-                                  className="p-2 hover:bg-white border-transparent hover:border-zinc-200 border rounded-lg text-zinc-500 transition-all" 
+                                  className="p-2 hover:bg-white border-transparent hover:border-zinc-200 border rounded-lg text-zinc-500 transition-all"
                                   title="Change Status"
+                                  aria-label="Change invoice status"
                                 >
-                                  <RefreshCw className="w-3.5 h-3.5" />
+                                  <RefreshCw className="w-3.5 h-3.5" aria-hidden="true" />
                                 </button>
                                 <button
                                   onClick={() => {
@@ -566,8 +568,9 @@ export function InvoicesList() {
                                   }}
                                   className="p-2 hover:bg-red-50 border-transparent hover:border-red-100 border rounded-lg text-red-500 transition-all ml-2"
                                   title="Delete"
+                                  aria-label="Delete invoice"
                                 >
-                                  <Trash2 className="w-4 h-4" />
+                                  <Trash2 className="w-4 h-4" aria-hidden="true" />
                                 </button>
                               </div>
                             </td>
@@ -667,8 +670,9 @@ export function InvoicesList() {
                 disabled={currentPage === 1}
                 className="p-1.5 border border-zinc-250 bg-white rounded-lg hover:bg-zinc-50 disabled:opacity-40 disabled:hover:bg-white text-zinc-700 transition"
                 title="Previous Page"
+                aria-label="Previous page"
               >
-                <ChevronLeft className="w-4 h-4" />
+                <ChevronLeft className="w-4 h-4" aria-hidden="true" />
               </button>
               <div className="flex items-center gap-1">
                 {Array.from({ length: totalPages }).map((_, i) => {
@@ -700,8 +704,9 @@ export function InvoicesList() {
                 disabled={currentPage === totalPages}
                 className="p-1.5 border border-zinc-250 bg-white rounded-lg hover:bg-zinc-50 disabled:opacity-40 disabled:hover:bg-white text-zinc-700 transition"
                 title="Next Page"
+                aria-label="Next page"
               >
-                <ChevronRight className="w-4 h-4" />
+                <ChevronRight className="w-4 h-4" aria-hidden="true" />
               </button>
             </div>
           </div>

@@ -236,6 +236,7 @@ export function InvoiceListMobile({
         <button
           onClick={() => setIsFilterOpen(true)}
           title="Filter and sort invoices"
+          aria-label="Filter and sort invoices"
           className={cn(
             "flex items-center gap-1.5 px-3.5 py-2.5 border rounded-lg text-sm font-semibold transition-all shadow-sm shrink-0 mobile-tap-target",
             sortBy !== 'date' || groupBy !== 'none' || activeTab !== 'All'
@@ -243,7 +244,7 @@ export function InvoiceListMobile({
               : "border-zinc-200 text-zinc-600 bg-white"
           )}
         >
-          <Filter className="w-4 h-4" />
+          <Filter className="w-4 h-4" aria-hidden="true" />
           {(sortBy !== 'date' || groupBy !== 'none' || activeTab !== 'All') && (
             <span className="w-1.5 h-1.5 rounded-full bg-brand-accent animate-pulse" />
           )}
@@ -389,8 +390,9 @@ export function InvoiceListMobile({
             disabled={currentPage === 1}
             className="p-2 border border-zinc-200 bg-white rounded-lg disabled:opacity-40 text-zinc-700 transition mobile-tap-target"
             title="Previous Page"
+            aria-label="Previous page"
           >
-            <ChevronLeft className="w-4 h-4" />
+            <ChevronLeft className="w-4 h-4" aria-hidden="true" />
           </button>
           <span className="text-xs text-zinc-500 font-medium">
             Page <span className="font-bold text-zinc-800">{currentPage}</span> of <span className="font-bold text-zinc-800">{totalPages}</span>
@@ -400,8 +402,9 @@ export function InvoiceListMobile({
             disabled={currentPage === totalPages}
             className="p-2 border border-zinc-200 bg-white rounded-lg disabled:opacity-40 text-zinc-700 transition mobile-tap-target"
             title="Next Page"
+            aria-label="Next page"
           >
-            <ChevronRight className="w-4 h-4" />
+            <ChevronRight className="w-4 h-4" aria-hidden="true" />
           </button>
         </div>
       )}
