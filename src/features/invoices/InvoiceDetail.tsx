@@ -212,7 +212,11 @@ export function InvoiceDetail() {
             <Edit3 className="w-4 h-4" />
             Edit
           </Link>
-          <button className="inline-flex items-center gap-2 px-4 py-2 bg-brand-primary text-white rounded-lg text-sm font-semibold hover:bg-zinc-800 transition-colors shadow-lg shadow-zinc-200">
+          <button
+            disabled
+            title="Sending invoices by email isn't implemented yet"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-brand-primary text-white rounded-lg text-sm font-semibold hover:bg-zinc-800 transition-colors shadow-lg shadow-zinc-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-brand-primary"
+          >
             <Send className="w-4 h-4" />
             Send Invoice
           </button>
@@ -477,11 +481,19 @@ export function InvoiceDetail() {
               </div>
               
               <div className="space-y-2">
-                 <button className="w-full flex items-center justify-between text-[10px] font-black uppercase tracking-widest p-3 bg-white border border-zinc-200 rounded-xl hover:bg-zinc-50 transition-all text-zinc-500 group">
+                 <button
+                    disabled
+                    title="Audit trail export isn't implemented yet"
+                    className="w-full flex items-center justify-between text-[10px] font-black uppercase tracking-widest p-3 bg-white border border-zinc-200 rounded-xl hover:bg-zinc-50 transition-all text-zinc-500 group disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white"
+                 >
                     <span>Export Audit Trail</span>
                     <Download className="w-3.5 h-3.5 text-zinc-400 group-hover:text-brand-accent transition-colors" />
                  </button>
-                 <button className="w-full flex items-center justify-between text-[10px] font-black uppercase tracking-widest p-3 bg-white border border-zinc-200 rounded-xl hover:bg-zinc-50 transition-all text-zinc-500 group">
+                 <button
+                    disabled
+                    title="Viewing invoice metadata isn't implemented yet"
+                    className="w-full flex items-center justify-between text-[10px] font-black uppercase tracking-widest p-3 bg-white border border-zinc-200 rounded-xl hover:bg-zinc-50 transition-all text-zinc-500 group disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white"
+                 >
                     <span>View Metadata</span>
                     <ExternalLink className="w-3.5 h-3.5 text-zinc-400 group-hover:text-brand-accent transition-colors" />
                  </button>
