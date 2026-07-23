@@ -102,10 +102,11 @@ export function SettingsPage() {
                 
                 <div className="space-y-6">
                   <div className="space-y-2">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Warehouse Address</label>
+                    <label htmlFor="warehouse-address" className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Warehouse Address</label>
                     <div className="relative">
                       <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
                       <input
+                        id="warehouse-address"
                         type="text"
                         value={address}
                         onChange={(e) => setAddress(e.target.value)}
@@ -266,11 +267,12 @@ function PushoverKeyCard({
   return (
     <div className="space-y-4">
       <div className="space-y-2">
-        <label className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Your Pushover User Key</label>
+        <label htmlFor="pushover-key" className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Your Pushover User Key</label>
         <div className="flex items-center gap-2">
           <div className="relative flex-1">
             <Bell className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
             <input
+              id="pushover-key"
               type="text"
               value={keyValue}
               onChange={(e) => setKeyValue(e.target.value)}
@@ -416,8 +418,9 @@ function ZohoIntegrationCard({
     <div className="space-y-4">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="space-y-2">
-          <label className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Client ID</label>
+          <label htmlFor="zoho-client-id" className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Client ID</label>
           <input
+            id="zoho-client-id"
             type="text"
             title="Zoho Self Client ID from api-console.zoho.com"
             value={clientId}
@@ -431,8 +434,9 @@ function ZohoIntegrationCard({
         </div>
 
         <div className="space-y-2">
-          <label className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Organization ID</label>
+          <label htmlFor="zoho-organization-id" className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Organization ID</label>
           <input
+            id="zoho-organization-id"
             type="text"
             title="Zoho Books Organization ID from Settings -> Organization Profile"
             value={organizationId}
@@ -446,9 +450,10 @@ function ZohoIntegrationCard({
         </div>
 
         <div className="space-y-2">
-          <label className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Client Secret</label>
+          <label htmlFor="zoho-client-secret" className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Client Secret</label>
           <div className="relative">
             <input
+              id="zoho-client-secret"
               type={showSecret ? 'text' : 'password'}
               title="Zoho Self Client Secret from api-console.zoho.com"
               value={clientSecret}
@@ -472,7 +477,7 @@ function ZohoIntegrationCard({
 
         <div className="space-y-2">
           <div className="flex items-center gap-1.5">
-            <label className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Refresh Token</label>
+            <label htmlFor="zoho-refresh-token" className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Refresh Token</label>
             <button
               type="button"
               title="Show the OAuth scope required to generate this token"
@@ -484,6 +489,7 @@ function ZohoIntegrationCard({
           </div>
           <div className="relative">
             <input
+              id="zoho-refresh-token"
               type={showRefreshToken ? 'text' : 'password'}
               title="Zoho refresh token generated during the Self Client setup"
               value={refreshToken}
@@ -762,19 +768,19 @@ function SidebarLogoCustomizer({
     <div className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
         {/* Drag and Drop Zone */}
-        <div
+        <label
+          htmlFor="logo-upload"
           onDragEnter={handleDrag}
           onDragOver={handleDrag}
           onDragLeave={handleDrag}
           onDrop={handleDrop}
-          onClick={() => fileInputRef.current?.click()}
           className={`border-2 border-dashed rounded-2xl p-6 flex flex-col items-center justify-center cursor-pointer transition-all h-[200px] text-center ${
             dragActive
               ? 'border-brand-primary bg-brand-primary/5 scale-[0.99]'
               : 'border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50/50 bg-zinc-50/20'
           }`}
         >
-          <input aria-label="Upload logo"
+          <input id="logo-upload" aria-label="Upload logo"
             ref={fileInputRef}
             type="file"
             accept="image/*"
@@ -791,7 +797,7 @@ function SidebarLogoCustomizer({
           </div>
           <p className="font-bold text-sm text-zinc-700">Drag & drop your brand logo</p>
           <p className="text-xs text-zinc-400 mt-1">or click to browse your files (Max 250KB)</p>
-        </div>
+        </label>
 
         {/* Live Preview Area */}
         <div className="border border-zinc-200 rounded-2xl p-6 h-[200px] flex flex-col items-center justify-center bg-zinc-50/30 relative">
