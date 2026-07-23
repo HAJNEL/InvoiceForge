@@ -128,7 +128,7 @@ export function TodoBoardMobile({ tasks, loading, toggleDone, deleteTask, onAdd,
                   <MobileCardActionsMenu
                     actions={[
                       { label: 'Edit', icon: Pencil, onClick: () => onEdit(task) },
-                      { label: 'Delete', icon: Trash2, onClick: () => deleteTask(task.id), destructive: true },
+                      { label: 'Delete', icon: Trash2, onClick: () => { if (window.confirm('Delete this task?')) deleteTask(task.id); }, destructive: true },
                     ]}
                   />
                 </MobileCard.Actions>

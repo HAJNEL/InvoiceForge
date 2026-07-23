@@ -131,7 +131,7 @@ export function TodoBoard() {
         <button onClick={() => openEdit(task)} className="p-1.5 rounded-lg text-zinc-400 hover:bg-zinc-200 hover:text-zinc-700 transition-colors" title="Edit">
           <Pencil className="w-4 h-4" />
         </button>
-        <button onClick={() => deleteTask(task.id)} className="p-1.5 rounded-lg text-zinc-400 hover:bg-red-100 hover:text-red-600 transition-colors" title="Delete">
+        <button onClick={() => { if (window.confirm('Delete this task?')) deleteTask(task.id); }} className="p-1.5 rounded-lg text-zinc-400 hover:bg-red-100 hover:text-red-600 transition-colors" title="Delete">
           <Trash2 className="w-4 h-4" />
         </button>
       </div>
