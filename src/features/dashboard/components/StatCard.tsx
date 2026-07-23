@@ -18,10 +18,18 @@ export function StatCard({ title, value, icon: Icon, color, subtitle, onClick, t
   return (
     <div
       onClick={onClick}
+      role={onClick ? "button" : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={onClick ? (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onClick();
+        }
+      } : undefined}
       className={cn(
         "saas-card p-6 group transition-all relative overflow-hidden",
         onClick
-          ? "cursor-pointer hover:border-brand-primary hover:shadow-xl hover:shadow-zinc-100 active:scale-[0.98]"
+          ? "cursor-pointer hover:border-brand-primary hover:shadow-xl hover:shadow-zinc-100 active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-brand-accent/40"
           : "hover:translate-y-[-2px] hover:shadow-xl hover:shadow-zinc-100"
       )}
     >
@@ -33,10 +41,10 @@ export function StatCard({ title, value, icon: Icon, color, subtitle, onClick, t
         {topRightActions || <div className="h-1 w-8 bg-zinc-100 rounded-full" />}
       </div>
       <div className="relative z-10">
-        <p className="text-[10px] font-black text-zinc-400 uppercase tracking-[0.2em]">{title}</p>
+        <p className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.2em]">{title}</p>
         <p className="text-3xl font-black mt-1 tracking-tight tabular-nums text-zinc-900">{value}</p>
         {subtitle && (
-          <p className="text-[10px] font-bold text-zinc-400 mt-1 uppercase tracking-tight">{subtitle}</p>
+          <p className="text-[10px] font-bold text-zinc-500 mt-1 uppercase tracking-tight">{subtitle}</p>
         )}
         {filterRow && <div className="mt-3">{filterRow}</div>}
       </div>
