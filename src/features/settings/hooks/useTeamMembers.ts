@@ -1,58 +1,99 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback, useSyncExternalStore } from 'react';
 import { onSnapshot, collection, query, where, doc, setDoc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { db, auth } from '../../../lib/firebase';
 import { useAuth } from '../../../core/hooks/useAuth';
 import { handleFirestoreError, OperationType } from '../../../lib/firestore-errors';
 import { TeamMember } from '../../../types';
 
-export function useTeamMembers() {
-  const { user } = useAuth();
-  const [members, setMembers] = useState<TeamMember[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+interface TeamMembersState {
+  members: TeamMember[];
+  loading: boolean;
+  error: string | null;
+}
 
-  useEffect(() => {
-    if (!user) {
-      setMembers([]);
-      setLoading(false);
-      return;
-    }
+// Module-level shared cache - see useTrips.ts for the rationale. useTeamMembers()
+// is called from TodoBoard and the Settings team members section.
+let state: TeamMembersState = { members: [], loading: true, error: null };
+let subscribedUserId: string | null | undefined = undefined;
+let unsubscribeFirestore: (() => void) | null = null;
+const listeners = new Set<() => void>();
 
-    const path = 'team_members';
-    const q = query(collection(db, 'team_members'), where('ownerId', '==', user.uid));
+function notify() {
+  listeners.forEach((listener) => listener());
+}
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const results: TeamMember[] = [];
-      snapshot.forEach((d) => {
-        const item = {
-          id: d.id,
-          ...d.data()
-        } as TeamMember;
-        if (item.status !== 'deleted') {
-          results.push(item);
-        }
-      });
-      // Sort by createdAt descending
-      results.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-      setMembers(results);
-      setLoading(false);
-    }, (err) => {
-      console.error("Firestore Subscribe TeamMembers Error:", err);
-      setError(err.message);
-      setLoading(false);
-      if (err.code === 'permission-denied') {
-        handleFirestoreError(err, OperationType.GET, path);
+function setState(next: TeamMembersState) {
+  state = next;
+  notify();
+}
+
+function ensureSubscription(userId: string | null) {
+  if (userId === subscribedUserId) return;
+  subscribedUserId = userId;
+  unsubscribeFirestore?.();
+  unsubscribeFirestore = null;
+
+  if (!userId) {
+    setState({ members: [], loading: false, error: null });
+    return;
+  }
+
+  setState({ ...state, loading: true });
+
+  const path = 'team_members';
+  const q = query(collection(db, 'team_members'), where('ownerId', '==', userId));
+
+  unsubscribeFirestore = onSnapshot(q, (snapshot) => {
+    const results: TeamMember[] = [];
+    snapshot.forEach((d) => {
+      const item = {
+        id: d.id,
+        ...d.data()
+      } as TeamMember;
+      if (item.status !== 'deleted') {
+        results.push(item);
       }
     });
+    // Sort by createdAt descending
+    results.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    setState({ members: results, loading: false, error: null });
+  }, (err) => {
+    console.error("Firestore Subscribe TeamMembers Error:", err);
+    setState({ ...state, loading: false, error: err.message });
+    if (err.code === 'permission-denied') {
+      handleFirestoreError(err, OperationType.GET, path);
+    }
+  });
+}
 
-    return () => unsubscribe();
-  }, [user]);
+function subscribe(userId: string | null) {
+  return (listener: () => void) => {
+    listeners.add(listener);
+    ensureSubscription(userId);
+    return () => {
+      listeners.delete(listener);
+    };
+  };
+}
+
+function getSnapshot() {
+  return state;
+}
+
+export function useTeamMembers() {
+  const { user } = useAuth();
+  const userId = user?.uid ?? null;
+
+  const teamMembersState = useSyncExternalStore(
+    useCallback((listener) => subscribe(userId)(listener), [userId]),
+    getSnapshot
+  );
 
   const addTeamMember = useCallback(async (data: Omit<TeamMember, 'id' | 'ownerId' | 'status' | 'userId' | 'createdAt' | 'updatedAt'>) => {
     if (!user) return null;
     const memberId = crypto.randomUUID();
     const docRef = doc(db, 'team_members', memberId);
-    
+
     const newMember: TeamMember = {
       ...data,
       id: memberId,
@@ -142,9 +183,9 @@ export function useTeamMembers() {
   }, [user]);
 
   return {
-    members,
-    loading,
-    error,
+    members: teamMembersState.members,
+    loading: teamMembersState.loading,
+    error: teamMembersState.error,
     addTeamMember,
     updateTeamMember,
     deleteTeamMember

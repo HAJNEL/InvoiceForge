@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback, useSyncExternalStore } from 'react';
 import { collection, query, where, onSnapshot, doc, setDoc, deleteDoc, updateDoc, getDocs, writeBatch } from 'firebase/firestore';
 import { db } from '../../../lib/firebase';
 import { useAuth } from '../../../core/hooks/useAuth';
@@ -25,16 +25,160 @@ export interface Product {
   updatedAt?: string;
 }
 
+interface ProductsState {
+  products: Product[];
+  loading: boolean;
+  error: string | null;
+}
+
+interface InventoryState {
+  inventoryMap: Record<string, number>;
+}
+
+// Module-level shared caches - see useTrips.ts for the rationale. useProducts()
+// is called from BulkImport, ExtractionReview, KpiPage, and ProductList, each
+// previously opening two independent listeners (products + inventory).
+let productsState: ProductsState = { products: [], loading: true, error: null };
+let subscribedProductsUserId: string | null | undefined = undefined;
+let unsubscribeProducts: (() => void) | null = null;
+const productsListeners = new Set<() => void>();
+
+let inventoryState: InventoryState = { inventoryMap: {} };
+let subscribedInventoryUserId: string | null | undefined = undefined;
+let unsubscribeInventory: (() => void) | null = null;
+const inventoryListeners = new Set<() => void>();
+
+function notifyProducts() {
+  productsListeners.forEach((listener) => listener());
+}
+
+function setProductsState(next: ProductsState) {
+  productsState = next;
+  notifyProducts();
+}
+
+function notifyInventory() {
+  inventoryListeners.forEach((listener) => listener());
+}
+
+function setInventoryState(next: InventoryState) {
+  inventoryState = next;
+  notifyInventory();
+}
+
+function ensureProductsSubscription(userId: string | null) {
+  if (userId === subscribedProductsUserId) return;
+  subscribedProductsUserId = userId;
+  unsubscribeProducts?.();
+  unsubscribeProducts = null;
+
+  if (!userId) {
+    setProductsState({ products: [], loading: false, error: null });
+    return;
+  }
+
+  setProductsState({ ...productsState, loading: true });
+
+  const path = 'products';
+  const q = query(collection(db, path), where('userId', '==', userId));
+
+  unsubscribeProducts = onSnapshot(q, (snapshot) => {
+    const data = snapshot.docs.map(d => {
+      const v = d.data();
+      return {
+        id: d.id,
+        stockCode: v.stockCode || '',
+        description: v.description || '',
+        unitPrice: typeof v.unitPrice === 'number' ? v.unitPrice : 0,
+        category: (v.category || 'product') as 'product' | 'consumable',
+        components: Array.isArray(v.components) ? v.components : undefined,
+        userId: v.userId || '',
+        createdAt: v.createdAt,
+        updatedAt: v.updatedAt
+      };
+    });
+
+    data.sort((a, b) => a.stockCode.localeCompare(b.stockCode));
+    setProductsState({ products: data, loading: false, error: null });
+  }, (err) => {
+    console.error("Firestore Subscribe Products Error:", err);
+    setProductsState({ ...productsState, loading: false, error: err.message });
+    if (err.code === 'permission-denied') {
+      handleFirestoreError(err, OperationType.LIST, path);
+    }
+  });
+}
+
+function ensureInventorySubscription(userId: string | null) {
+  if (userId === subscribedInventoryUserId) return;
+  subscribedInventoryUserId = userId;
+  unsubscribeInventory?.();
+  unsubscribeInventory = null;
+
+  if (!userId) {
+    setInventoryState({ inventoryMap: {} });
+    return;
+  }
+
+  const q = query(collection(db, 'inventory'), where('userId', '==', userId));
+  unsubscribeInventory = onSnapshot(q, (snap) => {
+    const map: Record<string, number> = {};
+    snap.forEach(d => {
+      const v = d.data();
+      const code = (v.stockCode || '').toLowerCase().trim();
+      if (code) map[code] = Number(v.qty) || 0;
+    });
+    setInventoryState({ inventoryMap: map });
+  }, (err) => {
+    console.error("Firestore Subscribe Inventory Error:", err);
+  });
+}
+
+function subscribeProducts(userId: string | null) {
+  return (listener: () => void) => {
+    productsListeners.add(listener);
+    ensureProductsSubscription(userId);
+    return () => {
+      productsListeners.delete(listener);
+    };
+  };
+}
+
+function getProductsSnapshot() {
+  return productsState;
+}
+
+function subscribeInventory(userId: string | null) {
+  return (listener: () => void) => {
+    inventoryListeners.add(listener);
+    ensureInventorySubscription(userId);
+    return () => {
+      inventoryListeners.delete(listener);
+    };
+  };
+}
+
+function getInventorySnapshot() {
+  return inventoryState;
+}
+
 export function useProducts() {
   const { user } = useAuth();
-  const [products, setProducts] = useState<Product[]>([]);
-  const [inventoryMap, setInventoryMap] = useState<Record<string, number>>({});
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const userId = user?.uid ?? null;
 
-  const getProductDocId = useCallback((userId: string, stockCode: string) => {
+  const products = useSyncExternalStore(
+    useCallback((listener) => subscribeProducts(userId)(listener), [userId]),
+    getProductsSnapshot
+  );
+
+  const inventory = useSyncExternalStore(
+    useCallback((listener) => subscribeInventory(userId)(listener), [userId]),
+    getInventorySnapshot
+  );
+
+  const getProductDocId = useCallback((uid: string, stockCode: string) => {
     const cleanStockCode = stockCode.trim().replace(/[^a-zA-Z0-9_-]/g, '_');
-    return `${userId}_${cleanStockCode}`;
+    return `${uid}_${cleanStockCode}`;
   }, []);
 
   const saveProduct = useCallback(async (productData: Omit<Product, 'id' | 'userId'>) => {
@@ -154,73 +298,11 @@ export function useProducts() {
     }
   }, [user, syncLineItemsAsProducts]);
 
-  // Products snapshot
-  useEffect(() => {
-    if (!user) {
-      setProducts([]);
-      setLoading(false);
-      return;
-    }
-
-    const path = 'products';
-    const q = query(collection(db, path), where('userId', '==', user.uid));
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const data = snapshot.docs.map(d => {
-        const v = d.data();
-        return {
-          id: d.id,
-          stockCode: v.stockCode || '',
-          description: v.description || '',
-          unitPrice: typeof v.unitPrice === 'number' ? v.unitPrice : 0,
-          category: (v.category || 'product') as 'product' | 'consumable',
-          components: Array.isArray(v.components) ? v.components : undefined,
-          userId: v.userId || '',
-          createdAt: v.createdAt,
-          updatedAt: v.updatedAt
-        };
-      });
-
-      data.sort((a, b) => a.stockCode.localeCompare(b.stockCode));
-      setProducts(data);
-      setLoading(false);
-    }, (err) => {
-      console.error("Firestore Subscribe Products Error:", err);
-      setError(err.message);
-      setLoading(false);
-      if (err.code === 'permission-denied') {
-        handleFirestoreError(err, OperationType.LIST, path);
-      }
-    });
-
-    return () => unsubscribe();
-  }, [user]);
-
-  // Inventory snapshot — provides units-on-floor per stockCode
-  useEffect(() => {
-    if (!user) { setInventoryMap({}); return; }
-
-    const q = query(collection(db, 'inventory'), where('userId', '==', user.uid));
-    const unsubscribe = onSnapshot(q, (snap) => {
-      const map: Record<string, number> = {};
-      snap.forEach(d => {
-        const v = d.data();
-        const code = (v.stockCode || '').toLowerCase().trim();
-        if (code) map[code] = Number(v.qty) || 0;
-      });
-      setInventoryMap(map);
-    }, (err) => {
-      console.error("Firestore Subscribe Inventory Error:", err);
-    });
-
-    return () => unsubscribe();
-  }, [user]);
-
   return {
-    products,
-    inventoryMap,
-    loading,
-    error,
+    products: products.products,
+    inventoryMap: inventory.inventoryMap,
+    loading: products.loading,
+    error: products.error,
     saveProduct,
     updateProduct,
     deleteProduct,

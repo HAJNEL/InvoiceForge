@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback, useSyncExternalStore } from 'react';
 import { collection, query, where, onSnapshot, doc, setDoc, deleteDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../../../lib/firebase';
 import { useAuth } from '../../../core/hooks/useAuth';
@@ -24,18 +24,108 @@ export interface KnockdownItem {
   updatedAt?: string;
 }
 
+interface StockState {
+  stockItems: KnockdownItem[];
+  loading: boolean;
+  error: string | null;
+}
+
+// Module-level shared cache - see useTrips.ts for the rationale. useStock() is
+// called from StockScreen, ProductList, and both KnockdownSetupDialog variants
+// (the latter unconditionally mounted alongside ProductList's own call), each
+// previously opening its own listener over the same collection.
+let state: StockState = { stockItems: [], loading: true, error: null };
+let subscribedUserId: string | null | undefined = undefined;
+let unsubscribeFirestore: (() => void) | null = null;
+const listeners = new Set<() => void>();
+
+function notify() {
+  listeners.forEach((listener) => listener());
+}
+
+function setState(next: StockState) {
+  state = next;
+  notify();
+}
+
+function ensureSubscription(userId: string | null) {
+  if (userId === subscribedUserId) return;
+  subscribedUserId = userId;
+  unsubscribeFirestore?.();
+  unsubscribeFirestore = null;
+
+  if (!userId) {
+    setState({ stockItems: [], loading: false, error: null });
+    return;
+  }
+
+  setState({ ...state, loading: true });
+
+  const path = 'knockdown_items';
+  const q = query(collection(db, path), where('userId', '==', userId));
+
+  unsubscribeFirestore = onSnapshot(q, (snapshot) => {
+    const data = snapshot.docs.map(doc => {
+      const d = doc.data();
+      return {
+        id: doc.id,
+        userId: d.userId,
+        stockCode: d.stockCode || '',
+        description: d.description || '',
+        qty: typeof d.qty === 'number' ? d.qty : 0,
+        displayName: d.displayName || '',
+        type: (d.type || 'knockdown') as KnockdownItem['type'],
+        imageBase64: d.imageBase64 || undefined,
+        parts: (d.parts as StockPart[] || []).map((p) => ({
+          partCode: p.partCode || '',
+          description: p.description || '',
+          qty: typeof p.qty === 'number' ? p.qty : 0
+        })),
+        createdAt: d.createdAt || ''
+      };
+    });
+
+    // Sort by creation date or stockCode
+    data.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    setState({ stockItems: data, loading: false, error: null });
+  }, (err) => {
+    console.error("Firestore Subscribe Stock Error:", err);
+    setState({ ...state, loading: false, error: err.message });
+    if (err.code === 'permission-denied') {
+      handleFirestoreError(err, OperationType.LIST, path);
+    }
+  });
+}
+
+function subscribe(userId: string | null) {
+  return (listener: () => void) => {
+    listeners.add(listener);
+    ensureSubscription(userId);
+    return () => {
+      listeners.delete(listener);
+    };
+  };
+}
+
+function getSnapshot() {
+  return state;
+}
+
 export function useStock() {
   const { user } = useAuth();
-  const [stockItems, setStockItems] = useState<KnockdownItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const userId = user?.uid ?? null;
+
+  const stockState = useSyncExternalStore(
+    useCallback((listener) => subscribe(userId)(listener), [userId]),
+    getSnapshot
+  );
 
   const saveStockItem = useCallback(async (item: Omit<KnockdownItem, 'id' | 'userId' | 'createdAt'> & { id?: string }) => {
     if (!user) return null;
-    
+
     const itemId = item.id || doc(collection(db, 'knockdown_items')).id;
     const path = `knockdown_items/${itemId}`;
-    
+
     const saveData: Omit<KnockdownItem, 'id'> = {
       userId: user.uid,
       stockCode: item.stockCode,
@@ -85,55 +175,5 @@ export function useStock() {
     }
   }, []);
 
-  useEffect(() => {
-    if (!user) {
-      setStockItems([]);
-      setLoading(false);
-      return;
-    }
-
-    const path = 'knockdown_items';
-    const q = query(
-      collection(db, path),
-      where('userId', '==', user.uid)
-    );
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const data = snapshot.docs.map(doc => {
-        const d = doc.data();
-        return {
-          id: doc.id,
-          userId: d.userId,
-          stockCode: d.stockCode || '',
-          description: d.description || '',
-          qty: typeof d.qty === 'number' ? d.qty : 0,
-          displayName: d.displayName || '',
-          type: (d.type || 'knockdown') as KnockdownItem['type'],
-          imageBase64: d.imageBase64 || undefined,
-          parts: (d.parts as StockPart[] || []).map((p) => ({
-            partCode: p.partCode || '',
-            description: p.description || '',
-            qty: typeof p.qty === 'number' ? p.qty : 0
-          })),
-          createdAt: d.createdAt || ''
-        };
-      });
-
-      // Sort by creation date or stockCode
-      data.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-      setStockItems(data);
-      setLoading(false);
-    }, (err) => {
-      console.error("Firestore Subscribe Stock Error:", err);
-      setError(err.message);
-      setLoading(false);
-      if (err.code === 'permission-denied') {
-        handleFirestoreError(err, OperationType.LIST, path);
-      }
-    });
-
-    return () => unsubscribe();
-  }, [user]);
-
-  return { stockItems, loading, error, saveStockItem, updateTypeAndQty, deleteStockItem };
+  return { stockItems: stockState.stockItems, loading: stockState.loading, error: stockState.error, saveStockItem, updateTypeAndQty, deleteStockItem };
 }

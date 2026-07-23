@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback, useSyncExternalStore } from 'react';
 import { collection, query, where, onSnapshot, doc, deleteDoc, addDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../../lib/firebase';
 import { useAuth } from '../../../core/hooks/useAuth';
@@ -29,11 +29,83 @@ export interface Truck {
   createdAt: unknown;
 }
 
+interface TrucksState {
+  trucks: Truck[];
+  loading: boolean;
+  error: string | null;
+}
+
+// Module-level shared cache - see useTrips.ts for the rationale. useTrucks() is
+// called from Dashboard, Truck List, the KPI Trucks tab, Trip Form, and Trip
+// List, each previously opening its own listener over the same collection.
+let state: TrucksState = { trucks: [], loading: true, error: null };
+let subscribedUserId: string | null | undefined = undefined;
+let unsubscribeFirestore: (() => void) | null = null;
+const listeners = new Set<() => void>();
+
+function notify() {
+  listeners.forEach((listener) => listener());
+}
+
+function setState(next: TrucksState) {
+  state = next;
+  notify();
+}
+
+function ensureSubscription(userId: string | null) {
+  if (userId === subscribedUserId) return;
+  subscribedUserId = userId;
+  unsubscribeFirestore?.();
+  unsubscribeFirestore = null;
+
+  if (!userId) {
+    setState({ trucks: [], loading: false, error: null });
+    return;
+  }
+
+  setState({ ...state, loading: true });
+
+  const path = 'trucks';
+  const q = query(collection(db, path), where('userId', '==', userId));
+
+  unsubscribeFirestore = onSnapshot(q, (snapshot) => {
+    const data = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    })) as Truck[];
+
+    setState({ trucks: data, loading: false, error: null });
+  }, (err) => {
+    console.error("Firestore Subscribe Error:", err);
+    setState({ ...state, loading: false, error: err.message });
+    if (err.code === 'permission-denied') {
+      handleFirestoreError(err, OperationType.LIST, path);
+    }
+  });
+}
+
+function subscribe(userId: string | null) {
+  return (listener: () => void) => {
+    listeners.add(listener);
+    ensureSubscription(userId);
+    return () => {
+      listeners.delete(listener);
+    };
+  };
+}
+
+function getSnapshot() {
+  return state;
+}
+
 export function useTrucks() {
   const { user } = useAuth();
-  const [trucks, setTrucks] = useState<Truck[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const userId = user?.uid ?? null;
+
+  const trucksState = useSyncExternalStore(
+    useCallback((listener) => subscribe(userId)(listener), [userId]),
+    getSnapshot
+  );
 
   const addTruck = useCallback(async (truck: Omit<Truck, 'id' | 'userId' | 'createdAt'>) => {
     if (!user) return null;
@@ -76,38 +148,5 @@ export function useTrucks() {
     }
   }, []);
 
-  useEffect(() => {
-    if (!user) {
-      setTrucks([]);
-      setLoading(false);
-      return;
-    }
-
-    const path = 'trucks';
-    const q = query(
-      collection(db, path),
-      where('userId', '==', user.uid)
-    );
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as Truck[];
-      
-      setTrucks(data);
-      setLoading(false);
-    }, (err) => {
-      console.error("Firestore Subscribe Error:", err);
-      setError(err.message);
-      setLoading(false);
-      if (err.code === 'permission-denied') {
-        handleFirestoreError(err, OperationType.LIST, path);
-      }
-    });
-
-    return () => unsubscribe();
-  }, [user]);
-
-  return { trucks, loading, error, addTruck, updateTruck, deleteTruck };
+  return { trucks: trucksState.trucks, loading: trucksState.loading, error: trucksState.error, addTruck, updateTruck, deleteTruck };
 }
