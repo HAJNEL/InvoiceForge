@@ -1096,9 +1096,17 @@ export function TripList() {
                           const isHighlighted = highlightedTripId === trip.id;
                           
                           return (
-                            <tr 
-                              key={trip.id} 
+                            <tr
+                              key={trip.id}
                               onClick={() => setHighlightedTripId(prev => prev === trip.id ? null : trip.id)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault();
+                                  setHighlightedTripId(prev => prev === trip.id ? null : trip.id);
+                                }
+                              }}
+                              role="button"
+                              tabIndex={0}
                               className={cn(
                                 "transition-colors group cursor-pointer border-l-4",
                                 isHighlighted 
@@ -1146,6 +1154,7 @@ export function TripList() {
                                             toast.error('Mapping Error', { description: 'Could not link this partial item to a loaded invoice.' });
                                           }
                                         }}
+                                        onKeyDown={(e) => e.stopPropagation()}
                                         className="p-1 px-1.5 bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-700 font-mono text-[9px] font-black uppercase rounded-lg flex items-center gap-1 inline-flex animate-pulse select-none shrink-0"
                                         title="Review and process partial split"
                                       >
@@ -1170,7 +1179,7 @@ export function TripList() {
                                   {trip.invoiceIds?.length || 0} items
                                 </span>
                               </td>
-                              <td className="px-4 py-4" onClick={(e) => e.stopPropagation()}>
+                              <td className="px-4 py-4" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
                                 <div className="flex items-center gap-2">
                                   {(() => {
                                     const pendingVal = pendingStatuses[trip.id];
@@ -1259,7 +1268,7 @@ export function TripList() {
                                   })()}
                                 </div>
                               </td>
-                              <td className="px-4 py-4 text-right" onClick={(e) => e.stopPropagation()}>
+                              <td className="px-4 py-4 text-right" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
                                 <div className={cn(
                                   "flex justify-end gap-2 transition-opacity duration-200",
                                   isHighlighted 
