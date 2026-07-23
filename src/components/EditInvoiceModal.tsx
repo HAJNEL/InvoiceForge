@@ -1,11 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import React, { useState, useEffect } from 'react';
-import { 
+import React, { useEffect, useId, useState } from 'react';
+import {
   X, Save, Plus, Trash2, AlertTriangle, Loader2, DollarSign, Calendar, MapPin, Clock
 } from 'lucide-react';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { GoogleMapsAutocomplete } from './GoogleMapsAutocomplete';
+import { useEscapeKey } from '../hooks/useEscapeKey';
 
 interface EditInvoiceModalProps {
   isOpen: boolean;
@@ -109,6 +110,9 @@ export function EditInvoiceModal({ isOpen, onClose, invoice, trips = [], onSucce
     setErrorMsg(null);
   }, [isOpen, invoice, trips]);
 
+  const titleId = useId();
+  useEscapeKey(onClose, isOpen);
+
   if (!isOpen || !invoice) return null;
 
   // Recalculating totals
@@ -210,12 +214,17 @@ export function EditInvoiceModal({ isOpen, onClose, invoice, trips = [], onSucce
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-[9999] animate-fade-in text-zinc-900">
-      <div className="bg-white rounded-3xl w-full max-w-2xl overflow-hidden border border-zinc-200 shadow-2xl flex flex-col max-h-[90vh]">
-        
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        className="bg-white rounded-3xl w-full max-w-2xl overflow-hidden border border-zinc-200 shadow-2xl flex flex-col max-h-[90vh]"
+      >
+
         {/* Header */}
         <div className="p-5 border-b border-zinc-100 flex justify-between items-center bg-zinc-50/50">
           <div>
-            <h3 className="font-sans font-black text-sm uppercase tracking-wider text-brand-primary">Edit Invoice Information</h3>
+            <h3 id={titleId} className="font-sans font-black text-sm uppercase tracking-wider text-brand-primary">Edit Invoice Information</h3>
             <p className="text-[10px] text-zinc-400 font-mono mt-0.5 uppercase">ID: {invoice.id}</p>
           </div>
           <button
@@ -329,8 +338,9 @@ export function EditInvoiceModal({ isOpen, onClose, invoice, trips = [], onSucce
           {/* Primary client and invoice info */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-1">
-              <label className="text-[10px] font-black uppercase text-zinc-500 block">Client / School Name</label>
+              <label htmlFor="edit-client-name" className="text-[10px] font-black uppercase text-zinc-500 block">Client / School Name</label>
               <input
+                id="edit-client-name"
                 type="text"
                 value={clientName}
                 onChange={(e) => setClientName(e.target.value)}
@@ -340,8 +350,9 @@ export function EditInvoiceModal({ isOpen, onClose, invoice, trips = [], onSucce
             </div>
 
             <div className="space-y-1">
-              <label className="text-[10px] font-black uppercase text-zinc-500 block">TAX INVOICE #</label>
+              <label htmlFor="edit-invoice-number" className="text-[10px] font-black uppercase text-zinc-500 block">TAX INVOICE #</label>
               <input
+                id="edit-invoice-number"
                 type="text"
                 value={invoiceNumber}
                 onChange={(e) => setInvoiceNumber(e.target.value)}
@@ -390,8 +401,9 @@ export function EditInvoiceModal({ isOpen, onClose, invoice, trips = [], onSucce
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-1">
-                <label className="text-[9px] font-bold uppercase text-zinc-500 block">District / Region</label>
+                <label htmlFor="edit-district" className="text-[9px] font-bold uppercase text-zinc-500 block">District / Region</label>
                 <input
+                  id="edit-district"
                   type="text"
                   value={district}
                   onChange={(e) => setDistrict(e.target.value)}
@@ -401,8 +413,9 @@ export function EditInvoiceModal({ isOpen, onClose, invoice, trips = [], onSucce
               </div>
 
               <div className="space-y-1">
-                <label className="text-[9px] font-bold uppercase text-zinc-500 block">Delivery Street line 1</label>
+                <label htmlFor="edit-address-line1" className="text-[9px] font-bold uppercase text-zinc-500 block">Delivery Street line 1</label>
                 <input
+                  id="edit-address-line1"
                   type="text"
                   value={addressLine1}
                   onChange={(e) => setAddressLine1(e.target.value)}
@@ -412,8 +425,9 @@ export function EditInvoiceModal({ isOpen, onClose, invoice, trips = [], onSucce
               </div>
 
               <div className="space-y-1 md:col-span-2">
-                <label className="text-[9px] font-bold uppercase text-zinc-500 block">Delivery Suite / Suburb (Line 2)</label>
+                <label htmlFor="edit-address-line2" className="text-[9px] font-bold uppercase text-zinc-500 block">Delivery Suite / Suburb (Line 2)</label>
                 <input
+                  id="edit-address-line2"
                   type="text"
                   value={addressLine2}
                   onChange={(e) => setAddressLine2(e.target.value)}
