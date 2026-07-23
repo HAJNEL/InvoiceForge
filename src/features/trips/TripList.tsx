@@ -1344,7 +1344,7 @@ export function TripList() {
                   <button
                     onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
                     disabled={currentPage === 1}
-                    className="p-1.5 border border-zinc-250 bg-white rounded-lg hover:bg-zinc-50 disabled:opacity-40 disabled:hover:bg-white text-zinc-700 transition cursor-pointer"
+                    className="p-1.5 border border-zinc-200 bg-white rounded-lg hover:bg-zinc-50 disabled:opacity-40 disabled:hover:bg-white text-zinc-700 transition cursor-pointer"
                     title="Previous Page"
                   >
                     <ChevronLeft className="w-4 h-4" />
@@ -1377,7 +1377,7 @@ export function TripList() {
                   <button
                     onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
                     disabled={currentPage === totalPages}
-                    className="p-1.5 border border-zinc-250 bg-white rounded-lg hover:bg-zinc-50 disabled:opacity-40 disabled:hover:bg-white text-zinc-700 transition cursor-pointer"
+                    className="p-1.5 border border-zinc-200 bg-white rounded-lg hover:bg-zinc-50 disabled:opacity-40 disabled:hover:bg-white text-zinc-700 transition cursor-pointer"
                     title="Next Page"
                   >
                     <ChevronRight className="w-4 h-4" />

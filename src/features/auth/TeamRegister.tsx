@@ -234,7 +234,7 @@ export function TeamRegister() {
               </div>
             )}
 
-            <div className="bg-zinc-50 border border-zinc-150 p-4 rounded-2xl mb-6 flex items-center gap-3">
+            <div className="bg-zinc-50 border border-zinc-200 p-4 rounded-2xl mb-6 flex items-center gap-3">
               <div className="w-8 h-8 rounded-full bg-brand-accent/10 border border-brand-accent/20 flex items-center justify-center text-brand-accent font-bold text-xs uppercase shrink-0">
                 {invitation.firstName.charAt(0)}{invitation.lastName.charAt(0)}
               </div>
@@ -327,7 +327,7 @@ export function TeamRegister() {
               </div>
 
               {/* Security strength check indicator */}
-              <div className="bg-zinc-50 border border-zinc-150 p-3.5 rounded-2xl space-y-2 text-[11px] text-zinc-500">
+              <div className="bg-zinc-50 border border-zinc-200 p-3.5 rounded-2xl space-y-2 text-[11px] text-zinc-500">
                 <p className="font-bold text-[10px] text-zinc-700 uppercase tracking-wide flex items-center gap-1.5">
                   <HelpCircle className="w-3.5 h-3.5 text-zinc-400" />
                   Passkey Security Guidelines

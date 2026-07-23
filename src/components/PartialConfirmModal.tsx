@@ -303,7 +303,7 @@ export function PartialConfirmModal({ isOpen, onClose, invoice, trip, itemKeys, 
           </div>
 
           {errorMsg && (
-            <div className="p-3.5 bg-red-50 text-red-750 border border-red-200 rounded-2xl font-black text-[10px] uppercase">
+            <div className="p-3.5 bg-red-50 text-red-700 border border-red-200 rounded-2xl font-black text-[10px] uppercase">
               {errorMsg}
             </div>
           )}
@@ -315,7 +315,7 @@ export function PartialConfirmModal({ isOpen, onClose, invoice, trip, itemKeys, 
           <button
             onClick={onClose}
             disabled={isProcessing}
-            className="px-4 py-2.5 border border-zinc-200 hover:bg-zinc-100 text-zinc-650 font-extrabold text-[11px] uppercase tracking-wider rounded-xl transition-all"
+            className="px-4 py-2.5 border border-zinc-200 hover:bg-zinc-100 text-zinc-600 font-extrabold text-[11px] uppercase tracking-wider rounded-xl transition-all"
           >
             Cancel
           </button>

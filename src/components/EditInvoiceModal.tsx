@@ -242,7 +242,7 @@ export function EditInvoiceModal({ isOpen, onClose, invoice, trips = [], onSucce
           
           {/* Global DB Errors */}
           {errorMsg && (
-            <div className="p-3.5 bg-red-50 text-red-750 border border-red-200 rounded-2xl font-bold uppercase tracking-tight text-[10px]">
+            <div className="p-3.5 bg-red-50 text-red-700 border border-red-200 rounded-2xl font-bold uppercase tracking-tight text-[10px]">
               ⚠️ {errorMsg}
             </div>
           )}
@@ -258,7 +258,7 @@ export function EditInvoiceModal({ isOpen, onClose, invoice, trips = [], onSucce
                 {partialFlags.map((flag, idx) => (
                   <div key={idx} className="pt-2 first:pt-0">
                     <p className="font-bold text-zinc-800">
-                      Trip: <span className="text-zinc-650 font-black">{flag.tripName}</span> ({flag.tripDate})
+                      Trip: <span className="text-zinc-600 font-black">{flag.tripName}</span> ({flag.tripDate})
                     </p>
                     <p className="text-[11px] text-zinc-600 mt-0.5">
                       Line Item: <strong className="text-amber-900">[{flag.stockCode}] {flag.description}</strong>
@@ -456,7 +456,7 @@ export function EditInvoiceModal({ isOpen, onClose, invoice, trips = [], onSucce
               <button
                 type="button"
                 onClick={handleAddLineItem}
-                className="px-2.5 py-1 bg-zinc-100 hover:bg-zinc-200 border border-zinc-200 rounded-lg font-black uppercase text-[9px] flex items-center gap-1 text-zinc-650"
+                className="px-2.5 py-1 bg-zinc-100 hover:bg-zinc-200 border border-zinc-200 rounded-lg font-black uppercase text-[9px] flex items-center gap-1 text-zinc-600"
               >
                 <Plus className="w-3 h-3 text-brand-primary shrink-0" /> Add Item
               </button>
@@ -569,14 +569,14 @@ export function EditInvoiceModal({ isOpen, onClose, invoice, trips = [], onSucce
           <button
             onClick={onClose}
             disabled={isSaving}
-            className="px-4 py-2.5 border border-zinc-200 hover:bg-zinc-100 text-zinc-650 font-extrabold text-[11px] uppercase tracking-wider rounded-xl transition-all"
+            className="px-4 py-2.5 border border-zinc-200 hover:bg-zinc-100 text-zinc-600 font-extrabold text-[11px] uppercase tracking-wider rounded-xl transition-all"
           >
             Cancel
           </button>
           <button
             onClick={handleSave}
             disabled={isSaving}
-            className="px-5 py-2.5 bg-brand-primary hover:bg-zinc-850 disabled:bg-zinc-450 text-white font-black text-[11px] uppercase tracking-wider rounded-xl transition-all flex items-center gap-2 cursor-pointer shadow-md"
+            className="px-5 py-2.5 bg-brand-primary hover:bg-zinc-800 disabled:bg-zinc-400 text-white font-black text-[11px] uppercase tracking-wider rounded-xl transition-all flex items-center gap-2 cursor-pointer shadow-md"
           >
             {isSaving ? (
               <Loader2 className="w-4 h-4 animate-spin" />

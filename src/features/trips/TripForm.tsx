@@ -994,7 +994,7 @@ export function TripForm() {
                   setEditingStop(null);
                   setIsStopModalOpen(true);
                 }}
-                className="text-[10px] font-black uppercase text-zinc-650 bg-zinc-50 border border-zinc-200 hover:bg-zinc-100 hover:border-zinc-300 px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 shadow-sm cursor-pointer whitespace-nowrap"
+                className="text-[10px] font-black uppercase text-zinc-600 bg-zinc-50 border border-zinc-200 hover:bg-zinc-100 hover:border-zinc-300 px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 shadow-sm cursor-pointer whitespace-nowrap"
               >
                 <Plus className="w-3.5 h-3.5 text-brand-accent shrink-0" />
                 Add Stop
@@ -1071,7 +1071,7 @@ export function TripForm() {
                 className="flex items-center gap-3 bg-white p-3.5 rounded-2xl border border-zinc-200 shadow-sm hover:border-zinc-300 hover:bg-zinc-50/40 transition-all cursor-pointer group select-none relative"
               >
                 {/* Drag Handle Icon */}
-                <div className="text-zinc-350 group-hover:text-zinc-550 shrink-0 pr-0.5 cursor-grab active:cursor-grabbing">
+                <div className="text-zinc-400 group-hover:text-zinc-500 shrink-0 pr-0.5 cursor-grab active:cursor-grabbing">
                   <GripVertical className="w-4 h-4" />
                 </div>
 
@@ -1196,7 +1196,7 @@ export function TripForm() {
                         setStops(prev => prev.filter(s => s.id !== stop.id));
                       }
                     }}
-                    className="p-1.5 hover:bg-red-50 text-zinc-450 hover:text-red-500 rounded-xl transition-colors shrink-0 border border-transparent hover:border-red-100 cursor-pointer"
+                    className="p-1.5 hover:bg-red-50 text-zinc-400 hover:text-red-500 rounded-xl transition-colors shrink-0 border border-transparent hover:border-red-100 cursor-pointer"
                     title="Delete stop"
                   >
                     <X className="w-4 h-4" />
@@ -1624,7 +1624,7 @@ export function TripForm() {
                     <button
                       type="button"
                       onClick={handleResetChecks}
-                      className="w-12 h-12 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-650 hover:text-zinc-900 shadow-lg border border-zinc-200 flex items-center justify-center transition-all hover:scale-110 active:scale-95 group"
+                      className="w-12 h-12 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-600 hover:text-zinc-900 shadow-lg border border-zinc-200 flex items-center justify-center transition-all hover:scale-110 active:scale-95 group"
                       title="Reset Checklist"
                     >
                       <RotateCcw className="w-5 h-5 transition-transform group-hover:-rotate-45" />
@@ -1635,7 +1635,7 @@ export function TripForm() {
                       type="button"
                       onClick={handlePrintTrip}
                       title="Print Trip Manifest (A4)"
-                      className="w-12 h-12 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-650 hover:text-zinc-900 shadow-lg border border-zinc-200 flex items-center justify-center transition-all hover:scale-110 active:scale-95"
+                      className="w-12 h-12 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-600 hover:text-zinc-900 shadow-lg border border-zinc-200 flex items-center justify-center transition-all hover:scale-110 active:scale-95"
                     >
                       <Printer className="w-5 h-5" />
                     </button>
@@ -2015,8 +2015,8 @@ export function TripForm() {
                     <tr key={invId} className="border-b border-zinc-200">
                       <td className="py-3 text-center font-mono font-black">{idx + 1}</td>
                       <td className="py-3 px-2 font-bold text-zinc-900">{matchedInv.client}</td>
-                      <td className="py-3 font-mono text-zinc-650">{matchedInv.number}</td>
-                      <td className="py-3 px-2 text-zinc-650 max-w-xs truncate">
+                      <td className="py-3 font-mono text-zinc-600">{matchedInv.number}</td>
+                      <td className="py-3 px-2 text-zinc-600 max-w-xs truncate">
                         {[matchedInv.deliveryAddressLine1, matchedInv.deliveryAddressLine2, matchedInv.district].filter(Boolean).join(', ')}
                       </td>
                       <td className="py-3 text-right font-mono font-bold text-zinc-900">R {matchedInv.amount.toLocaleString()}</td>

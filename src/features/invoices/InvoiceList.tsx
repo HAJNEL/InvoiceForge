@@ -677,7 +677,7 @@ export function InvoicesList() {
               <button
                 onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
                 disabled={currentPage === 1}
-                className="p-1.5 border border-zinc-250 bg-white rounded-lg hover:bg-zinc-50 disabled:opacity-40 disabled:hover:bg-white text-zinc-700 transition"
+                className="p-1.5 border border-zinc-200 bg-white rounded-lg hover:bg-zinc-50 disabled:opacity-40 disabled:hover:bg-white text-zinc-700 transition"
                 title="Previous Page"
                 aria-label="Previous page"
               >
@@ -711,7 +711,7 @@ export function InvoicesList() {
               <button
                 onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
                 disabled={currentPage === totalPages}
-                className="p-1.5 border border-zinc-250 bg-white rounded-lg hover:bg-zinc-50 disabled:opacity-40 disabled:hover:bg-white text-zinc-700 transition"
+                className="p-1.5 border border-zinc-200 bg-white rounded-lg hover:bg-zinc-50 disabled:opacity-40 disabled:hover:bg-white text-zinc-700 transition"
                 title="Next Page"
                 aria-label="Next page"
               >
@@ -737,7 +737,7 @@ export function InvoicesList() {
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="relative bg-white w-full max-w-sm rounded-2xl shadow-3xl overflow-hidden z-10 border border-zinc-100"
+              className="relative bg-white w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden z-10 border border-zinc-100"
             >
               <div className="p-6 space-y-6">
                 <div>

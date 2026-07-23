@@ -97,7 +97,7 @@ export function KpiStatsRow({
               onClick={() => setFuelMetricMode('liters')}
               className={cn(
                 "p-1.5 rounded-lg transition-all",
-                fuelMetricMode === 'liters' ? "bg-orange-100 text-orange-700" : "text-zinc-350 hover:text-zinc-500 hover:bg-zinc-100"
+                fuelMetricMode === 'liters' ? "bg-orange-100 text-orange-700" : "text-zinc-400 hover:text-zinc-500 hover:bg-zinc-100"
               )}
             >
               <Fuel className="w-3.5 h-3.5" />
@@ -108,7 +108,7 @@ export function KpiStatsRow({
               onClick={() => setFuelMetricMode('rand')}
               className={cn(
                 "p-1.5 rounded-lg transition-all",
-                fuelMetricMode === 'rand' ? "bg-orange-100 text-orange-700" : "text-zinc-350 hover:text-zinc-500 hover:bg-zinc-100"
+                fuelMetricMode === 'rand' ? "bg-orange-100 text-orange-700" : "text-zinc-400 hover:text-zinc-500 hover:bg-zinc-100"
               )}
             >
               <Banknote className="w-3.5 h-3.5" />
@@ -160,7 +160,7 @@ export function KpiStatsRow({
               onClick={() => setInvoicedMode('last')}
               className={cn(
                 "p-1.5 rounded-lg transition-all",
-                invoicedMode === 'last' ? "bg-emerald-100 text-emerald-700" : "text-zinc-350 hover:text-zinc-500 hover:bg-zinc-100"
+                invoicedMode === 'last' ? "bg-emerald-100 text-emerald-700" : "text-zinc-400 hover:text-zinc-500 hover:bg-zinc-100"
               )}
             >
               <Clock className="w-3.5 h-3.5" />
@@ -171,7 +171,7 @@ export function KpiStatsRow({
               onClick={() => setInvoicedMode('history')}
               className={cn(
                 "p-1.5 rounded-lg transition-all",
-                invoicedMode === 'history' ? "bg-emerald-100 text-emerald-700" : "text-zinc-350 hover:text-zinc-500 hover:bg-zinc-100"
+                invoicedMode === 'history' ? "bg-emerald-100 text-emerald-700" : "text-zinc-400 hover:text-zinc-500 hover:bg-zinc-100"
               )}
             >
               <Archive className="w-3.5 h-3.5" />
