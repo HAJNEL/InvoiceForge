@@ -1,11 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import React, { useState, useEffect } from 'react';
-import { 
+import React, { useEffect, useId, useState } from 'react';
+import {
   X, AlertTriangle, Loader2, ArrowRight
 } from 'lucide-react';
 import { doc, writeBatch } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../core/hooks/useAuth';
+import { useEscapeKey } from '../hooks/useEscapeKey';
 
 interface PartialConfirmModalProps {
   isOpen: boolean;
@@ -37,6 +38,9 @@ export function PartialConfirmModal({ isOpen, onClose, invoice, trip, itemKeys, 
     });
     setConfirmedQtys(initialQtys);
   }, [isOpen, invoice, trip, itemKeys, user]);
+
+  const titleId = useId();
+  useEscapeKey(onClose, isOpen);
 
   if (!isOpen || !invoice || !trip) return null;
 
@@ -203,13 +207,18 @@ export function PartialConfirmModal({ isOpen, onClose, invoice, trip, itemKeys, 
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-[9999] animate-fade-in text-zinc-900">
-      <div className="bg-white rounded-3xl w-full max-w-lg overflow-hidden border border-zinc-200 shadow-2xl flex flex-col max-h-[90vh]">
-        
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        className="bg-white rounded-3xl w-full max-w-lg overflow-hidden border border-zinc-200 shadow-2xl flex flex-col max-h-[90vh]"
+      >
+
         {/* Header */}
         <div className="p-5 border-b border-zinc-100 flex justify-between items-center bg-amber-50/40">
           <div className="flex items-center gap-2 text-amber-700">
             <AlertTriangle className="w-5 h-5 stroke-[2.5]" />
-            <h3 className="font-sans font-black text-sm uppercase tracking-wider">Confirm Invoice Partial Completion</h3>
+            <h3 id={titleId} className="font-sans font-black text-sm uppercase tracking-wider">Confirm Invoice Partial Completion</h3>
           </div>
           <button
             onClick={onClose}
