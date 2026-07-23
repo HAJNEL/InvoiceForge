@@ -150,7 +150,7 @@ export function TodoBoard() {
         {open ? <ChevronDown className="w-4 h-4 text-zinc-400" /> : <ChevronRight className="w-4 h-4 text-zinc-400" />}
         <span className={cn('w-2 h-2 rounded-full', accent)} />
         <span className="text-sm font-bold text-zinc-800">{label}</span>
-        <span className="text-xs font-semibold text-zinc-400">{items.length}</span>
+        <span className="text-xs font-semibold text-zinc-500">{items.length}</span>
       </button>
 
       {open && items.length > 0 && (
