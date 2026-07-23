@@ -147,11 +147,12 @@ export function Login() {
 
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
-              <label className="block text-sm font-semibold text-zinc-700 mb-1.5 uppercase tracking-wider text-[10px]">Email Address</label>
+              <label htmlFor="login-email" className="block text-sm font-semibold text-zinc-700 mb-1.5 uppercase tracking-wider text-[10px]">Email Address</label>
               <div className="relative">
                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
-                <input 
-                  type="email" 
+                <input
+                  id="login-email"
+                  type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="w-full pl-10 pr-4 py-3 bg-zinc-50 border border-zinc-200 rounded-xl focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent focus:outline-none transition-all placeholder:text-zinc-400"
@@ -163,13 +164,14 @@ export function Login() {
 
             <div>
               <div className="flex items-center justify-between mb-1.5">
-                <label className="block text-sm font-semibold text-zinc-700 uppercase tracking-wider text-[10px]">Password</label>
+                <label htmlFor="login-password" className="block text-sm font-semibold text-zinc-700 uppercase tracking-wider text-[10px]">Password</label>
                 <a href="#" className="text-[10px] uppercase font-bold tracking-widest text-brand-accent hover:underline">Forgot?</a>
               </div>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
-                <input 
-                  type="password" 
+                <input
+                  id="login-password"
+                  type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="w-full pl-10 pr-4 py-3 bg-zinc-50 border border-zinc-200 rounded-xl focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent focus:outline-none transition-all placeholder:text-zinc-400"
@@ -212,7 +214,7 @@ export function Login() {
 
           <p className="text-center text-sm text-zinc-500">
             Don't have an account? {' '}
-            <Link to="/register" className="text-brand-accent font-bold hover:underline">Create account</Link>
+            <Link to="/register" className="text-indigo-600 font-bold hover:underline">Create account</Link>
           </p>
         </div>
       </div>
