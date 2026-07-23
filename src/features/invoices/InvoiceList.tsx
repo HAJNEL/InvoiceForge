@@ -558,8 +558,12 @@ export function InvoicesList() {
                                 >
                                   <RefreshCw className="w-3.5 h-3.5" />
                                 </button>
-                                <button 
-                                  onClick={() => deleteInvoice(invoice.id)}
+                                <button
+                                  onClick={() => {
+                                    if (window.confirm('Are you sure you want to delete this invoice?')) {
+                                      deleteInvoice(invoice.id);
+                                    }
+                                  }}
                                   className="p-2 hover:bg-red-50 border-transparent hover:border-red-100 border rounded-lg text-red-500 transition-all ml-2"
                                   title="Delete"
                                 >

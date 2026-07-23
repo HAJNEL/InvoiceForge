@@ -351,7 +351,11 @@ export function InvoiceListMobile({
                             actions={[
                               { label: 'Edit', icon: Edit3, onClick: () => navigate(`/invoices/${invoice.id}`) },
                               { label: 'Change Status', icon: RefreshCw, onClick: () => openStatusSheet(invoice) },
-                              { label: 'Delete', icon: Trash2, destructive: true, onClick: () => deleteInvoice(invoice.id) }
+                              { label: 'Delete', icon: Trash2, destructive: true, onClick: () => {
+                                if (window.confirm('Are you sure you want to delete this invoice?')) {
+                                  deleteInvoice(invoice.id);
+                                }
+                              } }
                             ]}
                           />
                         </div>
