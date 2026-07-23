@@ -6,7 +6,8 @@ import {
   ArrowLeft, Plus, AlertCircle,
   X, Package, FileText, Search, Truck, Navigation, Calendar as CalendarIcon, TrendingUp,
   Check, RotateCcw, Share2, AlertTriangle, Clock, Fuel, Bed, Coffee, GripVertical,
-  Maximize2, Minimize2, MapPin, Trash2, ArrowRightLeft, Send, Printer
+  Maximize2, Minimize2, MapPin, Trash2, ArrowRightLeft, Send, Printer,
+  ChevronUp, ChevronDown
 } from 'lucide-react';
 import { PartialConfirmModal } from '../../components/PartialConfirmModal';
 import { PartialConfirmModalMobile } from '../../components/PartialConfirmModalMobile';
@@ -809,6 +810,23 @@ export function TripForm() {
     draggedIdxRef.current = null;
   };
 
+  // Keyboard-operable equivalent of the drag-and-drop reorder above, so stops
+  // can be reordered without a mouse.
+  const moveStop = (fromIndex: number, toIndex: number) => {
+    if (toIndex < 0 || toIndex >= stops.length) return;
+
+    setStops(prev => {
+      const list = [...prev];
+      const [movedItem] = list.splice(fromIndex, 1);
+      list.splice(toIndex, 0, movedItem);
+
+      const updInvoiceIds = list.filter(s => s.invoiceId).map(s => s.invoiceId!);
+      setFormData(sPrev => ({ ...sPrev, invoiceIds: updInvoiceIds }));
+
+      return list;
+    });
+  };
+
   // Save logic, split out from the form's onSubmit handler so the fullscreen map's
   // top-bar "Submit Trip" button can trigger it directly without a form event
   // (that button sits outside the <form>, since the map overlay covers the form
@@ -1034,6 +1052,22 @@ export function TripForm() {
                     setIsStopModalOpen(true);
                   }
                 }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    if (isInvoice) {
+                      const matchedInv = invoices.find(inv => inv.id === stop.invoiceId);
+                      if (matchedInv) {
+                        setEditingInvoice(matchedInv);
+                      }
+                    } else {
+                      setEditingStop(stop);
+                      setIsStopModalOpen(true);
+                    }
+                  }
+                }}
+                role="button"
+                tabIndex={0}
                 className="flex items-center gap-3 bg-white p-3.5 rounded-2xl border border-zinc-200 shadow-sm hover:border-zinc-300 hover:bg-zinc-50/40 transition-all cursor-pointer group select-none relative"
               >
                 {/* Drag Handle Icon */}
@@ -1057,6 +1091,7 @@ export function TripForm() {
                       e.stopPropagation();
                       setMovingStop(stop);
                     }}
+                    onKeyDown={(e) => e.stopPropagation()}
                     className="p-2 bg-zinc-100 hover:bg-brand-primary hover:text-white rounded-xl shrink-0 transition-colors cursor-pointer group/move"
                   >
                     <ArrowRightLeft className="w-4 h-4 text-zinc-600 group-hover/move:text-white" />
@@ -1124,7 +1159,31 @@ export function TripForm() {
                 </div>
 
                 {/* Inline Actions */}
-                <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+
+                  {/* Keyboard-operable reorder controls (drag-and-drop has no keyboard equivalent) */}
+                  <div className="flex flex-col shrink-0">
+                    <button
+                      type="button"
+                      title="Move stop up"
+                      aria-label="Move stop up"
+                      onClick={() => moveStop(idx, idx - 1)}
+                      disabled={idx === 0}
+                      className="p-0.5 text-zinc-400 hover:text-brand-primary disabled:opacity-30 disabled:hover:text-zinc-400 transition-colors"
+                    >
+                      <ChevronUp className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      title="Move stop down"
+                      aria-label="Move stop down"
+                      onClick={() => moveStop(idx, idx + 1)}
+                      disabled={idx === stops.length - 1}
+                      className="p-0.5 text-zinc-400 hover:text-brand-primary disabled:opacity-30 disabled:hover:text-zinc-400 transition-colors"
+                    >
+                      <ChevronDown className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
 
                   {/* Remove button */}
                   <button
