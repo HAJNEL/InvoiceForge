@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback, useSyncExternalStore } from 'react';
 import { toast } from 'sonner';
 import { collection, query, where, onSnapshot, doc, addDoc, deleteDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../../../lib/firebase';
@@ -46,11 +46,116 @@ export interface UIInvoice {
   }[];
 }
 
+interface InvoicesState {
+  invoices: UIInvoice[];
+  loading: boolean;
+  error: string | null;
+}
+
+// Module-level shared cache: useInvoices() is called from ~10 independent
+// screens/components (Dashboard, Invoice List, Invoice Form, Invoice Detail,
+// Reports, Trip Form, Trip List, Product List, and the Knockdown Setup dialog
+// rendered inside it). Each previously subscribed to the entire invoices
+// collection and re-mapped every document on its own. Now the listener and
+// mapped array are shared by every caller.
+let state: InvoicesState = { invoices: [], loading: true, error: null };
+let subscribedUserId: string | null | undefined = undefined;
+let unsubscribeFirestore: (() => void) | null = null;
+const listeners = new Set<() => void>();
+
+function notify() {
+  listeners.forEach((listener) => listener());
+}
+
+function setState(next: InvoicesState) {
+  state = next;
+  notify();
+}
+
+function ensureSubscription(userId: string | null) {
+  if (userId === subscribedUserId) return;
+  subscribedUserId = userId;
+  unsubscribeFirestore?.();
+  unsubscribeFirestore = null;
+
+  if (!userId) {
+    setState({ invoices: [], loading: false, error: null });
+    return;
+  }
+
+  setState({ ...state, loading: true });
+
+  const path = 'invoices';
+  const q = query(collection(db, path), where('userId', '==', userId));
+
+  unsubscribeFirestore = onSnapshot(q, (snapshot) => {
+    const data = snapshot.docs.map(doc => {
+      const d = doc.data();
+      return {
+        id: doc.id,
+        number: d.taxInvoice || d.invoiceNumber || '#NO-NUM',
+        client: d.schoolName || d.customerName || d.clientName || 'Unknown Client',
+        schoolName: d.schoolName || d.ship_to_details?.school_name || d.shipToDetails?.schoolName || '',
+        amount: d.subTotal !== undefined ? d.subTotal : (d.sub_total !== undefined ? d.sub_total : (d.summary?.sub_total !== undefined ? d.summary.sub_total : (d.summary?.subTotal !== undefined ? d.summary.subTotal : (d.totalDue || d.amountIncl || d.totalAmount || 0)))),
+        date: d.invoiceDate || d.issueDate || 'N/A',
+        status: d.status || 'draft',
+        clientEmail: d.email || d.customerContact || 'No Email',
+        district: d.district || d.deliveryRegion || 'Unassigned',
+        deliveryAddress: d.deliveryAddress || '',
+        deliveryAddressManual: d.deliveryAddressManual === true,
+        deliveryAddressLine1: d.deliveryAddressLine1 || '',
+        deliveryAddressLine2: d.deliveryAddressLine2 || '',
+        deliveredDate: d.deliveredDate || '',
+        parentInvoiceId: d.parentInvoiceId || null,
+        deliveryNoteNo: d.delivery_note_number || d.deliveryNoteNo || '',
+        distanceKm: typeof d.distanceKm === 'number' ? d.distanceKm : undefined,
+        stopDetails: d.stopDetails || null,
+        lineItems: (d.line_items || d.lineItems || []).map((item: Record<string, unknown>) => ({
+          stockCode: String(item.stock_code || item.stockCode || ''),
+          description: String(item.description || ''),
+          qty: Number(item.quantity ?? item.qty ?? 0) || 0,
+          unitPrice: Number(item.unit_price ?? item.unitPrice ?? 0) || 0,
+          value: Number(item.line_item_value ?? item.value ?? 0) || 0,
+        }))
+      };
+    });
+
+    // Basic client-side sort by date descending if we don't have a reliable server order yet
+    data.sort((a, b) => b.date.localeCompare(a.date));
+
+    setState({ invoices: data, loading: false, error: null });
+  }, (err) => {
+    console.error("Firestore Subscribe Error:", err);
+    setState({ ...state, loading: false, error: err.message });
+    // Only handle error if it's a permission issue or similar that needs reporting as per guidelines
+    if (err.code === 'permission-denied') {
+      handleFirestoreError(err, OperationType.LIST, path);
+    }
+  });
+}
+
+function subscribe(userId: string | null) {
+  return (listener: () => void) => {
+    listeners.add(listener);
+    ensureSubscription(userId);
+    return () => {
+      listeners.delete(listener);
+    };
+  };
+}
+
+function getSnapshot() {
+  return state;
+}
+
 export function useInvoices() {
   const { user } = useAuth();
-  const [invoices, setInvoices] = useState<UIInvoice[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const userId = user?.uid ?? null;
+
+  const invoicesState = useSyncExternalStore(
+    useCallback((listener) => subscribe(userId)(listener), [userId]),
+    getSnapshot
+  );
 
   const addInvoice = useCallback(async (data: Partial<Record<string, unknown>>) => {
     if (!user) return null;
@@ -85,14 +190,16 @@ export function useInvoices() {
 
   const updateInvoice = useCallback(async (id: string, data: Partial<Record<string, unknown>>) => {
     const path = `invoices/${id}`;
-    
+
     // Check if transition to 'invoiced' or complete is being attempted
     const newStatus = typeof data.status === 'string' ? data.status.toLowerCase() : '';
     if (newStatus === 'invoiced' || newStatus === 'complete' || newStatus === 'completed') {
-      const currentInvoice = invoices.find(inv => inv.id === id);
+      // Read from the shared cache so this check always sees the latest data,
+      // regardless of which component's useInvoices() call triggered it.
+      const currentInvoice = state.invoices.find(inv => inv.id === id);
       if (currentInvoice) {
         const baseNumber = currentInvoice.number.replace(/-R$/, '');
-        const relatedInvoices = invoices.filter(inv => {
+        const relatedInvoices = state.invoices.filter(inv => {
           const invBase = inv.number.replace(/-R$/, '');
           return invBase === baseNumber || inv.parentInvoiceId === currentInvoice.id || (currentInvoice.parentInvoiceId && inv.id === currentInvoice.parentInvoiceId);
         });
@@ -121,70 +228,7 @@ export function useInvoices() {
       handleFirestoreError(err, OperationType.UPDATE, path);
       return false;
     }
-  }, [invoices]);
+  }, []);
 
-  useEffect(() => {
-    if (!user) {
-      setInvoices([]);
-      setLoading(false);
-      return;
-    }
-
-    const path = 'invoices';
-    const q = query(
-      collection(db, path),
-      where('userId', '==', user.uid)
-    );
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const data = snapshot.docs.map(doc => {
-        const d = doc.data();
-        return {
-          id: doc.id,
-          number: d.taxInvoice || d.invoiceNumber || '#NO-NUM',
-          client: d.schoolName || d.customerName || d.clientName || 'Unknown Client',
-          schoolName: d.schoolName || d.ship_to_details?.school_name || d.shipToDetails?.schoolName || '',
-          amount: d.subTotal !== undefined ? d.subTotal : (d.sub_total !== undefined ? d.sub_total : (d.summary?.sub_total !== undefined ? d.summary.sub_total : (d.summary?.subTotal !== undefined ? d.summary.subTotal : (d.totalDue || d.amountIncl || d.totalAmount || 0)))),
-          date: d.invoiceDate || d.issueDate || 'N/A',
-          status: d.status || 'draft',
-          clientEmail: d.email || d.customerContact || 'No Email',
-          district: d.district || d.deliveryRegion || 'Unassigned',
-          deliveryAddress: d.deliveryAddress || '',
-          deliveryAddressManual: d.deliveryAddressManual === true,
-          deliveryAddressLine1: d.deliveryAddressLine1 || '',
-          deliveryAddressLine2: d.deliveryAddressLine2 || '',
-          deliveredDate: d.deliveredDate || '',
-          parentInvoiceId: d.parentInvoiceId || null,
-          deliveryNoteNo: d.delivery_note_number || d.deliveryNoteNo || '',
-          distanceKm: typeof d.distanceKm === 'number' ? d.distanceKm : undefined,
-          stopDetails: d.stopDetails || null,
-          lineItems: (d.line_items || d.lineItems || []).map((item: Record<string, unknown>) => ({
-            stockCode: String(item.stock_code || item.stockCode || ''),
-            description: String(item.description || ''),
-            qty: Number(item.quantity ?? item.qty ?? 0) || 0,
-            unitPrice: Number(item.unit_price ?? item.unitPrice ?? 0) || 0,
-            value: Number(item.line_item_value ?? item.value ?? 0) || 0,
-          }))
-        };
-      });
-      
-      // Basic client-side sort by date descending if we don't have a reliable server order yet
-      data.sort((a, b) => b.date.localeCompare(a.date));
-      
-      setInvoices(data);
-      setLoading(false);
-    }, (err) => {
-      console.error("Firestore Subscribe Error:", err);
-      setError(err.message);
-      setLoading(false);
-      // Only handle error if it's a permission issue or similar that needs reporting as per guidelines
-      if (err.code === 'permission-denied') {
-        handleFirestoreError(err, OperationType.LIST, path);
-      }
-    });
-
-    return () => unsubscribe();
-  }, [user]);
-
-  return { invoices, loading, error, addInvoice, deleteInvoice, updateInvoice };
+  return { invoices: invoicesState.invoices, loading: invoicesState.loading, error: invoicesState.error, addInvoice, deleteInvoice, updateInvoice };
 }
