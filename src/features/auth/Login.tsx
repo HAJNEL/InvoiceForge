@@ -165,7 +165,6 @@ export function Login() {
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <label htmlFor="login-password" className="block text-sm font-semibold text-zinc-700 uppercase tracking-wider text-[10px]">Password</label>
-                <a href="#" className="text-[10px] uppercase font-bold tracking-widest text-brand-accent hover:underline">Forgot?</a>
               </div>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
