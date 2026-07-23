@@ -136,7 +136,9 @@ export function InvoiceForm() {
                 <div className="space-y-4">
                   <div className="relative">
                     <Hash className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
+                    <label htmlFor="invoice-number" className="sr-only">Invoice Number</label>
                     <input
+                      id="invoice-number"
                       type="text"
                       placeholder="Invoice Number (e.g. INV-1001)"
                       value={invoiceNumber}
@@ -172,12 +174,15 @@ export function InvoiceForm() {
                 <div className="space-y-4">
                   <div className="relative">
                     <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
-                    <select title='client' className="w-full pl-10 pr-4 py-2.5 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent focus:outline-none transition-all appearance-none cursor-pointer">
+                    <label htmlFor="invoice-client" className="sr-only">Client</label>
+                    <select id="invoice-client" title='client' className="w-full pl-10 pr-4 py-2.5 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent focus:outline-none transition-all appearance-none cursor-pointer">
                       <option value="">Select a Client</option>
                       <option value="plus">+ Add New Client</option>
                     </select>
                   </div>
+                  <label htmlFor="billing-address" className="sr-only">Billing Address</label>
                   <textarea
+                    id="billing-address"
                     placeholder="Billing Address (Auto-filled if client selected)"
                     rows={3}
                     value={billingAddress}
@@ -205,8 +210,9 @@ export function InvoiceForm() {
                      {lineItems.map((item) => (
                        <tr key={item.id}>
                          <td className="py-3">
-                           <input 
-                             type="text" 
+                           <input
+                             type="text"
+                             aria-label="Description"
                              value={item.description}
                              onChange={(e) => updateLineItem(item.id, 'description', e.target.value)}
                              placeholder="Item name or description"
@@ -214,18 +220,20 @@ export function InvoiceForm() {
                            />
                          </td>
                          <td className="py-3">
-                           <input 
+                           <input
                            placeholder='qty'
-                             type="number" 
+                             type="number"
+                             aria-label="Quantity"
                              value={item.quantity}
                              onChange={(e) => updateLineItem(item.id, 'quantity', parseFloat(e.target.value))}
                              className="w-full px-2 py-2 bg-transparent border-none text-sm text-right focus:outline-none font-mono"
                            />
                          </td>
                          <td className="py-3">
-                           <input 
+                           <input
                             placeholder='number'
-                             type="number" 
+                             type="number"
+                             aria-label="Unit Price"
                              value={item.unitPrice}
                              onChange={(e) => updateLineItem(item.id, 'unitPrice', parseFloat(e.target.value))}
                              className="w-full px-2 py-2 bg-transparent border-none text-sm text-right focus:outline-none font-mono"
@@ -261,8 +269,9 @@ export function InvoiceForm() {
           </div>
 
           <div className="saas-card p-8">
-             <label className="block text-[10px] font-bold uppercase tracking-widest text-zinc-400 mb-4">Additional Notes</label>
+             <label htmlFor="invoice-notes" className="block text-[10px] font-bold uppercase tracking-widest text-zinc-400 mb-4">Additional Notes</label>
              <textarea
+               id="invoice-notes"
                placeholder="Terms, payment instructions, or personal note to client..."
                rows={4}
                value={notes}
