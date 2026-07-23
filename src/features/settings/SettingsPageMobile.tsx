@@ -101,14 +101,6 @@ export function SettingsPageMobile({
   saveStatus,
   setSaveStatus,
 }: SettingsPageMobileProps) {
-  if (!GOOGLE_MAPS_API_KEY) {
-    return (
-      <div className="p-6 text-center text-red-500 text-sm">
-        Google Maps API Key is missing. Please add it to secrets.
-      </div>
-    );
-  }
-
   return (
     <APIProvider apiKey={GOOGLE_MAPS_API_KEY}>
       <div className="space-y-4">
@@ -142,7 +134,13 @@ export function SettingsPageMobile({
             </div>
 
             <div className="h-[220px] rounded-2xl border border-zinc-200 overflow-hidden relative bg-zinc-50">
-              <GeocodePreview address={address} settings={settings} />
+              {GOOGLE_MAPS_API_KEY ? (
+                <GeocodePreview address={address} settings={settings} />
+              ) : (
+                <div className="p-4 h-full flex items-center justify-center text-center text-sm text-red-500" title="Google Maps API Key is missing">
+                  Map preview unavailable: Google Maps API Key is missing. Please add it to secrets.
+                </div>
+              )}
             </div>
 
             <div className="flex flex-col gap-3 items-stretch">
@@ -595,7 +593,12 @@ function SaveButton({ address, onSave }: { address: string, onSave: (lat: number
   const [isGeocoding, setIsGeocoding] = useState(false);
 
   const handleSave = async () => {
-    if (!geocodingLib || !address) return;
+    if (!address) return;
+    if (!GOOGLE_MAPS_API_KEY) {
+      toast.error('Google Maps API Key Missing', { description: 'Cannot geocode the warehouse address without a Maps API key configured in secrets.' });
+      return;
+    }
+    if (!geocodingLib) return;
     setIsGeocoding(true);
     try {
       const { results } = await new geocodingLib.Geocoder().geocode({ address });
