@@ -111,5 +111,5 @@ export function useDayPlanners() {
     });
   }, [trips, planners, tripsLoading, loading, deletePlanner]);
 
-  return { planners, loading, tripDates: trips.map(t => t.date), saveEntries, deletePlanner, moveEntries };
+  return { planners, loading, tripsLoading, tripDates: trips.map(t => t.date), saveEntries, deletePlanner, moveEntries };
 }

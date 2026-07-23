@@ -5,7 +5,6 @@ import {
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { useAuth } from '../../core/hooks/useAuth';
-import { useTrips } from '../trips/hooks/useTrips';
 import { useDayPlanners } from '../trips/hooks/useDayPlanners';
 import { DayPlannerModal } from '../trips/TripListComponents/DayPlannerModal';
 import { DayPlannerEditor } from '../trips/TripListComponents/DayPlannerEditor';
@@ -50,8 +49,7 @@ function startOfWeek(d: Date): Date {
 
 export function DailyPlannerPage() {
   const { user } = useAuth();
-  const { trips, loading: tripsLoading } = useTrips();
-  const { planners, loading: plannersLoading, saveEntries, moveEntries } = useDayPlanners();
+  const { planners, loading: plannersLoading, tripsLoading, tripDates, saveEntries, moveEntries } = useDayPlanners();
   // Recorded on planner entries when the account owner ticks them, so it's clear who
   // completed it even when that's the owner themselves (not just team members).
   const ownerDisplayName = user?.displayName || user?.email?.split('@')[0] || 'Account Owner';
@@ -70,7 +68,7 @@ export function DailyPlannerPage() {
     return map;
   }, [planners]);
 
-  const tripDatesSet = useMemo(() => new Set(trips.map(t => t.date)), [trips]);
+  const tripDatesSet = useMemo(() => new Set(tripDates), [tripDates]);
 
   const isDayUsable = (dateKey: string) => tripDatesSet.has(dateKey) || (entriesByDate[dateKey]?.length ?? 0) > 0;
 
