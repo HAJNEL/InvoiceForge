@@ -4,11 +4,6 @@ import * as pdfjs from 'pdfjs-dist';
 // Using the minified worker bundled with the library
 pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.mjs`;
 
-export interface ExtractedPage {
-  pageNumber: number;
-  text: string;
-}
-
 // Helper to convert File to base64
 const fileToBase64 = (file: File): Promise<string> => {
   return new Promise((resolve, reject) => {

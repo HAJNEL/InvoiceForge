@@ -121,5 +121,3 @@ export function NRLogo({ className = "w-8 h-8", variant = "dark" }: LogoProps) {
     </svg>
   );
 }
-
-export default NRLogo;
