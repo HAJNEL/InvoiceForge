@@ -429,14 +429,14 @@ export function InvoiceDetail() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="p-4 bg-zinc-50 rounded-2xl border border-zinc-100">
-                  <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-1 leading-none">Total Qty</p>
+                  <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-1 leading-none">Total Qty</p>
                   <div className="flex items-center gap-1.5">
                     <Package className="w-3 h-3 text-zinc-400" />
                     <span className="text-sm font-black text-zinc-900">{totalQty}</span>
                   </div>
                 </div>
                 <div className="p-4 bg-zinc-50 rounded-2xl border border-zinc-100">
-                  <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-1 leading-none">Distance (KM)</p>
+                  <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-1 leading-none">Distance (KM)</p>
                   <div className="flex items-center gap-1.5">
                     <Route className="w-3 h-3 text-zinc-400 shrink-0" />
                     <input
@@ -468,7 +468,7 @@ export function InvoiceDetail() {
                   )}
                 </div>
                 <div className="p-4 bg-zinc-50 rounded-2xl border border-zinc-100 col-span-2">
-                  <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-1 leading-none">District</p>
+                  <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-1 leading-none">District</p>
                   <div className="flex items-center gap-1.5">
                     <MapPin className="w-3 h-3 text-zinc-400" />
                     <span className="text-sm font-black text-zinc-900 uppercase font-bold">{invoice.district || 'N/A'}</span>
