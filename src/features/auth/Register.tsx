@@ -52,11 +52,12 @@ export function Register() {
 
           <form onSubmit={handleRegister} className="space-y-4">
             <div>
-              <label className="block text-sm font-semibold text-zinc-700 mb-1.5 uppercase tracking-wider text-[10px]">Company Name</label>
+              <label htmlFor="register-company" className="block text-sm font-semibold text-zinc-700 mb-1.5 uppercase tracking-wider text-[10px]">Company Name</label>
               <div className="relative">
                 <Building className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
-                <input 
-                  type="text" 
+                <input
+                  id="register-company"
+                  type="text"
                   value={company}
                   onChange={(e) => setCompany(e.target.value)}
                   className="w-full pl-10 pr-4 py-3 bg-zinc-50 border border-zinc-200 rounded-xl focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent focus:outline-none transition-all placeholder:text-zinc-400"
@@ -67,11 +68,12 @@ export function Register() {
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-zinc-700 mb-1.5 uppercase tracking-wider text-[10px]">Email Address</label>
+              <label htmlFor="register-email" className="block text-sm font-semibold text-zinc-700 mb-1.5 uppercase tracking-wider text-[10px]">Email Address</label>
               <div className="relative">
                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
-                <input 
-                  type="email" 
+                <input
+                  id="register-email"
+                  type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="w-full pl-10 pr-4 py-3 bg-zinc-50 border border-zinc-200 rounded-xl focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent focus:outline-none transition-all placeholder:text-zinc-400"
@@ -82,11 +84,12 @@ export function Register() {
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-zinc-700 mb-1.5 uppercase tracking-wider text-[10px]">Password</label>
+              <label htmlFor="register-password" className="block text-sm font-semibold text-zinc-700 mb-1.5 uppercase tracking-wider text-[10px]">Password</label>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
-                <input 
-                  type="password" 
+                <input
+                  id="register-password"
+                  type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="w-full pl-10 pr-4 py-3 bg-zinc-50 border border-zinc-200 rounded-xl focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent focus:outline-none transition-all placeholder:text-zinc-400"
