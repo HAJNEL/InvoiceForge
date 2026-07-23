@@ -456,14 +456,23 @@ export function InvoicesList() {
                       const isExpanded = !!expandedInvoiceIds[invoice.id];
                       return (
                         <React.Fragment key={invoice.id}>
-                          <tr 
+                          <tr
                             onClick={() => toggleInvoiceExpanded(invoice.id)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                toggleInvoiceExpanded(invoice.id);
+                              }
+                            }}
+                            role="button"
+                            tabIndex={0}
+                            aria-expanded={isExpanded}
                             className={cn(
                               "group hover:bg-zinc-50/70 border-b border-zinc-100 transition-colors cursor-pointer",
                               isExpanded ? "bg-zinc-50/40" : ""
                             )}
                           >
-                            <td className="px-6 py-4 text-xs" onClick={(e) => e.stopPropagation()}>
+                            <td className="px-6 py-4 text-xs" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
                               <div className="flex flex-col gap-1 items-start">
                                 <Link to={`/invoices/${invoice.id}`} className="font-mono font-bold hover:text-brand-accent hover:underline flex items-center gap-2">
                                    {invoice.number}
@@ -538,7 +547,7 @@ export function InvoicesList() {
                              <td className="px-6 py-4">
                               <StatusBadge status={invoice.status} deliveredDate={invoice.deliveredDate} />
                             </td>
-                            <td className="px-6 py-4 text-right" onClick={(e) => e.stopPropagation()}>
+                            <td className="px-6 py-4 text-right" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
                               <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-all transform translate-x-2 group-hover:translate-x-0">
                                 <Link
                                   to={`/invoices/${invoice.id}`}
