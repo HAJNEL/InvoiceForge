@@ -1,16 +1,18 @@
 import { useState } from 'react';
-import { Fuel, Loader2, Inbox, Edit3, Trash2 } from 'lucide-react';
+import { Fuel, Loader2, Inbox, Edit3, Trash2, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 import { useFuelLogs, FuelLog } from '../hooks/useFuelLogs';
 import { Truck } from '../../trucks/hooks/useTrucks';
 import { MobileSheet } from '../../../components/mobile/MobileSheet';
 import { MobileCard, MobileCardActionsMenu } from '../../../components/mobile/MobileCard';
+import { FuelLogImportDialog } from './FuelLogImportDialog';
 
 export function FuelLogModalMobile({ trucks, onClose }: {
   trucks: Truck[];
   onClose: () => void;
 }) {
   const { fuelLogs, loading, addFuelLog, updateFuelLog, deleteFuelLog, totalLitersConsumed } = useFuelLogs();
+  const [isImportOpen, setIsImportOpen] = useState(false);
 
   const [truckId, setTruckId] = useState(trucks[0]?.id || '');
   const [liters, setLiters] = useState('');
@@ -101,6 +103,16 @@ export function FuelLogModalMobile({ trucks, onClose }: {
       }
     >
       <div className="space-y-5">
+        <button
+          type="button"
+          onClick={() => setIsImportOpen(true)}
+          title="Import Fuel Statement"
+          className="w-full flex items-center justify-center gap-1.5 px-3 py-2.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 text-xs font-bold rounded-xl transition-all mobile-tap-target"
+        >
+          <Upload className="w-3.5 h-3.5" />
+          Import Fuel Statement
+        </button>
+
         <div className="space-y-3">
           <label className="block">
             <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Truck</span>
@@ -242,6 +254,10 @@ export function FuelLogModalMobile({ trucks, onClose }: {
           )}
         </div>
       </div>
+
+      {isImportOpen && (
+        <FuelLogImportDialog trucks={trucks} onClose={() => setIsImportOpen(false)} />
+      )}
     </MobileSheet>
   );
 }

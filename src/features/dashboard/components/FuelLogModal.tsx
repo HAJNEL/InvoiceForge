@@ -1,15 +1,17 @@
 import { useState } from 'react';
-import { X, Fuel, Loader2, Inbox, Edit3, Trash2, Check } from 'lucide-react';
+import { X, Fuel, Loader2, Inbox, Edit3, Trash2, Check, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '../../../lib/utils';
 import { useFuelLogs, FuelLog } from '../hooks/useFuelLogs';
 import { Truck } from '../../trucks/hooks/useTrucks';
+import { FuelLogImportDialog } from './FuelLogImportDialog';
 
 export function FuelLogModal({ trucks, onClose }: {
   trucks: Truck[];
   onClose: () => void;
 }) {
   const { fuelLogs, loading, addFuelLog, updateFuelLog, deleteFuelLog, totalLitersConsumed } = useFuelLogs();
+  const [isImportOpen, setIsImportOpen] = useState(false);
 
   const [truckId, setTruckId] = useState(trucks[0]?.id || '');
   const [liters, setLiters] = useState('');
@@ -108,15 +110,29 @@ export function FuelLogModal({ trucks, onClose }: {
               </p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            title="Close"
-            className="p-2 hover:bg-zinc-100 rounded-xl text-zinc-400 transition-all border border-transparent hover:border-zinc-200"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setIsImportOpen(true)}
+              title="Import Fuel Statement"
+              className="p-2 hover:bg-zinc-100 rounded-xl text-zinc-400 hover:text-brand-primary transition-all border border-transparent hover:border-zinc-200"
+            >
+              <Upload className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              title="Close"
+              className="p-2 hover:bg-zinc-100 rounded-xl text-zinc-400 transition-all border border-transparent hover:border-zinc-200"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
+
+        {isImportOpen && (
+          <FuelLogImportDialog trucks={trucks} onClose={() => setIsImportOpen(false)} />
+        )}
 
         <div className="p-6 overflow-y-auto space-y-6 flex-1">
           <div className="grid grid-cols-2 gap-4">
