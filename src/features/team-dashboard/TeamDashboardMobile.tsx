@@ -13,6 +13,7 @@ import { NRLogo } from '../../components/Logo';
 import { MobileSheet } from '../../components/mobile/MobileSheet';
 import { MobileCard } from '../../components/mobile/MobileCard';
 import { TripOverviewTableMobile } from './components/TripOverviewTableMobile';
+import { applyStockCount } from '../stock/utils/applyStockCount';
 
 interface StockCountItem {
   stockCode: string;
@@ -147,6 +148,8 @@ export function TeamDashboardMobile({
       });
       const nextCode = String(maxNum + 1).padStart(4, '0');
 
+      // Counts write straight to live inventory below, so every item is logged as
+      // 'approved' immediately — there is no separate authorization step to forget.
       const itemsToSave = records.map(([key, qty]) => {
         const item = allCatalogItems.find(i => `${i.stockCode}_${i.description}` === key);
         return {
@@ -156,9 +159,11 @@ export function TeamDashboardMobile({
           parentItem: null,
           countedQty: qty,
           expectedQty: 0,
-          status: 'pending'
+          status: 'approved' as const
         };
       });
+
+      await Promise.all(itemsToSave.map(item => applyStockCount(ownerId, item)));
 
       const newTakeId = doc(collection(db, 'stock_takes')).id;
 
@@ -169,12 +174,12 @@ export function TeamDashboardMobile({
         submittedByUserId: userUid,
         userId: ownerId,
         submittedAt: new Date().toISOString(),
-        status: 'pending',
+        status: 'completed',
         items: itemsToSave
       });
 
       setDefinedCounts({});
-      toast.success('Stock Take Submitted', { description: `Stock take #${nextCode} is now awaiting administrator approval.` });
+      toast.success('Stock Take Logged', { description: `Stock take #${nextCode} has updated inventory levels immediately.` });
     } catch (err) {
       console.error("Failed to submit stock take:", err);
       toast.error('Submission Failed', { description: 'Could not submit stock count. Check your connection and try again.' });

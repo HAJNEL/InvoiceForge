@@ -89,8 +89,6 @@ interface StockScreenMobileProps {
   extrasList: ExtraInventoryItem[];
   counts: Record<ActiveTab, number>;
 
-  handleApproveItemInTake: (take: JointStockTake, itemIndex: number) => Promise<void>;
-  handleRejectItemInTake: (take: JointStockTake, itemIndex: number) => Promise<void>;
   handleDeleteInventoryItem: (invId: string) => Promise<void>;
   handleDeleteStockTake: (takeId: string) => Promise<void>;
   handleUpdateInventoryQty: (invId: string, newQty: number) => Promise<void>;
@@ -124,8 +122,6 @@ export function StockScreenMobile({
   totalOutstandingDemands,
   extrasList,
   counts,
-  handleApproveItemInTake,
-  handleRejectItemInTake,
   handleDeleteInventoryItem,
   handleDeleteStockTake,
   handleUpdateInventoryQty,
@@ -218,26 +214,6 @@ export function StockScreenMobile({
               <div className="px-3 py-1 bg-zinc-100 border border-zinc-200 rounded-xl font-mono text-xs">
                 Counted: <strong className="font-sans font-black text-sm">{tItem.countedQty}</strong>
               </div>
-              {tItem.status === 'pending' && (
-                <div className="flex items-center gap-1.5">
-                  <button
-                    type="button"
-                    title="Approve count"
-                    onClick={() => handleApproveItemInTake(take, itemIdx)}
-                    className="px-3 py-1.5 bg-emerald-600 text-white font-black text-[10px] uppercase tracking-wider rounded-lg flex items-center gap-1 mobile-tap-target"
-                  >
-                    <Check className="w-3.5 h-3.5 stroke-[2.5]" /> Approve
-                  </button>
-                  <button
-                    type="button"
-                    title="Reject count"
-                    onClick={() => handleRejectItemInTake(take, itemIdx)}
-                    className="px-2.5 py-1.5 border border-red-200 text-red-600 font-black text-[10px] uppercase tracking-wider rounded-lg flex items-center gap-0.5 mobile-tap-target"
-                  >
-                    <X className="w-3.5 h-3.5" /> Reject
-                  </button>
-                </div>
-              )}
             </div>
           </div>
         ))}

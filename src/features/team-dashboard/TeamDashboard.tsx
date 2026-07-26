@@ -18,6 +18,7 @@ import { useIsMobile } from '../../hooks/useIsMobile';
 import { TeamDashboardMobile } from './TeamDashboardMobile';
 import { useCalendarSync } from './useCalendarSync';
 import { CalendarSyncModal } from './CalendarSyncModal';
+import { applyStockCount } from '../stock/utils/applyStockCount';
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -201,7 +202,9 @@ export function TeamDashboard() {
       });
       const nextCode = String(maxNum + 1).padStart(4, '0');
 
-      // Create a single grouped stock take document with multiple parts/items in it
+      // Create a single grouped stock take document with multiple parts/items in it.
+      // Counts write straight to live inventory below, so every item is logged as
+      // 'approved' immediately — there is no separate authorization step to forget.
       const itemsToSave = records.map(([key, qty]) => {
         const item = allCatalogItems.find(i => `${i.stockCode}_${i.description}` === key);
         return {
@@ -211,13 +214,15 @@ export function TeamDashboard() {
           parentItem: null,
           countedQty: qty,
           expectedQty: 0,
-          status: 'pending'
+          status: 'approved' as const
         };
       });
 
+      await Promise.all(itemsToSave.map(item => applyStockCount(ownerId, item)));
+
       const { setDoc, doc } = await import('firebase/firestore');
       const newTakeId = doc(collection(db, 'stock_takes')).id;
-      
+
       await setDoc(doc(db, 'stock_takes', newTakeId), {
         id: newTakeId,
         code: nextCode,
@@ -225,13 +230,13 @@ export function TeamDashboard() {
         submittedByUserId: userUid,
         userId: ownerId,
         submittedAt: new Date().toISOString(),
-        status: 'pending',
+        status: 'completed',
         items: itemsToSave
       });
 
       // Clear local state on success
       setDefinedCounts({});
-      toast.success('Stock Take Submitted', { description: `Stock take #${nextCode} is now awaiting administrator approval.` });
+      toast.success('Stock Take Logged', { description: `Stock take #${nextCode} has updated inventory levels immediately.` });
     } catch (err) {
       console.error("Failed to submit stock take:", err);
       toast.error('Submission Failed', { description: 'Could not submit stock count. Check your connection and try again.' });

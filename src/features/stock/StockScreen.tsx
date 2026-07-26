@@ -22,7 +22,7 @@ import { useStock, KnockdownItem } from './hooks/useStock';
 import { KnockdownSetupDialog } from './components/KnockdownSetupDialog';
 import { cn } from '../../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
-import { collection, query, where, onSnapshot, doc, deleteDoc, updateDoc, setDoc, getDocs } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, deleteDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { useAuth } from '../../core/hooks/useAuth';
 import { handleFirestoreError, OperationType } from '../../lib/firestore-errors';
@@ -276,81 +276,6 @@ export function StockScreen() {
     });
     return () => unsubscribe();
   }, [user]);
-
-  // Approve a single counted item within a stock take document
-  const handleApproveItemInTake = async (take: JointStockTake, itemIndex: number) => {
-    if (!user) return;
-    try {
-      const targetItem = take.items[itemIndex];
-      
-      // Find matching item in inventory
-      const existingRef = query(
-        collection(db, 'inventory'),
-        where('userId', '==', user.uid),
-        where('stockCode', '==', targetItem.stockCode),
-        where('isPart', '==', !!targetItem.isPart)
-      );
-      const snap = await getDocs(existingRef);
-      
-      if (!snap.empty) {
-        const docId = snap.docs[0].id;
-        await updateDoc(doc(db, 'inventory', docId), {
-          qty: targetItem.countedQty,
-          updatedAt: new Date().toISOString()
-        });
-      } else {
-        const newId = doc(collection(db, 'inventory')).id;
-        await setDoc(doc(db, 'inventory', newId), {
-          stockCode: targetItem.stockCode,
-          description: targetItem.description || '',
-          isPart: !!targetItem.isPart,
-          parentItem: targetItem.parentItem || null,
-          displayName: targetItem.stockCode + ' - ' + (targetItem.description || ''),
-          qty: targetItem.countedQty,
-          userId: user.uid,
-          createdAt: new Date().toISOString()
-        });
-      }
-
-      // Update the status of this item inside the stock take list
-      const updatedItems = [...take.items];
-      updatedItems[itemIndex] = { ...targetItem, status: 'approved' };
-      
-      const allDone = updatedItems.every(i => i.status !== 'pending');
-      const nextStatus = allDone ? 'completed' : 'partially_completed';
-
-      await updateDoc(doc(db, 'stock_takes', take.id), {
-        items: updatedItems,
-        status: nextStatus,
-        updatedAt: new Date().toISOString()
-      });
-    } catch (err) {
-      console.error("Failed to approve item count:", err);
-    }
-  };
-
-  // Reject a single counted item within a stock take document
-  const handleRejectItemInTake = async (take: JointStockTake, itemIndex: number) => {
-    if (!user) return;
-    try {
-      const targetItem = take.items[itemIndex];
-      if (confirm(`Are you sure you want to reject the count for ${targetItem.stockCode}?`)) {
-        const updatedItems = [...take.items];
-        updatedItems[itemIndex] = { ...targetItem, status: 'rejected' };
-
-        const allDone = updatedItems.every(i => i.status !== 'pending');
-        const nextStatus = allDone ? 'completed' : 'partially_completed';
-
-        await updateDoc(doc(db, 'stock_takes', take.id), {
-          items: updatedItems,
-          status: nextStatus,
-          updatedAt: new Date().toISOString()
-        });
-      }
-    } catch (err) {
-      console.error("Failed to reject item count:", err);
-    }
-  };
 
   const handleDeleteInventoryItem = async (invId: string) => {
     try {
@@ -608,8 +533,6 @@ export function StockScreen() {
         totalOutstandingDemands={totalOutstandingDemands}
         extrasList={extrasList}
         counts={counts}
-        handleApproveItemInTake={handleApproveItemInTake}
-        handleRejectItemInTake={handleRejectItemInTake}
         handleDeleteInventoryItem={handleDeleteInventoryItem}
         handleDeleteStockTake={handleDeleteStockTake}
         handleUpdateInventoryQty={handleUpdateInventoryQty}
@@ -1389,8 +1312,10 @@ export function StockScreen() {
               })
               .map((take) => {
                 const isExpanded = expandedTakeIds[take.id] || false;
+                // Historical takes may still carry 'pending' items from before stock takes
+                // wrote to inventory immediately on submission; new takes are always 'completed'.
                 const pendingCount = (take.items || []).filter(i => i.status === 'pending').length;
-                
+
                 return (
                   <div key={take.id} className="bg-white rounded-3xl border border-zinc-200 hover:border-zinc-250 shadow-sm transition-all overflow-hidden text-left">
                     {/* Header Row */}
@@ -1514,25 +1439,6 @@ export function StockScreen() {
                                   <div className="px-3 py-1 bg-zinc-100 border border-zinc-200 rounded-xl font-mono text-xs">
                                     Counted: <strong className="font-sans font-black text-sm">{tItem.countedQty}</strong>
                                   </div>
-
-                                  {tItem.status === 'pending' && (
-                                    <div className="flex items-center gap-1.5">
-                                      <button
-                                        type="button"
-                                        onClick={() => handleApproveItemInTake(take, itemIdx)}
-                                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-sans font-black text-[10px] uppercase tracking-wider rounded-lg cursor-pointer shadow-3xs flex items-center gap-1 hover:scale-105 active:scale-95 transition-transform animate-fade-in"
-                                      >
-                                        <Check className="w-3.5 h-3.5 stroke-[2.5]" /> Approve
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => handleRejectItemInTake(take, itemIdx)}
-                                        className="px-2.5 py-1.5 border border-red-200 hover:border-red-350 text-red-600 hover:bg-red-50/50 font-sans font-black text-[10px] uppercase tracking-wider rounded-lg cursor-pointer flex items-center gap-0.5 hover:scale-105 active:scale-95 transition-transform animate-fade-in"
-                                      >
-                                        <X className="w-3.5 h-3.5" /> Reject
-                                      </button>
-                                    </div>
-                                  )}
                                 </div>
                               </div>
                             ))}
@@ -1560,7 +1466,7 @@ export function StockScreen() {
             </div>
             <h3 className="text-sm font-black text-zinc-700 uppercase tracking-wider leading-none">All Caught Up</h3>
             <p className="text-xs text-zinc-500 max-w-sm mx-auto leading-relaxed">
-              No stock takes are currently in the queue awaiting approval. Submitted counts from warehouse staff on the Team Dashboard will load here.
+              No stock takes yet. Counts submitted from the Team Dashboard update inventory immediately and will be logged here.
             </p>
           </div>
         )
