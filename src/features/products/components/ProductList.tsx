@@ -22,6 +22,7 @@ import {
 import { useProducts, Product, ProductComponent } from '../hooks/useProducts';
 import { useInvoices } from '../../invoices/hooks/useInvoices';
 import { useStock } from '../../stock/hooks/useStock';
+import { getProductBuildableQty, getKnockdownBuildableQty } from '../utils/availability';
 import { KnockdownSetupDialog } from '../../stock/components/KnockdownSetupDialog';
 import { KnockdownSetupDialogMobile } from '../../stock/components/KnockdownSetupDialogMobile';
 import { ProductImportDialog } from './ProductImportDialog';
@@ -475,7 +476,7 @@ export function ProductList() {
                       {activeTab === 'products' && (
                         <th className="px-5 py-3.5 text-xs font-bold text-zinc-500 uppercase tracking-wider text-center w-[110px]">Components</th>
                       )}
-                      <th className="px-5 py-3.5 text-xs font-bold text-zinc-500 uppercase tracking-wider text-right w-[120px]">Units on Floor</th>
+                      <th className="px-5 py-3.5 text-xs font-bold text-zinc-500 uppercase tracking-wider text-right w-[120px]">Available</th>
                       <th className="px-5 py-3.5 text-xs font-bold text-zinc-500 uppercase tracking-wider text-right w-[120px]">Units Ordered</th>
                       <th className="px-5 py-3.5 text-xs font-bold text-zinc-500 uppercase tracking-wider text-right w-[110px]">Actions</th>
                     </tr>
@@ -483,7 +484,9 @@ export function ProductList() {
                   <tbody className="divide-y divide-zinc-100">
                     {paginatedProducts.map((p) => {
                       const codeKey = p.stockCode.toLowerCase().trim();
-                      const onFloor = inventoryMap[codeKey] ?? 0;
+                      const buildableQty = getProductBuildableQty(p, inventoryMap);
+                      const isComposite = buildableQty !== null;
+                      const onFloor = isComposite ? buildableQty : (inventoryMap[codeKey] ?? 0);
                       const ordered = unitsOrderedMap[codeKey] ?? 0;
                       const compCount = (p.components ?? []).length;
                       return (
@@ -509,12 +512,14 @@ export function ProductList() {
                             </td>
                           )}
                           <td className="px-5 py-4 text-right whitespace-nowrap">
-                            <span className={cn(
-                              "inline-block font-black text-sm tabular-nums px-2.5 py-0.5 rounded-lg",
-                              onFloor > 0
-                                ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                                : "bg-zinc-100 text-zinc-400 border border-zinc-200"
-                            )}>
+                            <span
+                              title={isComposite ? 'Buildable from current component stock' : 'Units on floor'}
+                              className={cn(
+                                "inline-block font-black text-sm tabular-nums px-2.5 py-0.5 rounded-lg",
+                                onFloor > 0
+                                  ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                  : "bg-zinc-100 text-zinc-400 border border-zinc-200"
+                              )}>
                               {onFloor}
                             </span>
                           </td>
@@ -603,7 +608,7 @@ export function ProductList() {
                       <th className="px-5 py-3.5 text-xs font-bold text-zinc-500 uppercase tracking-wider w-[160px]">Stock Code</th>
                       <th className="px-5 py-3.5 text-xs font-bold text-zinc-500 uppercase tracking-wider">Display Name</th>
                       <th className="px-5 py-3.5 text-xs font-bold text-zinc-500 uppercase tracking-wider w-[120px]">Type</th>
-                      <th className="px-5 py-3.5 text-xs font-bold text-zinc-500 uppercase tracking-wider text-right w-[120px]">Units on Floor</th>
+                      <th className="px-5 py-3.5 text-xs font-bold text-zinc-500 uppercase tracking-wider text-right w-[120px]">Available</th>
                       <th className="px-5 py-3.5 text-xs font-bold text-zinc-500 uppercase tracking-wider text-right w-[120px]">Units Ordered</th>
                       <th className="px-5 py-3.5 text-xs font-bold text-zinc-500 uppercase tracking-wider text-right w-[100px]">Actions</th>
                     </tr>
@@ -611,7 +616,9 @@ export function ProductList() {
                   <tbody className="divide-y divide-zinc-100">
                     {paginatedKnockdown.map((k) => {
                       const codeKey = k.stockCode.toLowerCase().trim();
-                      const onFloor = inventoryMap[codeKey] ?? 0;
+                      const buildableQty = getKnockdownBuildableQty(k, inventoryMap);
+                      const isComposite = buildableQty !== null;
+                      const onFloor = isComposite ? buildableQty : (inventoryMap[codeKey] ?? 0);
                       const ordered = unitsOrderedMap[codeKey] ?? 0;
                       return (
                         <tr key={k.id} className="hover:bg-zinc-50/40 transition-colors">
@@ -634,12 +641,14 @@ export function ProductList() {
                             </span>
                           </td>
                           <td className="px-5 py-4 text-right whitespace-nowrap">
-                            <span className={cn(
-                              "inline-block font-black text-sm tabular-nums px-2.5 py-0.5 rounded-lg",
-                              onFloor > 0
-                                ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                                : "bg-zinc-100 text-zinc-400 border border-zinc-200"
-                            )}>
+                            <span
+                              title={isComposite ? 'Buildable from current parts stock' : 'Units on floor'}
+                              className={cn(
+                                "inline-block font-black text-sm tabular-nums px-2.5 py-0.5 rounded-lg",
+                                onFloor > 0
+                                  ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                  : "bg-zinc-100 text-zinc-400 border border-zinc-200"
+                              )}>
                               {onFloor}
                             </span>
                           </td>

@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { Product } from '../hooks/useProducts';
 import { KnockdownItem } from '../../stock/hooks/useStock';
+import { getProductBuildableQty, getKnockdownBuildableQty } from '../utils/availability';
 import { cn } from '../../../lib/utils';
 import { MobileCard, MobileCardActionsMenu } from '../../../components/mobile/MobileCard';
 import { MobileSheet } from '../../../components/mobile/MobileSheet';
@@ -81,6 +82,7 @@ function ProductCardRow({
   ordered,
   compCount,
   showComponents,
+  isBuildable,
   actions,
 }: {
   stockCode: string;
@@ -91,6 +93,7 @@ function ProductCardRow({
   ordered: number;
   compCount?: number;
   showComponents?: boolean;
+  isBuildable?: boolean;
   actions: { label: string; icon: LucideIcon; onClick: () => void; destructive?: boolean }[];
 }) {
   return (
@@ -132,9 +135,9 @@ function ProductCardRow({
                 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                 : 'bg-zinc-100 text-zinc-400 border border-zinc-200'
             )}
-            title="Units on Floor"
+            title={isBuildable ? 'Buildable from current component stock' : 'Units on Floor'}
           >
-            {onFloor} on hand
+            {onFloor} {isBuildable ? 'buildable' : 'on hand'}
           </span>
         </div>
         <span
@@ -412,7 +415,9 @@ export function ProductListMobile({
             <div className="space-y-2.5">
               {paginatedProducts.map((p) => {
                 const codeKey = p.stockCode.toLowerCase().trim();
-                const onFloor = inventoryMap[codeKey] ?? 0;
+                const buildableQty = getProductBuildableQty(p, inventoryMap);
+                const isComposite = buildableQty !== null;
+                const onFloor = isComposite ? buildableQty : (inventoryMap[codeKey] ?? 0);
                 const ordered = unitsOrderedMap[codeKey] ?? 0;
                 const compCount = (p.components ?? []).length;
                 const actions = [
@@ -432,6 +437,7 @@ export function ProductListMobile({
                     ordered={ordered}
                     compCount={compCount}
                     showComponents={activeTab === 'products'}
+                    isBuildable={isComposite}
                     actions={actions}
                   />
                 );
@@ -475,7 +481,9 @@ export function ProductListMobile({
             <div className="space-y-2.5">
               {paginatedKnockdown.map((k) => {
                 const codeKey = k.stockCode.toLowerCase().trim();
-                const onFloor = inventoryMap[codeKey] ?? 0;
+                const buildableQty = getKnockdownBuildableQty(k, inventoryMap);
+                const isComposite = buildableQty !== null;
+                const onFloor = isComposite ? buildableQty : (inventoryMap[codeKey] ?? 0);
                 const ordered = unitsOrderedMap[codeKey] ?? 0;
 
                 if (deletingKnockdownId === k.id) {
@@ -523,6 +531,7 @@ export function ProductListMobile({
                     subtitle={k.displayName && k.description !== k.displayName ? k.description : undefined}
                     onFloor={onFloor}
                     ordered={ordered}
+                    isBuildable={isComposite}
                     actions={actions}
                   />
                 );
