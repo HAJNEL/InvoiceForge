@@ -132,7 +132,9 @@ function ProductCardRow({
             className={cn(
               'inline-block font-black text-[11px] tabular-nums px-2 py-0.5 rounded-lg',
               onFloor > 0
-                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                ? isBuildable
+                  ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                  : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                 : 'bg-zinc-100 text-zinc-400 border border-zinc-200'
             )}
             title={isBuildable ? 'Buildable from current component stock' : 'Units on Floor'}

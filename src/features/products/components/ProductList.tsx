@@ -517,7 +517,9 @@ export function ProductList() {
                               className={cn(
                                 "inline-block font-black text-sm tabular-nums px-2.5 py-0.5 rounded-lg",
                                 onFloor > 0
-                                  ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                  ? isComposite
+                                    ? "bg-blue-50 text-blue-700 border border-blue-200"
+                                    : "bg-emerald-50 text-emerald-700 border border-emerald-200"
                                   : "bg-zinc-100 text-zinc-400 border border-zinc-200"
                               )}>
                               {onFloor}
@@ -646,7 +648,9 @@ export function ProductList() {
                               className={cn(
                                 "inline-block font-black text-sm tabular-nums px-2.5 py-0.5 rounded-lg",
                                 onFloor > 0
-                                  ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                  ? isComposite
+                                    ? "bg-blue-50 text-blue-700 border border-blue-200"
+                                    : "bg-emerald-50 text-emerald-700 border border-emerald-200"
                                   : "bg-zinc-100 text-zinc-400 border border-zinc-200"
                               )}>
                               {onFloor}

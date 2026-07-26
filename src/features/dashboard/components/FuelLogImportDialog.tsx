@@ -38,12 +38,45 @@ function downloadTemplate() {
   toast.success('Template Downloaded', { description: 'fuel_statement_template.xlsx saved to your Downloads folder.' });
 }
 
+// Excel auto-converts a typed-in date (e.g. "2026-07-01") into a real date cell,
+// which XLSX then hands back as either a JS Date (with cellDates: true, below) or
+// a bare serial-day number — never as the "YYYY-MM-DD" string the template shows.
+// Normalize all three shapes to "YYYY-MM-DD" in local time so the fuel KPI's
+// month/week/year filters (which do `new Date(refuelDate + 'T00:00:00')`) work.
+function normalizeDateCell(value: string | number | Date | undefined): string {
+  if (value instanceof Date) {
+    const yyyy = value.getFullYear();
+    const mm = String(value.getMonth() + 1).padStart(2, '0');
+    const dd = String(value.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  }
+  if (typeof value === 'number' && !isNaN(value)) {
+    const parsed = XLSX.SSF.parse_date_code(value);
+    if (parsed) {
+      const yyyy = parsed.y;
+      const mm = String(parsed.m).padStart(2, '0');
+      const dd = String(parsed.d).padStart(2, '0');
+      return `${yyyy}-${mm}-${dd}`;
+    }
+  }
+  const str = String(value ?? '').trim();
+  // Already "YYYY-MM-DD" (or close enough for `new Date()` to parse) — leave as-is.
+  if (/^\d{4}-\d{1,2}-\d{1,2}$/.test(str)) return str;
+  // Common "DD/MM/YYYY" or "DD-MM-YYYY" statement format.
+  const dmy = str.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+  if (dmy) {
+    const [, d, m, y] = dmy;
+    return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+  }
+  return str;
+}
+
 function parseSheet(ws: XLSX.WorkSheet): Omit<ParsedFuelRow, 'truckId' | 'isDuplicate' | 'skip'>[] {
-  const rows = XLSX.utils.sheet_to_json<(string | number)[]>(ws, {
+  const rows = XLSX.utils.sheet_to_json<(string | number | Date)[]>(ws, {
     header: 1,
     defval: '',
     blankrows: false,
-  }) as (string | number)[][];
+  }) as (string | number | Date)[][];
 
   const firstHeader = TEMPLATE_HEADERS[0].toLowerCase();
   const headerIdx = rows.findIndex(r => String(r[0] || '').toLowerCase().trim() === firstHeader);
@@ -51,7 +84,7 @@ function parseSheet(ws: XLSX.WorkSheet): Omit<ParsedFuelRow, 'truckId' | 'isDupl
 
   return dataRows.map(row => ({
     registration: String(row[0] || '').trim(),
-    refuelDate: String(row[1] || '').trim(),
+    refuelDate: normalizeDateCell(row[1]),
     liters: parseFloat(String(row[2] || '0').replace(/[^\d.]/g, '')) || 0,
     fuelPrice: parseFloat(String(row[3] || '0').replace(/[^\d.]/g, '')) || 0,
     odometerReading: parseFloat(String(row[4] || '0').replace(/[^\d.]/g, '')) || 0,
@@ -111,7 +144,7 @@ export function FuelLogImportDialog({ trucks, onClose }: { trucks: Truck[]; onCl
     reader.onload = (e) => {
       try {
         const data = new Uint8Array(e.target?.result as ArrayBuffer);
-        const wb = XLSX.read(data, { type: 'array' });
+        const wb = XLSX.read(data, { type: 'array', cellDates: true });
         const ws = wb.Sheets[wb.SheetNames[0]];
         if (!ws) throw new Error('Empty workbook.');
         const parsed = parseSheet(ws);
