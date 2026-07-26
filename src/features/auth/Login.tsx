@@ -98,6 +98,7 @@ export function Login() {
   const handleGoogleLogin = async () => {
     setError('');
     const provider = new GoogleAuthProvider();
+    provider.setCustomParameters({ prompt: 'select_account' });
     try {
       const userCredential = await signInWithPopup(auth, provider);
       await routeAfterLogin(userCredential.user);

@@ -4,6 +4,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useInvoices } from '../invoices/hooks/useInvoices';
 import { useTrucks } from '../trucks/hooks/useTrucks';
 import { useTrips } from '../trips/hooks/useTrips';
+import { useProducts } from '../products/hooks/useProducts';
+import { useKpiTruckCapacity } from '../kpi/hooks/useKpiTruckCapacity';
 import { collection, query, where, getDocs, limit } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { useAuth } from '../../core/hooks/useAuth';
@@ -48,6 +50,8 @@ export function Dashboard() {
   const { trips, loading: tripsLoading, updateTrip } = useTrips();
   const { selfInvoices } = useSelfInvoices();
   const { fuelLogs } = useFuelLogs();
+  const { products } = useProducts();
+  const { capacityDoc } = useKpiTruckCapacity();
 
   // Drives the two toggle icons on the Invoiced KPI card: the most recently created
   // self-invoice's amount, vs. the cumulative total of everything already Completed.
@@ -85,13 +89,18 @@ export function Dashboard() {
     truckUtilizationData,
     districtData,
     productData,
+    fuelAnalyticsData,
+    utilizationRateData,
+    loadEfficiencyData,
+    shortageData,
+    routeProfitData,
     weekDays,
     stats,
     completedInvoices,
     partiallyCompletedInvoices,
     weekNumber,
     getTripsForCell
-  } = useDashboardAnalytics({ invoices, trucks, trips, weekOffset });
+  } = useDashboardAnalytics({ invoices, trucks, trips, weekOffset, fuelLogs, products, capacityDoc });
 
   if (loading) {
     return (
@@ -135,6 +144,11 @@ export function Dashboard() {
         truckUtilizationData={truckUtilizationData}
         districtData={districtData}
         productData={productData}
+        fuelAnalyticsData={fuelAnalyticsData}
+        utilizationRateData={utilizationRateData}
+        loadEfficiencyData={loadEfficiencyData}
+        shortageData={shortageData}
+        routeProfitData={routeProfitData}
         weekDays={weekDays}
         stats={stats}
         completedInvoices={completedInvoices}
@@ -219,6 +233,11 @@ export function Dashboard() {
         truckUtilizationData={truckUtilizationData}
         districtData={districtData}
         productData={productData}
+        fuelAnalyticsData={fuelAnalyticsData}
+        utilizationRateData={utilizationRateData}
+        loadEfficiencyData={loadEfficiencyData}
+        shortageData={shortageData}
+        routeProfitData={routeProfitData}
       />
 
       {showDeliveredModal && (

@@ -3,13 +3,25 @@ import { UIInvoice } from '../../invoices/hooks/useInvoices';
 import { Truck } from '../../trucks/hooks/useTrucks';
 import { Trip } from '../../../types';
 import { STATUS_DISPLAY_MAP, DAYS } from '../constants';
+import { FuelLog } from './useFuelLogs';
+import { Product } from '../../products/hooks/useProducts';
+import { KpiTruckCapacity } from '../../kpi/hooks/useKpiTruckCapacity';
 
 interface UseDashboardAnalyticsArgs {
   invoices: UIInvoice[];
   trucks: Truck[];
   trips: Trip[];
   weekOffset: number;
+  fuelLogs: FuelLog[];
+  products: Product[];
+  capacityDoc: KpiTruckCapacity | null;
 }
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+const COMPLETED_TRIP_STATUSES = ['completed', 'delivered', 'invoiced'];
 
 // Helper date parsing
 const getInvoiceDateObj = (dateStr?: string) => {
@@ -24,7 +36,7 @@ const getInvoiceDateObj = (dateStr?: string) => {
   return new Date(dateStr);
 };
 
-export function useDashboardAnalytics({ invoices, trucks, trips, weekOffset }: UseDashboardAnalyticsArgs) {
+export function useDashboardAnalytics({ invoices, trucks, trips, weekOffset, fuelLogs, products, capacityDoc }: UseDashboardAnalyticsArgs) {
   // Chart 1: Invoice totals calculations
   const invoiceTotalsOverTime = useMemo(() => {
     // Financial performance is plotted by delivery date (set when an invoice is
@@ -216,6 +228,167 @@ export function useDashboardAnalytics({ invoices, trucks, trips, weekOffset }: U
     }).sort((a, b) => b.units - a.units);
   }, [invoices]);
 
+  // Chart 7: Fleet Fuel Cost & Efficiency - cost/km and km/liter per truck, derived
+  // from the spread between each truck's lowest and highest logged odometer reading.
+  const fuelAnalyticsData = useMemo(() => {
+    return trucks.map(truck => {
+      const logs = fuelLogs
+        .filter(l => l.truckId === truck.id)
+        .slice()
+        .sort((a, b) => a.odometerReading - b.odometerReading);
+
+      const totalCost = logs.reduce((sum, l) => sum + (l.cost || 0), 0);
+      const totalLiters = logs.reduce((sum, l) => sum + (l.liters || 0), 0);
+      const distanceKm = logs.length >= 2
+        ? Math.max(0, logs[logs.length - 1].odometerReading - logs[0].odometerReading)
+        : 0;
+
+      return {
+        name: truck.name,
+        licensePlate: truck.licensePlate,
+        totalCost,
+        totalLiters,
+        distanceKm,
+        costPerKm: distanceKm > 0 ? round2(totalCost / distanceKm) : 0,
+        kmPerLiter: distanceKm > 0 && totalLiters > 0 ? round2(distanceKm / totalLiters) : 0
+      };
+    }).filter(row => row.totalLiters > 0);
+  }, [trucks, fuelLogs]);
+
+  // Chart 8: Truck Utilization Rate - share of the last 30/90 days each truck had at least one trip.
+  const utilizationRateData = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const cutoff30 = new Date(today);
+    cutoff30.setDate(cutoff30.getDate() - 29);
+    const cutoff90 = new Date(today);
+    cutoff90.setDate(cutoff90.getDate() - 89);
+
+    return trucks.map(truck => {
+      const dates30 = new Set<string>();
+      const dates90 = new Set<string>();
+
+      trips.filter(t => t.truckId === truck.id).forEach(t => {
+        const d = getInvoiceDateObj(t.date);
+        if (d >= cutoff90 && d <= today) dates90.add(t.date);
+        if (d >= cutoff30 && d <= today) dates30.add(t.date);
+      });
+
+      return {
+        name: truck.name,
+        licensePlate: truck.licensePlate,
+        active30: dates30.size,
+        pct30: Math.round((dates30.size / 30) * 100),
+        active90: dates90.size,
+        pct90: Math.round((dates90.size / 90) * 100)
+      };
+    });
+  }, [trucks, trips]);
+
+  // Chart 9: Truck Load Efficiency - actual manifest qty vs the KPI truck-capacity
+  // template's max units for that product/truck pair, weighted by qty and averaged per truck.
+  const loadEfficiencyData = useMemo(() => {
+    const stockCodeToProductId = new Map<string, string>();
+    products.forEach(p => stockCodeToProductId.set(p.stockCode, p.id));
+    const capacities = capacityDoc?.capacities || {};
+
+    return trucks.map(truck => {
+      let weightedAll = 0, weightAll = 0, itemsWithDataAll = 0;
+      let weightedCompleted = 0, weightCompleted = 0, itemsWithDataCompleted = 0;
+
+      trips
+        .filter(t => t.truckId === truck.id && t.manifestItems && t.manifestItems.length > 0)
+        .forEach(trip => {
+          const isCompleted = COMPLETED_TRIP_STATUSES.includes((trip.status || '').toLowerCase());
+          trip.manifestItems!.forEach(item => {
+            const productId = stockCodeToProductId.get(item.stockCode);
+            const maxCap = productId ? capacities[productId]?.[truck.id] : undefined;
+            if (typeof maxCap === 'number' && maxCap > 0 && item.qty > 0) {
+              const pct = Math.min(item.qty / maxCap, 1) * 100;
+              weightedAll += pct * item.qty;
+              weightAll += item.qty;
+              itemsWithDataAll += 1;
+              if (isCompleted) {
+                weightedCompleted += pct * item.qty;
+                weightCompleted += item.qty;
+                itemsWithDataCompleted += 1;
+              }
+            }
+          });
+        });
+
+      return {
+        name: truck.name,
+        licensePlate: truck.licensePlate,
+        avgUtilizationAll: weightAll > 0 ? Math.round(weightedAll / weightAll) : null,
+        itemsWithDataAll,
+        avgUtilizationCompleted: weightCompleted > 0 ? Math.round(weightedCompleted / weightCompleted) : null,
+        itemsWithDataCompleted
+      };
+    }).filter(row => row.itemsWithDataAll > 0);
+  }, [trucks, trips, products, capacityDoc]);
+
+  // Chart 10: Delivery Shortage & Damage Analysis, grouped by reason and by product.
+  // `partialItems` is written under two keys (unified + legacy) for the same logical
+  // flag - dedupe per-trip by content so a single short-delivery isn't counted twice.
+  const shortageData = useMemo(() => {
+    const byReason: Record<string, number> = {};
+    const byProduct: Record<string, { name: string; shortfallQty: number }> = {};
+
+    trips.forEach(trip => {
+      if (!trip.partialItems) return;
+      const seen = new Set<string>();
+
+      Object.values(trip.partialItems).forEach(pi => {
+        if (!pi?.isPartial) return;
+        const dedupeKey = `${pi.stockCode || ''}|${pi.description || ''}|${pi.actualQty}|${pi.expectedQty}|${pi.reason || ''}`;
+        if (seen.has(dedupeKey)) return;
+        seen.add(dedupeKey);
+
+        const reason = (pi.reason || '').trim() || 'Unspecified';
+        byReason[reason] = (byReason[reason] || 0) + 1;
+
+        const shortfall = (pi.expectedQty || 0) - (pi.actualQty || 0);
+        if (shortfall > 0) {
+          const code = pi.stockCode || 'MISC';
+          if (!byProduct[code]) byProduct[code] = { name: pi.description || code, shortfallQty: 0 };
+          byProduct[code].shortfallQty += shortfall;
+        }
+      });
+    });
+
+    return {
+      byReason: Object.entries(byReason)
+        .map(([reason, count]) => ({ reason, count }))
+        .sort((a, b) => b.count - a.count),
+      byProduct: Object.entries(byProduct)
+        .map(([code, d]) => ({ code, name: d.name, shortfallQty: d.shortfallQty }))
+        .sort((a, b) => b.shortfallQty - a.shortfallQty)
+    };
+  }, [trips]);
+
+  // Chart 11: Client / Route Profitability - revenue per km, using each invoice's
+  // manually-entered distanceKm (see useClientDistances) to flag low-value routes.
+  const routeProfitData = useMemo(() => {
+    const byClient: Record<string, { revenue: number; distance: number; count: number }> = {};
+    invoices.forEach(inv => {
+      if (!inv.distanceKm || inv.distanceKm <= 0) return;
+      const name = inv.client || 'Unknown Customer';
+      if (!byClient[name]) byClient[name] = { revenue: 0, distance: 0, count: 0 };
+      byClient[name].revenue += (inv.amount || 0);
+      byClient[name].distance += inv.distanceKm;
+      byClient[name].count += 1;
+    });
+
+    return Object.entries(byClient).map(([name, d]) => ({
+      name,
+      revenuePerKm: d.distance > 0 ? round2(d.revenue / d.distance) : 0,
+      totalRevenue: d.revenue,
+      totalDistance: d.distance,
+      invoiceCount: d.count
+    })).sort((a, b) => b.revenuePerKm - a.revenuePerKm);
+  }, [invoices]);
+
   const weekDays = useMemo(() => {
     const dates = [];
     const today = new Date();
@@ -310,6 +483,11 @@ export function useDashboardAnalytics({ invoices, trucks, trips, weekOffset }: U
     truckUtilizationData,
     districtData,
     productData,
+    fuelAnalyticsData,
+    utilizationRateData,
+    loadEfficiencyData,
+    shortageData,
+    routeProfitData,
     weekDays,
     stats,
     completedInvoices,

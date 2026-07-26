@@ -19,7 +19,12 @@ import {
   Users,
   MapPin,
   ShoppingBag,
-  Truck as TruckIcon
+  Truck as TruckIcon,
+  Fuel,
+  Gauge,
+  PackageCheck,
+  AlertTriangle,
+  Route
 } from 'lucide-react';
 import { cn } from '../../../lib/utils';
 import { useDashboardAnalytics } from '../hooks/useDashboardAnalytics';
@@ -32,7 +37,12 @@ type ChartType =
   | 'delivery_pipeline'
   | 'truck_utilization'
   | 'district_distribution'
-  | 'top_products';
+  | 'top_products'
+  | 'fuel_efficiency'
+  | 'utilization_rate'
+  | 'load_efficiency'
+  | 'shortage_analysis'
+  | 'route_profitability';
 
 export function BusinessIntelligencePanel({
   invoiceCount,
@@ -41,7 +51,12 @@ export function BusinessIntelligencePanel({
   pipelineData,
   truckUtilizationData,
   districtData,
-  productData
+  productData,
+  fuelAnalyticsData,
+  utilizationRateData,
+  loadEfficiencyData,
+  shortageData,
+  routeProfitData
 }: {
   invoiceCount: number;
   invoiceTotalsOverTime: Analytics['invoiceTotalsOverTime'];
@@ -50,6 +65,11 @@ export function BusinessIntelligencePanel({
   truckUtilizationData: Analytics['truckUtilizationData'];
   districtData: Analytics['districtData'];
   productData: Analytics['productData'];
+  fuelAnalyticsData: Analytics['fuelAnalyticsData'];
+  utilizationRateData: Analytics['utilizationRateData'];
+  loadEfficiencyData: Analytics['loadEfficiencyData'];
+  shortageData: Analytics['shortageData'];
+  routeProfitData: Analytics['routeProfitData'];
 }) {
   // Selected graph type to display in the business dashboard
   const [selectedChartType, setSelectedChartType] = useState<ChartType>('invoice_totals');
@@ -63,6 +83,12 @@ export function BusinessIntelligencePanel({
   const [districtMetric, setDistrictMetric] = useState<'revenue' | 'deliveries'>('revenue');
   const [productsMetric, setProductsMetric] = useState<'units' | 'revenue'>('units');
   const [productsLimit, setProductsLimit] = useState<number>(5);
+  const [fuelMetric, setFuelMetric] = useState<'costPerKm' | 'kmPerLiter'>('costPerKm');
+  const [utilizationWindow, setUtilizationWindow] = useState<'30' | '90'>('30');
+  const [loadFilter, setLoadFilter] = useState<'all' | 'completed'>('all');
+  const [shortageView, setShortageView] = useState<'reason' | 'product'>('reason');
+  const [routeSort, setRouteSort] = useState<'worst' | 'best'>('worst');
+  const [routeLimit, setRouteLimit] = useState<number>(8);
 
   // Render filters based on selected graph type
   const renderChartFilters = () => {
@@ -248,6 +274,171 @@ export function BusinessIntelligencePanel({
                 <option value={3}>Top 3</option>
                 <option value={5}>Top 5</option>
                 <option value={10}>Top 10</option>
+              </select>
+            </div>
+          </div>
+        );
+      case 'fuel_efficiency':
+        return (
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] font-black text-zinc-400 uppercase tracking-wider">Metric:</span>
+            <div className="inline-flex rounded-md shadow-3xs p-0.5 bg-zinc-100 border border-zinc-200">
+              <button
+                type="button"
+                title="Show cost per kilometer"
+                onClick={() => setFuelMetric('costPerKm')}
+                className={cn(
+                  "px-2.5 py-0.5 text-[9px] font-black rounded-sm transition-all cursor-pointer",
+                  fuelMetric === 'costPerKm' ? "bg-white text-zinc-900 shadow-2xs" : "text-zinc-500 hover:text-zinc-800"
+                )}
+              >
+                COST/KM
+              </button>
+              <button
+                type="button"
+                title="Show kilometers per liter"
+                onClick={() => setFuelMetric('kmPerLiter')}
+                className={cn(
+                  "px-2.5 py-0.5 text-[9px] font-black rounded-sm transition-all cursor-pointer",
+                  fuelMetric === 'kmPerLiter' ? "bg-white text-zinc-900 shadow-2xs" : "text-zinc-500 hover:text-zinc-800"
+                )}
+              >
+                KM/LITER
+              </button>
+            </div>
+          </div>
+        );
+      case 'utilization_rate':
+        return (
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] font-black text-zinc-400 uppercase tracking-wider">Window:</span>
+            <div className="inline-flex rounded-md shadow-3xs p-0.5 bg-zinc-100 border border-zinc-200">
+              <button
+                type="button"
+                title="Show the last 30 days"
+                onClick={() => setUtilizationWindow('30')}
+                className={cn(
+                  "px-2.5 py-0.5 text-[9px] font-black rounded-sm transition-all cursor-pointer",
+                  utilizationWindow === '30' ? "bg-white text-zinc-900 shadow-2xs" : "text-zinc-500 hover:text-zinc-800"
+                )}
+              >
+                LAST 30 DAYS
+              </button>
+              <button
+                type="button"
+                title="Show the last 90 days"
+                onClick={() => setUtilizationWindow('90')}
+                className={cn(
+                  "px-2.5 py-0.5 text-[9px] font-black rounded-sm transition-all cursor-pointer",
+                  utilizationWindow === '90' ? "bg-white text-zinc-900 shadow-2xs" : "text-zinc-500 hover:text-zinc-800"
+                )}
+              >
+                LAST 90 DAYS
+              </button>
+            </div>
+          </div>
+        );
+      case 'load_efficiency':
+        return (
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] font-black text-zinc-400 uppercase tracking-wider">Trips:</span>
+            <div className="inline-flex rounded-md shadow-3xs p-0.5 bg-zinc-100 border border-zinc-200">
+              <button
+                type="button"
+                title="Include all trips"
+                onClick={() => setLoadFilter('all')}
+                className={cn(
+                  "px-2.5 py-0.5 text-[9px] font-black rounded-sm transition-all cursor-pointer",
+                  loadFilter === 'all' ? "bg-white text-zinc-900 shadow-2xs" : "text-zinc-500 hover:text-zinc-800"
+                )}
+              >
+                ALL TRIPS
+              </button>
+              <button
+                type="button"
+                title="Only include completed trips"
+                onClick={() => setLoadFilter('completed')}
+                className={cn(
+                  "px-2.5 py-0.5 text-[9px] font-black rounded-sm transition-all cursor-pointer",
+                  loadFilter === 'completed' ? "bg-white text-zinc-900 shadow-2xs" : "text-zinc-500 hover:text-zinc-800"
+                )}
+              >
+                COMPLETED
+              </button>
+            </div>
+          </div>
+        );
+      case 'shortage_analysis':
+        return (
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] font-black text-zinc-400 uppercase tracking-wider">View:</span>
+            <div className="inline-flex rounded-md shadow-3xs p-0.5 bg-zinc-100 border border-zinc-200">
+              <button
+                type="button"
+                title="Group by reason"
+                onClick={() => setShortageView('reason')}
+                className={cn(
+                  "px-2.5 py-0.5 text-[9px] font-black rounded-sm transition-all cursor-pointer",
+                  shortageView === 'reason' ? "bg-white text-zinc-900 shadow-2xs" : "text-zinc-500 hover:text-zinc-800"
+                )}
+              >
+                BY REASON
+              </button>
+              <button
+                type="button"
+                title="Group by product"
+                onClick={() => setShortageView('product')}
+                className={cn(
+                  "px-2.5 py-0.5 text-[9px] font-black rounded-sm transition-all cursor-pointer",
+                  shortageView === 'product' ? "bg-white text-zinc-900 shadow-2xs" : "text-zinc-500 hover:text-zinc-800"
+                )}
+              >
+                BY PRODUCT
+              </button>
+            </div>
+          </div>
+        );
+      case 'route_profitability':
+        return (
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] font-black text-zinc-400 uppercase tracking-wider">Sort:</span>
+              <div className="inline-flex rounded-md shadow-3xs p-0.5 bg-zinc-100 border border-zinc-200">
+                <button
+                  type="button"
+                  title="Show worst value routes first"
+                  onClick={() => setRouteSort('worst')}
+                  className={cn(
+                    "px-2.5 py-0.5 text-[9px] font-black rounded-sm transition-all cursor-pointer",
+                    routeSort === 'worst' ? "bg-white text-zinc-900 shadow-2xs" : "text-zinc-500 hover:text-zinc-800"
+                  )}
+                >
+                  WORST VALUE
+                </button>
+                <button
+                  type="button"
+                  title="Show best value routes first"
+                  onClick={() => setRouteSort('best')}
+                  className={cn(
+                    "px-2.5 py-0.5 text-[9px] font-black rounded-sm transition-all cursor-pointer",
+                    routeSort === 'best' ? "bg-white text-zinc-900 shadow-2xs" : "text-zinc-500 hover:text-zinc-800"
+                  )}
+                >
+                  BEST VALUE
+                </button>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] font-black text-zinc-400 uppercase tracking-wider">Limit:</span>
+              <select aria-label="Route profitability limit" title="Route profitability limit"
+                value={routeLimit}
+                onChange={(e) => setRouteLimit(Number(e.target.value))}
+                className="text-xs bg-zinc-50 border border-zinc-200 rounded px-2 py-0.5 font-bold text-zinc-700 outline-none cursor-pointer hover:bg-zinc-100 transition-all"
+              >
+                <option value={5}>Top 5</option>
+                <option value={8}>Top 8</option>
+                <option value={15}>Top 15</option>
               </select>
             </div>
           </div>
@@ -533,7 +724,7 @@ export function BusinessIntelligencePanel({
                     productsMetric === 'revenue' ? `R ${Number(value).toLocaleString()}` : `${value} Units`,
                     `${props.payload.name || 'Product'} (${productsMetric === 'revenue' ? 'Revenue' : 'Units Sold'})`
                   ]}
-                  contentStyle={{ backgroundColor: '#fff', borderRadius: '12px', border: '1px solid #e4e4e7', fontSize: '10px', maxWidth: '280px', fontWeight: 'bold' }}
+                  contentStyle={{ backgroundColor: '#fff', borderRadius: '12px', border: '1px solid #e4e4e7', fontSize: '10px', maxWidth: '280px', whiteSpace: 'normal', fontWeight: 'bold' }}
                 />
                 <Bar
                   dataKey={productsMetric === 'revenue' ? 'revenue' : 'units'}
@@ -541,6 +732,220 @@ export function BusinessIntelligencePanel({
                   radius={[6, 6, 0, 0]}
                   maxBarSize={45}
                 />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        );
+      }
+
+      case 'fuel_efficiency': {
+        const sorted = [...fuelAnalyticsData].sort((a, b) => b[fuelMetric] - a[fuelMetric]);
+
+        if (sorted.length === 0) {
+          return (
+            <div className="h-[320px] w-full flex items-center justify-center bg-zinc-50 rounded-xl border border-dashed border-zinc-200">
+              <div className="text-center p-6">
+                <Fuel className="w-8 h-8 text-zinc-300 mx-auto mb-2" />
+                <p className="text-zinc-500 text-sm">Log fuel refuels (with odometer readings) to see fleet cost & efficiency.</p>
+              </div>
+            </div>
+          );
+        }
+
+        return (
+          <div className="h-[320px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={sorted} margin={{ top: 10, right: 10, left: 0, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f4f4f5" />
+                <XAxis dataKey="name" stroke="#a1a1aa" fontSize={10} tickLine={false} axisLine={false} dy={8} />
+                <YAxis
+                  stroke="#a1a1aa"
+                  fontSize={10}
+                  tickLine={false}
+                  axisLine={false}
+                  tickFormatter={(val) => fuelMetric === 'costPerKm' ? `R${val}` : `${val}km`}
+                />
+                <Tooltip
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  formatter={(value: any) => [
+                    fuelMetric === 'costPerKm' ? `R ${Number(value).toFixed(2)} / km` : `${Number(value).toFixed(1)} km / liter`,
+                    fuelMetric === 'costPerKm' ? 'Cost per KM' : 'Fuel Efficiency'
+                  ]}
+                  contentStyle={{ backgroundColor: '#fff', borderRadius: '12px', border: '1px solid #e4e4e7', fontSize: '11px', fontWeight: 'bold' }}
+                />
+                <Bar dataKey={fuelMetric} fill="#ea580c" radius={[6, 6, 0, 0]} maxBarSize={55} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        );
+      }
+
+      case 'utilization_rate': {
+        const activeKey = utilizationWindow === '30' ? 'active30' : 'active90';
+        const pctKey = utilizationWindow === '30' ? 'pct30' : 'pct90';
+        const totalDays = utilizationWindow === '30' ? 30 : 90;
+        const sorted = [...utilizationRateData].sort((a, b) => b[pctKey] - a[pctKey]);
+
+        return (
+          <div className="h-[320px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={sorted} margin={{ top: 10, right: 10, left: 0, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f4f4f5" />
+                <XAxis dataKey="name" stroke="#a1a1aa" fontSize={10} tickLine={false} axisLine={false} dy={8} />
+                <YAxis stroke="#a1a1aa" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(val) => `${val}%`} />
+                <Tooltip
+                  formatter={(value, _name, props) => [
+                    `${props.payload[activeKey]} / ${totalDays} days active`,
+                    'Utilization'
+                  ]}
+                  contentStyle={{ backgroundColor: '#fff', borderRadius: '12px', border: '1px solid #e4e4e7', fontSize: '11px', fontWeight: 'bold' }}
+                />
+                <Bar dataKey={pctKey} fill="#2563eb" radius={[6, 6, 0, 0]} maxBarSize={55} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        );
+      }
+
+      case 'load_efficiency': {
+        const avgKey = loadFilter === 'all' ? 'avgUtilizationAll' : 'avgUtilizationCompleted';
+        const sorted = [...loadEfficiencyData]
+          .filter(row => row[avgKey] !== null)
+          .sort((a, b) => (b[avgKey] as number) - (a[avgKey] as number));
+
+        if (sorted.length === 0) {
+          return (
+            <div className="h-[320px] w-full flex items-center justify-center bg-zinc-50 rounded-xl border border-dashed border-zinc-200">
+              <div className="text-center p-6">
+                <PackageCheck className="w-8 h-8 text-zinc-300 mx-auto mb-2" />
+                <p className="text-zinc-500 text-sm">Set up truck max capacities on the KPI page to see load efficiency here.</p>
+              </div>
+            </div>
+          );
+        }
+
+        return (
+          <div className="h-[320px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={sorted} margin={{ top: 10, right: 10, left: 0, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f4f4f5" />
+                <XAxis dataKey="name" stroke="#a1a1aa" fontSize={10} tickLine={false} axisLine={false} dy={8} />
+                <YAxis stroke="#a1a1aa" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(val) => `${val}%`} domain={[0, 100]} />
+                <Tooltip
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  formatter={(value: any) => [`${value}%`, 'Avg. Capacity Used']}
+                  contentStyle={{ backgroundColor: '#fff', borderRadius: '12px', border: '1px solid #e4e4e7', fontSize: '11px', fontWeight: 'bold' }}
+                />
+                <Bar dataKey={avgKey} radius={[6, 6, 0, 0]} maxBarSize={55}>
+                  {sorted.map((row, index) => {
+                    const val = (row[avgKey] as number) ?? 0;
+                    const color = val >= 80 ? '#10b981' : val >= 50 ? '#f59e0b' : '#ef4444';
+                    return <Cell key={`cell-${index}`} fill={color} />;
+                  })}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        );
+      }
+
+      case 'shortage_analysis': {
+        const hasData = shortageData.byReason.length > 0;
+
+        if (!hasData) {
+          return (
+            <div className="h-[320px] w-full flex items-center justify-center bg-zinc-50 rounded-xl border border-dashed border-zinc-200">
+              <div className="text-center p-6">
+                <AlertTriangle className="w-8 h-8 text-zinc-300 mx-auto mb-2" />
+                <p className="text-zinc-500 text-sm">No partial or short deliveries recorded — nothing to report yet.</p>
+              </div>
+            </div>
+          );
+        }
+
+        const dataset = shortageView === 'reason'
+          ? shortageData.byReason.map(r => ({ label: r.reason, value: r.count }))
+          : shortageData.byProduct.map(p => ({ label: p.code, value: p.shortfallQty }));
+
+        return (
+          <div className="h-[320px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={dataset} margin={{ top: 10, right: 10, left: 0, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f4f4f5" />
+                <XAxis
+                  dataKey="label"
+                  stroke="#a1a1aa"
+                  fontSize={9}
+                  tickLine={false}
+                  axisLine={false}
+                  tickFormatter={(val) => val.length > 14 ? val.substring(0, 14) + '...' : val}
+                  dy={8}
+                />
+                <YAxis stroke="#a1a1aa" fontSize={10} tickLine={false} axisLine={false} />
+                <Tooltip
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  formatter={(value: any) => [
+                    shortageView === 'reason' ? `${value} incident${value === 1 ? '' : 's'}` : `${value} units short`,
+                    shortageView === 'reason' ? 'Incidents' : 'Shortfall Qty'
+                  ]}
+                  contentStyle={{ backgroundColor: '#fff', borderRadius: '12px', border: '1px solid #e4e4e7', fontSize: '11px', fontWeight: 'bold' }}
+                />
+                <Bar dataKey="value" fill="#dc2626" radius={[6, 6, 0, 0]} maxBarSize={50} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        );
+      }
+
+      case 'route_profitability': {
+        const sorted = [...routeProfitData].sort((a, b) =>
+          routeSort === 'worst' ? a.revenuePerKm - b.revenuePerKm : b.revenuePerKm - a.revenuePerKm
+        );
+        const sliced = sorted.slice(0, routeLimit);
+
+        if (sliced.length === 0) {
+          return (
+            <div className="h-[320px] w-full flex items-center justify-center bg-zinc-50 rounded-xl border border-dashed border-zinc-200">
+              <div className="text-center p-6">
+                <Route className="w-8 h-8 text-zinc-300 mx-auto mb-2" />
+                <p className="text-zinc-500 text-sm">Add delivery distances (km) on invoices to see revenue-per-km by client.</p>
+              </div>
+            </div>
+          );
+        }
+
+        return (
+          <div className="h-[320px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={sliced} layout="vertical" margin={{ top: 10, right: 10, left: 20, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f4f4f5" />
+                <XAxis
+                  type="number"
+                  stroke="#a1a1aa"
+                  fontSize={10}
+                  tickLine={false}
+                  axisLine={false}
+                  tickFormatter={(val) => `R${val}`}
+                />
+                <YAxis
+                  type="category"
+                  dataKey="name"
+                  stroke="#71717a"
+                  fontSize={9}
+                  tickLine={false}
+                  axisLine={false}
+                  width={90}
+                  tickFormatter={(val) => val.length > 15 ? val.substring(0, 15) + '...' : val}
+                />
+                <Tooltip
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  formatter={(value: any, _name: any, props: any) => [
+                    `R ${Number(value).toFixed(2)} / km (R${Number(props.payload.totalRevenue).toLocaleString()} over ${props.payload.totalDistance}km, ${props.payload.invoiceCount} jobs)`,
+                    'Revenue per KM'
+                  ]}
+                  contentStyle={{ backgroundColor: '#fff', borderRadius: '12px', border: '1px solid #e4e4e7', fontSize: '11px', maxWidth: '260px', whiteSpace: 'normal', fontWeight: 'bold' }}
+                />
+                <Bar dataKey="revenuePerKm" fill="#7c3aed" radius={[0, 6, 6, 0]} maxBarSize={20} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -564,6 +969,11 @@ export function BusinessIntelligencePanel({
             {selectedChartType === 'truck_utilization' && 'Fleet Trip Frequencies'}
             {selectedChartType === 'district_distribution' && 'Geographic Market Footprint'}
             {selectedChartType === 'top_products' && 'Best Selling Inventory Analytics'}
+            {selectedChartType === 'fuel_efficiency' && 'Fleet Fuel Cost & Efficiency'}
+            {selectedChartType === 'utilization_rate' && 'Truck Utilization Rate'}
+            {selectedChartType === 'load_efficiency' && 'Truck Load Capacity Efficiency'}
+            {selectedChartType === 'shortage_analysis' && 'Delivery Shortage & Damage Analysis'}
+            {selectedChartType === 'route_profitability' && 'Client Route Profitability (Revenue/KM)'}
           </h4>
         </div>
 
@@ -651,6 +1061,81 @@ export function BusinessIntelligencePanel({
         >
           <ShoppingBag className="w-3.5 h-3.5" />
           Best Sellers
+        </button>
+
+        <button
+          type="button"
+          title="Show fleet fuel cost & efficiency"
+          onClick={() => setSelectedChartType('fuel_efficiency')}
+          className={cn(
+            "flex items-center gap-2 px-3 py-1.5 text-xs font-bold rounded-xl transition-all cursor-pointer border",
+            selectedChartType === 'fuel_efficiency'
+              ? "bg-orange-600 border-orange-600 text-white shadow-sm shadow-orange-600/10"
+              : "bg-white border-zinc-200 text-zinc-650 hover:bg-zinc-50 hover:text-zinc-900"
+          )}
+        >
+          <Fuel className="w-3.5 h-3.5" />
+          Fuel Efficiency
+        </button>
+
+        <button
+          type="button"
+          title="Show truck utilization rate"
+          onClick={() => setSelectedChartType('utilization_rate')}
+          className={cn(
+            "flex items-center gap-2 px-3 py-1.5 text-xs font-bold rounded-xl transition-all cursor-pointer border",
+            selectedChartType === 'utilization_rate'
+              ? "bg-blue-600 border-blue-600 text-white shadow-sm shadow-blue-600/10"
+              : "bg-white border-zinc-200 text-zinc-650 hover:bg-zinc-50 hover:text-zinc-900"
+          )}
+        >
+          <Gauge className="w-3.5 h-3.5" />
+          Utilization Rate
+        </button>
+
+        <button
+          type="button"
+          title="Show truck load capacity efficiency"
+          onClick={() => setSelectedChartType('load_efficiency')}
+          className={cn(
+            "flex items-center gap-2 px-3 py-1.5 text-xs font-bold rounded-xl transition-all cursor-pointer border",
+            selectedChartType === 'load_efficiency'
+              ? "bg-cyan-600 border-cyan-600 text-white shadow-sm shadow-cyan-600/10"
+              : "bg-white border-zinc-200 text-zinc-650 hover:bg-zinc-50 hover:text-zinc-900"
+          )}
+        >
+          <PackageCheck className="w-3.5 h-3.5" />
+          Load Efficiency
+        </button>
+
+        <button
+          type="button"
+          title="Show delivery shortage & damage analysis"
+          onClick={() => setSelectedChartType('shortage_analysis')}
+          className={cn(
+            "flex items-center gap-2 px-3 py-1.5 text-xs font-bold rounded-xl transition-all cursor-pointer border",
+            selectedChartType === 'shortage_analysis'
+              ? "bg-red-600 border-red-600 text-white shadow-sm shadow-red-600/10"
+              : "bg-white border-zinc-200 text-zinc-650 hover:bg-zinc-50 hover:text-zinc-900"
+          )}
+        >
+          <AlertTriangle className="w-3.5 h-3.5" />
+          Shortage Analysis
+        </button>
+
+        <button
+          type="button"
+          title="Show client route profitability"
+          onClick={() => setSelectedChartType('route_profitability')}
+          className={cn(
+            "flex items-center gap-2 px-3 py-1.5 text-xs font-bold rounded-xl transition-all cursor-pointer border",
+            selectedChartType === 'route_profitability'
+              ? "bg-violet-600 border-violet-600 text-white shadow-sm shadow-violet-600/10"
+              : "bg-white border-zinc-200 text-zinc-650 hover:bg-zinc-50 hover:text-zinc-900"
+          )}
+        >
+          <Route className="w-3.5 h-3.5" />
+          Route Profit
         </button>
       </div>
 

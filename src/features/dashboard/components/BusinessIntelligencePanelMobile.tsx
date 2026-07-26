@@ -24,7 +24,12 @@ type ChartType =
   | 'delivery_pipeline'
   | 'truck_utilization'
   | 'district_distribution'
-  | 'top_products';
+  | 'top_products'
+  | 'fuel_efficiency'
+  | 'utilization_rate'
+  | 'load_efficiency'
+  | 'shortage_analysis'
+  | 'route_profitability';
 
 const CHART_TYPE_OPTIONS: { value: ChartType; label: string }[] = [
   { value: 'invoice_totals', label: 'Invoice Totals' },
@@ -33,6 +38,11 @@ const CHART_TYPE_OPTIONS: { value: ChartType; label: string }[] = [
   { value: 'truck_utilization', label: 'Fleet Dispatch' },
   { value: 'district_distribution', label: 'District Coverage' },
   { value: 'top_products', label: 'Best Sellers' },
+  { value: 'fuel_efficiency', label: 'Fuel Efficiency' },
+  { value: 'utilization_rate', label: 'Utilization Rate' },
+  { value: 'load_efficiency', label: 'Load Efficiency' },
+  { value: 'shortage_analysis', label: 'Shortage Analysis' },
+  { value: 'route_profitability', label: 'Route Profit' },
 ];
 
 /**
@@ -50,7 +60,12 @@ export function BusinessIntelligencePanelMobile({
   pipelineData,
   truckUtilizationData,
   districtData,
-  productData
+  productData,
+  fuelAnalyticsData,
+  utilizationRateData,
+  loadEfficiencyData,
+  shortageData,
+  routeProfitData
 }: {
   invoiceCount: number;
   invoiceTotalsOverTime: Analytics['invoiceTotalsOverTime'];
@@ -59,6 +74,11 @@ export function BusinessIntelligencePanelMobile({
   truckUtilizationData: Analytics['truckUtilizationData'];
   districtData: Analytics['districtData'];
   productData: Analytics['productData'];
+  fuelAnalyticsData: Analytics['fuelAnalyticsData'];
+  utilizationRateData: Analytics['utilizationRateData'];
+  loadEfficiencyData: Analytics['loadEfficiencyData'];
+  shortageData: Analytics['shortageData'];
+  routeProfitData: Analytics['routeProfitData'];
 }) {
   const [selectedChartType, setSelectedChartType] = useState<ChartType>('invoice_totals');
 
@@ -70,6 +90,12 @@ export function BusinessIntelligencePanelMobile({
   const [districtMetric, setDistrictMetric] = useState<'revenue' | 'deliveries'>('revenue');
   const [productsMetric, setProductsMetric] = useState<'units' | 'revenue'>('units');
   const [productsLimit, setProductsLimit] = useState<number>(5);
+  const [fuelMetric, setFuelMetric] = useState<'costPerKm' | 'kmPerLiter'>('costPerKm');
+  const [utilizationWindow, setUtilizationWindow] = useState<'30' | '90'>('30');
+  const [loadFilter, setLoadFilter] = useState<'all' | 'completed'>('all');
+  const [shortageView, setShortageView] = useState<'reason' | 'product'>('reason');
+  const [routeSort, setRouteSort] = useState<'worst' | 'best'>('worst');
+  const [routeLimit, setRouteLimit] = useState<number>(8);
 
   const renderChartFilters = () => {
     switch (selectedChartType) {
@@ -242,6 +268,153 @@ export function BusinessIntelligencePanelMobile({
               <option value={3}>Top 3</option>
               <option value={5}>Top 5</option>
               <option value={10}>Top 10</option>
+            </select>
+          </div>
+        );
+      case 'fuel_efficiency':
+        return (
+          <div className="inline-flex w-full rounded-md shadow-3xs p-0.5 bg-zinc-100 border border-zinc-200">
+            <button
+              type="button"
+              title="Show cost per kilometer"
+              onClick={() => setFuelMetric('costPerKm')}
+              className={cn(
+                "flex-1 px-2.5 py-1 text-[10px] font-black rounded-sm transition-all",
+                fuelMetric === 'costPerKm' ? "bg-white text-zinc-900 shadow-2xs" : "text-zinc-500"
+              )}
+            >
+              COST/KM
+            </button>
+            <button
+              type="button"
+              title="Show kilometers per liter"
+              onClick={() => setFuelMetric('kmPerLiter')}
+              className={cn(
+                "flex-1 px-2.5 py-1 text-[10px] font-black rounded-sm transition-all",
+                fuelMetric === 'kmPerLiter' ? "bg-white text-zinc-900 shadow-2xs" : "text-zinc-500"
+              )}
+            >
+              KM/LITER
+            </button>
+          </div>
+        );
+      case 'utilization_rate':
+        return (
+          <div className="inline-flex w-full rounded-md shadow-3xs p-0.5 bg-zinc-100 border border-zinc-200">
+            <button
+              type="button"
+              title="Show the last 30 days"
+              onClick={() => setUtilizationWindow('30')}
+              className={cn(
+                "flex-1 px-2.5 py-1 text-[10px] font-black rounded-sm transition-all",
+                utilizationWindow === '30' ? "bg-white text-zinc-900 shadow-2xs" : "text-zinc-500"
+              )}
+            >
+              LAST 30 DAYS
+            </button>
+            <button
+              type="button"
+              title="Show the last 90 days"
+              onClick={() => setUtilizationWindow('90')}
+              className={cn(
+                "flex-1 px-2.5 py-1 text-[10px] font-black rounded-sm transition-all",
+                utilizationWindow === '90' ? "bg-white text-zinc-900 shadow-2xs" : "text-zinc-500"
+              )}
+            >
+              LAST 90 DAYS
+            </button>
+          </div>
+        );
+      case 'load_efficiency':
+        return (
+          <div className="inline-flex w-full rounded-md shadow-3xs p-0.5 bg-zinc-100 border border-zinc-200">
+            <button
+              type="button"
+              title="Include all trips"
+              onClick={() => setLoadFilter('all')}
+              className={cn(
+                "flex-1 px-2.5 py-1 text-[10px] font-black rounded-sm transition-all",
+                loadFilter === 'all' ? "bg-white text-zinc-900 shadow-2xs" : "text-zinc-500"
+              )}
+            >
+              ALL TRIPS
+            </button>
+            <button
+              type="button"
+              title="Only include completed trips"
+              onClick={() => setLoadFilter('completed')}
+              className={cn(
+                "flex-1 px-2.5 py-1 text-[10px] font-black rounded-sm transition-all",
+                loadFilter === 'completed' ? "bg-white text-zinc-900 shadow-2xs" : "text-zinc-500"
+              )}
+            >
+              COMPLETED
+            </button>
+          </div>
+        );
+      case 'shortage_analysis':
+        return (
+          <div className="inline-flex w-full rounded-md shadow-3xs p-0.5 bg-zinc-100 border border-zinc-200">
+            <button
+              type="button"
+              title="Group by reason"
+              onClick={() => setShortageView('reason')}
+              className={cn(
+                "flex-1 px-2.5 py-1 text-[10px] font-black rounded-sm transition-all",
+                shortageView === 'reason' ? "bg-white text-zinc-900 shadow-2xs" : "text-zinc-500"
+              )}
+            >
+              BY REASON
+            </button>
+            <button
+              type="button"
+              title="Group by product"
+              onClick={() => setShortageView('product')}
+              className={cn(
+                "flex-1 px-2.5 py-1 text-[10px] font-black rounded-sm transition-all",
+                shortageView === 'product' ? "bg-white text-zinc-900 shadow-2xs" : "text-zinc-500"
+              )}
+            >
+              BY PRODUCT
+            </button>
+          </div>
+        );
+      case 'route_profitability':
+        return (
+          <div className="flex items-center gap-2">
+            <div className="inline-flex flex-1 rounded-md shadow-3xs p-0.5 bg-zinc-100 border border-zinc-200">
+              <button
+                type="button"
+                title="Show worst value routes first"
+                onClick={() => setRouteSort('worst')}
+                className={cn(
+                  "flex-1 px-2 py-1 text-[10px] font-black rounded-sm transition-all",
+                  routeSort === 'worst' ? "bg-white text-zinc-900 shadow-2xs" : "text-zinc-500"
+                )}
+              >
+                WORST
+              </button>
+              <button
+                type="button"
+                title="Show best value routes first"
+                onClick={() => setRouteSort('best')}
+                className={cn(
+                  "flex-1 px-2 py-1 text-[10px] font-black rounded-sm transition-all",
+                  routeSort === 'best' ? "bg-white text-zinc-900 shadow-2xs" : "text-zinc-500"
+                )}
+              >
+                BEST
+              </button>
+            </div>
+            <select
+              title="Route profitability limit"
+              value={routeLimit}
+              onChange={(e) => setRouteLimit(Number(e.target.value))}
+              className="text-xs bg-zinc-50 border border-zinc-200 rounded-lg px-2 py-1.5 font-bold text-zinc-700 outline-none shrink-0"
+            >
+              <option value={5}>Top 5</option>
+              <option value={8}>Top 8</option>
+              <option value={15}>Top 15</option>
             </select>
           </div>
         );
@@ -463,9 +636,224 @@ export function BusinessIntelligencePanelMobile({
                     productsMetric === 'revenue' ? `R ${Number(value).toLocaleString()}` : `${value} Units`,
                     `${props.payload.name || 'Product'} (${productsMetric === 'revenue' ? 'Revenue' : 'Units Sold'})`
                   ]}
-                  contentStyle={{ backgroundColor: '#fff', borderRadius: '12px', border: '1px solid #e4e4e7', fontSize: '10px', maxWidth: '240px', fontWeight: 'bold' }}
+                  contentStyle={{ backgroundColor: '#fff', borderRadius: '12px', border: '1px solid #e4e4e7', fontSize: '10px', maxWidth: '240px', whiteSpace: 'normal', fontWeight: 'bold' }}
                 />
                 <Bar dataKey={productsMetric === 'revenue' ? 'revenue' : 'units'} fill="#8b5cf6" radius={[6, 6, 0, 0]} maxBarSize={40} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        );
+      }
+
+      case 'fuel_efficiency': {
+        const sorted = [...fuelAnalyticsData].sort((a, b) => b[fuelMetric] - a[fuelMetric]);
+
+        if (sorted.length === 0) {
+          return (
+            <div className="h-[260px] w-full flex items-center justify-center bg-zinc-50 rounded-xl border border-dashed border-zinc-200">
+              <div className="text-center p-6">
+                <BarChart3 className="w-8 h-8 text-zinc-300 mx-auto mb-2" />
+                <p className="text-zinc-500 text-xs">Log fuel refuels (with odometer readings) to see fleet cost & efficiency.</p>
+              </div>
+            </div>
+          );
+        }
+
+        return (
+          <div className="h-[260px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={sorted} margin={{ top: 10, right: 10, left: 0, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f4f4f5" />
+                <XAxis dataKey="name" stroke="#a1a1aa" fontSize={9} tickLine={false} axisLine={false} dy={8} />
+                <YAxis
+                  stroke="#a1a1aa"
+                  fontSize={9}
+                  tickLine={false}
+                  axisLine={false}
+                  tickFormatter={(val) => fuelMetric === 'costPerKm' ? `R${val}` : `${val}km`}
+                  width={44}
+                />
+                <Tooltip
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  formatter={(value: any) => [
+                    fuelMetric === 'costPerKm' ? `R ${Number(value).toFixed(2)} / km` : `${Number(value).toFixed(1)} km / liter`,
+                    fuelMetric === 'costPerKm' ? 'Cost per KM' : 'Fuel Efficiency'
+                  ]}
+                  contentStyle={{ backgroundColor: '#fff', borderRadius: '12px', border: '1px solid #e4e4e7', fontSize: '11px', fontWeight: 'bold' }}
+                />
+                <Bar dataKey={fuelMetric} fill="#ea580c" radius={[6, 6, 0, 0]} maxBarSize={40} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        );
+      }
+
+      case 'utilization_rate': {
+        const pctKey = utilizationWindow === '30' ? 'pct30' : 'pct90';
+        const activeKey = utilizationWindow === '30' ? 'active30' : 'active90';
+        const totalDays = utilizationWindow === '30' ? 30 : 90;
+        const sorted = [...utilizationRateData].sort((a, b) => b[pctKey] - a[pctKey]);
+
+        return (
+          <div className="h-[260px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={sorted} margin={{ top: 10, right: 10, left: 0, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f4f4f5" />
+                <XAxis dataKey="name" stroke="#a1a1aa" fontSize={9} tickLine={false} axisLine={false} dy={8} />
+                <YAxis stroke="#a1a1aa" fontSize={9} tickLine={false} axisLine={false} tickFormatter={(val) => `${val}%`} width={36} />
+                <Tooltip
+                  formatter={(value, _name, props) => [
+                    `${props.payload[activeKey]} / ${totalDays} days active`,
+                    'Utilization'
+                  ]}
+                  contentStyle={{ backgroundColor: '#fff', borderRadius: '12px', border: '1px solid #e4e4e7', fontSize: '11px', fontWeight: 'bold' }}
+                />
+                <Bar dataKey={pctKey} fill="#2563eb" radius={[6, 6, 0, 0]} maxBarSize={40} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        );
+      }
+
+      case 'load_efficiency': {
+        const avgKey = loadFilter === 'all' ? 'avgUtilizationAll' : 'avgUtilizationCompleted';
+        const sorted = [...loadEfficiencyData]
+          .filter(row => row[avgKey] !== null)
+          .sort((a, b) => (b[avgKey] as number) - (a[avgKey] as number));
+
+        if (sorted.length === 0) {
+          return (
+            <div className="h-[260px] w-full flex items-center justify-center bg-zinc-50 rounded-xl border border-dashed border-zinc-200">
+              <div className="text-center p-6">
+                <BarChart3 className="w-8 h-8 text-zinc-300 mx-auto mb-2" />
+                <p className="text-zinc-500 text-xs">Set up truck max capacities on the KPI page to see load efficiency here.</p>
+              </div>
+            </div>
+          );
+        }
+
+        return (
+          <div className="h-[260px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={sorted} margin={{ top: 10, right: 10, left: 0, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f4f4f5" />
+                <XAxis dataKey="name" stroke="#a1a1aa" fontSize={9} tickLine={false} axisLine={false} dy={8} />
+                <YAxis stroke="#a1a1aa" fontSize={9} tickLine={false} axisLine={false} tickFormatter={(val) => `${val}%`} width={36} domain={[0, 100]} />
+                <Tooltip
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  formatter={(value: any) => [`${value}%`, 'Avg. Capacity Used']}
+                  contentStyle={{ backgroundColor: '#fff', borderRadius: '12px', border: '1px solid #e4e4e7', fontSize: '11px', fontWeight: 'bold' }}
+                />
+                <Bar dataKey={avgKey} radius={[6, 6, 0, 0]} maxBarSize={40}>
+                  {sorted.map((row, index) => {
+                    const val = (row[avgKey] as number) ?? 0;
+                    const color = val >= 80 ? '#10b981' : val >= 50 ? '#f59e0b' : '#ef4444';
+                    return <Cell key={`cell-${index}`} fill={color} />;
+                  })}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        );
+      }
+
+      case 'shortage_analysis': {
+        const hasData = shortageData.byReason.length > 0;
+
+        if (!hasData) {
+          return (
+            <div className="h-[260px] w-full flex items-center justify-center bg-zinc-50 rounded-xl border border-dashed border-zinc-200">
+              <div className="text-center p-6">
+                <BarChart3 className="w-8 h-8 text-zinc-300 mx-auto mb-2" />
+                <p className="text-zinc-500 text-xs">No partial or short deliveries recorded — nothing to report yet.</p>
+              </div>
+            </div>
+          );
+        }
+
+        const dataset = shortageView === 'reason'
+          ? shortageData.byReason.map(r => ({ label: r.reason, value: r.count }))
+          : shortageData.byProduct.map(p => ({ label: p.code, value: p.shortfallQty }));
+
+        return (
+          <div className="h-[260px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={dataset} margin={{ top: 10, right: 10, left: 0, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f4f4f5" />
+                <XAxis
+                  dataKey="label"
+                  stroke="#a1a1aa"
+                  fontSize={8}
+                  tickLine={false}
+                  axisLine={false}
+                  tickFormatter={(val) => val.length > 10 ? val.substring(0, 10) + '...' : val}
+                  dy={8}
+                />
+                <YAxis stroke="#a1a1aa" fontSize={9} tickLine={false} axisLine={false} width={30} />
+                <Tooltip
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  formatter={(value: any) => [
+                    shortageView === 'reason' ? `${value} incident${value === 1 ? '' : 's'}` : `${value} units short`,
+                    shortageView === 'reason' ? 'Incidents' : 'Shortfall Qty'
+                  ]}
+                  contentStyle={{ backgroundColor: '#fff', borderRadius: '12px', border: '1px solid #e4e4e7', fontSize: '11px', fontWeight: 'bold' }}
+                />
+                <Bar dataKey="value" fill="#dc2626" radius={[6, 6, 0, 0]} maxBarSize={40} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        );
+      }
+
+      case 'route_profitability': {
+        const sorted = [...routeProfitData].sort((a, b) =>
+          routeSort === 'worst' ? a.revenuePerKm - b.revenuePerKm : b.revenuePerKm - a.revenuePerKm
+        );
+        const sliced = sorted.slice(0, routeLimit);
+
+        if (sliced.length === 0) {
+          return (
+            <div className="h-[260px] w-full flex items-center justify-center bg-zinc-50 rounded-xl border border-dashed border-zinc-200">
+              <div className="text-center p-6">
+                <BarChart3 className="w-8 h-8 text-zinc-300 mx-auto mb-2" />
+                <p className="text-zinc-500 text-xs">Add delivery distances (km) on invoices to see revenue-per-km by client.</p>
+              </div>
+            </div>
+          );
+        }
+
+        return (
+          <div className="h-[260px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={sliced} layout="vertical" margin={{ top: 10, right: 10, left: 10, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f4f4f5" />
+                <XAxis
+                  type="number"
+                  stroke="#a1a1aa"
+                  fontSize={9}
+                  tickLine={false}
+                  axisLine={false}
+                  tickFormatter={(val) => `R${val}`}
+                />
+                <YAxis
+                  type="category"
+                  dataKey="name"
+                  stroke="#71717a"
+                  fontSize={8}
+                  tickLine={false}
+                  axisLine={false}
+                  width={70}
+                  tickFormatter={(val) => val.length > 10 ? val.substring(0, 10) + '...' : val}
+                />
+                <Tooltip
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  formatter={(value: any) => [
+                    `R ${Number(value).toFixed(2)} / km`,
+                    'Revenue per KM'
+                  ]}
+                  contentStyle={{ backgroundColor: '#fff', borderRadius: '12px', border: '1px solid #e4e4e7', fontSize: '11px', fontWeight: 'bold' }}
+                />
+                <Bar dataKey="revenuePerKm" fill="#7c3aed" radius={[0, 6, 6, 0]} maxBarSize={18} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -485,6 +873,11 @@ export function BusinessIntelligencePanelMobile({
       case 'truck_utilization': return 'Fleet Trip Frequencies';
       case 'district_distribution': return 'Geographic Market Footprint';
       case 'top_products': return 'Best Selling Inventory Analytics';
+      case 'fuel_efficiency': return 'Fleet Fuel Cost & Efficiency';
+      case 'utilization_rate': return 'Truck Utilization Rate';
+      case 'load_efficiency': return 'Truck Load Capacity Efficiency';
+      case 'shortage_analysis': return 'Delivery Shortage & Damage Analysis';
+      case 'route_profitability': return 'Client Route Profitability (Revenue/KM)';
     }
   };
 

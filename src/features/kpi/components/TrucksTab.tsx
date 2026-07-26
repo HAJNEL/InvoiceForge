@@ -1,12 +1,18 @@
 import { useState, useMemo, useEffect } from 'react';
 import { ClipboardList, Loader2, Check, Truck as TruckIcon } from 'lucide-react';
 import { toast } from 'sonner';
+import {
+  ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend
+} from 'recharts';
 import { cn } from '../../../lib/utils';
 import { Product } from '../../products/hooks/useProducts';
 import { useTrucks } from '../../trucks/hooks/useTrucks';
 import { KpiTemplateKind } from '../hooks/useKpiTemplates';
 import { useKpiTruckCapacity, CapacityGrid } from '../hooks/useKpiTruckCapacity';
 import { KpiTemplateDialog } from './KpiTemplateDialog';
+
+// Shared with EmployeesTab's stacked-bar palette for visual consistency across the KPI page.
+const KPI_COLORS = ['#10b981', '#4f46e5', '#f59e0b', '#ec4899', '#8b5cf6', '#0ea5e9', '#f43f5e', '#14b8a6'];
 
 interface Props {
   products: Product[]; // all products
@@ -68,6 +74,18 @@ export function TrucksTab({ products, templateProductIds, onSaveTemplate, isMobi
     });
     return t;
   }, [grid, activeTrucks, templateProducts]);
+
+  // Max capacity per product, per truck - mirrors `grid` live so the chart updates as cells are edited.
+  const chartData = useMemo(() => {
+    return activeTrucks.map(truck => {
+      const row: Record<string, number | string> = { truck: truck.name };
+      templateProducts.forEach(p => {
+        const n = parseFloat(grid[p.id]?.[truck.id] ?? '');
+        row[p.stockCode] = Number.isFinite(n) ? n : 0;
+      });
+      return row;
+    });
+  }, [activeTrucks, templateProducts, grid]);
 
   const handleSave = async () => {
     setSaving(true);

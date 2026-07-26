@@ -53,6 +53,11 @@ interface DashboardMobileProps {
   truckUtilizationData: Analytics['truckUtilizationData'];
   districtData: Analytics['districtData'];
   productData: Analytics['productData'];
+  fuelAnalyticsData: Analytics['fuelAnalyticsData'];
+  utilizationRateData: Analytics['utilizationRateData'];
+  loadEfficiencyData: Analytics['loadEfficiencyData'];
+  shortageData: Analytics['shortageData'];
+  routeProfitData: Analytics['routeProfitData'];
   weekDays: Analytics['weekDays'];
   stats: Analytics['stats'];
   completedInvoices: UIInvoice[];
@@ -71,7 +76,8 @@ export function DashboardMobile({
   showFuelModal, setShowFuelModal,
   weekOffset, setWeekOffset, selectedCellInfo, setSelectedCellInfo,
   invoiceTotalsOverTime, topCustomersData, pipelineData, truckUtilizationData,
-  districtData, productData, weekDays, stats,
+  districtData, productData, fuelAnalyticsData, utilizationRateData,
+  loadEfficiencyData, shortageData, routeProfitData, weekDays, stats,
   completedInvoices, partiallyCompletedInvoices, weekNumber, getTripsForCell,
 }: DashboardMobileProps) {
   return (
@@ -145,6 +151,11 @@ export function DashboardMobile({
         truckUtilizationData={truckUtilizationData}
         districtData={districtData}
         productData={productData}
+        fuelAnalyticsData={fuelAnalyticsData}
+        utilizationRateData={utilizationRateData}
+        loadEfficiencyData={loadEfficiencyData}
+        shortageData={shortageData}
+        routeProfitData={routeProfitData}
       />
 
       {showDeliveredModal && (

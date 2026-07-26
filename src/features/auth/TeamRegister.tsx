@@ -134,6 +134,7 @@ export function TeamRegister() {
     setErrorMessage('');
     try {
       const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: 'select_account' });
       const { user: newUser } = await signInWithPopup(auth, provider);
 
       if ((newUser.email || '').toLowerCase() !== invitation.email.toLowerCase()) {
