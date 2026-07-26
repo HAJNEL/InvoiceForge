@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plus, Trash2, Edit3, Loader2, Calendar as CalendarIcon, Navigation, History, AlertTriangle, ChevronLeft, ChevronRight, RefreshCw, Search, Minimize2, MapPin, ClipboardList, SlidersHorizontal, Check, X, Send, ArrowUpDown } from 'lucide-react';
+import { Plus, Trash2, Edit3, Loader2, Calendar as CalendarIcon, Navigation, History, AlertTriangle, ChevronLeft, ChevronRight, RefreshCw, Search, Minimize2, MapPin, ClipboardList, SlidersHorizontal, Check, X, Send, ArrowUpDown, Printer } from 'lucide-react';
 import { cn } from '../../../lib/utils';
 import { Trip, TripStatus, Settings } from '../../../types';
 import { UIInvoice } from '../../invoices/hooks/useInvoices';
@@ -76,6 +76,7 @@ interface TripListMobileProps {
   onShowRoute: (trip: Trip) => void;
   onEditTrip: (trip: Trip) => void;
   onDeleteTrip: (trip: Trip) => void;
+  onPrintTrip: (trip: Trip) => void;
   onFlaggedClick: (trip: Trip) => void;
 
   currentPage: number;
@@ -96,7 +97,7 @@ export function TripListMobile({
   getTruckById, plannerCountByDate, onOpenPlanner,
   highlightedTripId, setHighlightedTripId,
   pendingStatuses, isPendingSubmitting, onCycleStatus, onConfirmStatus, onCancelPendingStatus, onPublishTrip,
-  onShowRoute, onEditTrip, onDeleteTrip, onFlaggedClick,
+  onShowRoute, onEditTrip, onDeleteTrip, onPrintTrip, onFlaggedClick,
   currentPage, totalPages, setCurrentPage
 }: TripListMobileProps) {
   const [isMapOpen, setIsMapOpen] = useState(false);
@@ -348,6 +349,7 @@ export function TripListMobile({
                           <MobileCardActionsMenu
                             actions={[
                               { label: 'Show Route', icon: Navigation, onClick: () => onShowRoute(trip) },
+                              { label: 'Print Report', icon: Printer, onClick: () => onPrintTrip(trip) },
                               { label: 'Edit', icon: Edit3, onClick: () => onEditTrip(trip) },
                               { label: 'Delete', icon: Trash2, onClick: () => onDeleteTrip(trip), destructive: true },
                             ]}

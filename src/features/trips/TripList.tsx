@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Plus, Trash2, Edit3, Loader2, AlertCircle, Calendar as CalendarIcon, Navigation, CheckCircle2, Package, X, History, AlertTriangle, Check, ChevronLeft, ChevronRight, RefreshCw, Search, Maximize2, Minimize2, MapPin, ClipboardList, Send } from 'lucide-react';
+import { Plus, Trash2, Edit3, Loader2, AlertCircle, Calendar as CalendarIcon, Navigation, CheckCircle2, Package, X, History, AlertTriangle, Check, ChevronLeft, ChevronRight, RefreshCw, Search, Maximize2, Minimize2, MapPin, ClipboardList, Send, Printer } from 'lucide-react';
 import { toast } from 'sonner';
 import { PartialConfirmModal } from '../../components/PartialConfirmModal';
 import { PartialConfirmModalMobile } from '../../components/PartialConfirmModalMobile';
@@ -26,6 +26,7 @@ import { DayPlannerModalMobile } from './TripListComponents/DayPlannerModalMobil
 import { TripListMobile } from './TripListComponents/TripListMobile';
 import { restoreInventoryForItems } from '../../utils/inventory';
 import { geocodeAddress, resolveInvoicePin } from '../../lib/geocoding';
+import { printTripManifest } from './utils/printTripManifest';
 
 const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_PLATFORM_KEY || '';
 const hasValidKey = Boolean(GOOGLE_MAPS_API_KEY);
@@ -758,6 +759,12 @@ export function TripList() {
           onShowRoute={(trip) => setRoutedTrip(trip)}
           onEditTrip={(trip) => navigate(`/trips/edit/${trip.id}`)}
           onDeleteTrip={(trip) => handleDeleteTrip(trip)}
+          onPrintTrip={(trip) => {
+            const opened = printTripManifest(trip, invoices, trucks);
+            if (!opened) {
+              toast.error('Popup Blocked', { description: 'Please allow popups for this site to print the trip manifest.' });
+            }
+          }}
           onFlaggedClick={handleFlaggedClick}
           currentPage={currentPage}
           totalPages={totalPages}
@@ -1286,6 +1293,18 @@ export function TripList() {
                                     )}
                                   >
                                     <Navigation className="w-4 h-4" />
+                                  </button>
+                                  <button
+                                    title="Print Trip Manifest (A4)"
+                                    onClick={() => {
+                                      const opened = printTripManifest(trip, invoices, trucks);
+                                      if (!opened) {
+                                        toast.error('Popup Blocked', { description: 'Please allow popups for this site to print the trip manifest.' });
+                                      }
+                                    }}
+                                    className="p-2 text-zinc-400 hover:text-brand-primary hover:bg-white rounded-lg border border-transparent hover:border-zinc-200 transition-all"
+                                  >
+                                    <Printer className="w-4 h-4" />
                                   </button>
                                   <button
                                     title='Edit'
