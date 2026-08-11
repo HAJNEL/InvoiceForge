@@ -33,6 +33,8 @@ import { TodoBoard } from './features/todos/TodoBoard';
 import { ReportsPage } from './features/reports/ReportsPage';
 import { KpiPage } from './features/kpi/KpiPage';
 import { DailyPlannerPage } from './features/planner/DailyPlannerPage';
+import { StaffList } from './features/staff/StaffList';
+import { TimeAttendancePage } from './features/time-attendance/TimeAttendancePage';
 
 export default function App() {
   const { user, loading, isTeamMember } = useAuth();
@@ -151,6 +153,8 @@ export default function App() {
           <Route path="/invoices/:id/edit" element={<ExtractionReview />} />
           <Route path="/invoices/:id/review" element={<ExtractionReview />} />
           <Route path="/trucks" element={<TruckList />} />
+          <Route path="/staff" element={<StaffList />} />
+          <Route path="/time-attendance" element={<TimeAttendancePage />} />
           <Route path="/reports" element={<ReportsPage />} />
           <Route path="/kpi" element={<KpiPage />} />
           <Route path="/trips" element={<TripList />} />

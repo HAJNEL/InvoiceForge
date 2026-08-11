@@ -6,6 +6,7 @@ import {
   Package, ClipboardList, ChevronDown, X, Menu, ListTodo, FileText, MapPin, Filter, ArrowLeft, UserCircle, CalendarCheck
 } from 'lucide-react';
 import { useTeamDashboard } from './useTeamDashboard';
+import { TeamAttendancePanel } from '../time-attendance/components/TeamAttendancePanel';
 import { useMyTasks } from '../todos/hooks/useMyTasks';
 import { MyTasksDrawer } from '../todos/components/MyTasksDrawer';
 import { TodayPlannerDialog } from './TodayPlannerDialog';
@@ -44,7 +45,7 @@ interface StockCountItem {
 export function TeamDashboard() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { profile, trips, invoices, invoicesCount, isOwner, loading, errorWord, knockdownItems, catalogProducts, inventoryItems, teamStockTakes, dayPlanners, toggleDayPlannerEntry } = useTeamDashboard();
+  const { profile, trips, invoices, invoicesCount, isOwner, loading, errorWord, knockdownItems, catalogProducts, inventoryItems, teamStockTakes, dayPlanners, toggleDayPlannerEntry, staff, ownerSettings } = useTeamDashboard();
 
   // Stock counter catalog tab
   const [stockCatalogTab, setStockCatalogTab] = useState<'products' | 'knockdown' | 'consumables'>('products');
@@ -52,6 +53,7 @@ export function TeamDashboard() {
   const [activeGroupToCount, setActiveGroupToCount] = useState<StockCountItem | null>(null);
   const [enteredQty, setEnteredQty] = useState<string>('');
   const [isSubmittingStock, setIsSubmittingStock] = useState(false);
+  const [expandedKnockdownGroups, setExpandedKnockdownGroups] = useState<Set<string>>(new Set());
 
   // Invoice Management filter state
   const [invoiceSearch, setInvoiceSearch] = useState('');
@@ -93,7 +95,8 @@ export function TeamDashboard() {
       'Delivered Checker': 3,
       'Stock Counter': 4,
       'Invoice Management': 5,
-      'Trip Overview': 6
+      'Trip Overview': 6,
+      'Time and Attendance': 7
     };
 
     return [...rawRoles].sort((a, b) => {
@@ -153,23 +156,105 @@ export function TeamDashboard() {
     ...(knockdownItems || []).filter(k => k.type === 'consumable').map(k => ({ stockCode: k.stockCode, description: k.description, displayName: k.displayName }))
   ], [catalogProducts, knockdownItems]);
 
+  // Which product each knockdown stock code belongs to (first linked product wins)
+  const knockdownProductByCode = React.useMemo(() => {
+    const map = new Map<string, string>();
+    (catalogProducts || []).forEach(p => {
+      (p.components || []).forEach(c => {
+        if (c.type === 'knockdown' && !map.has(c.stockCode)) {
+          map.set(c.stockCode, p.description || p.stockCode);
+        }
+      });
+    });
+    return map;
+  }, [catalogProducts]);
+
   const activeStockItems = React.useMemo<StockCountItem[]>(() => {
     const base = stockCatalogTab === 'products' ? productItems
       : stockCatalogTab === 'knockdown' ? knockdownCatalogItems
       : consumableItems;
     const q = searchQuery.toLowerCase().trim();
     if (!q) return base;
+    if (stockCatalogTab === 'knockdown') {
+      return base.filter(i =>
+        (i.displayName || '').toLowerCase().includes(q) ||
+        (knockdownProductByCode.get(i.stockCode) || '').toLowerCase().includes(q)
+      );
+    }
     return base.filter(i =>
       i.stockCode.toLowerCase().includes(q) ||
       i.description.toLowerCase().includes(q) ||
       (i.displayName || '').toLowerCase().includes(q)
     );
-  }, [stockCatalogTab, productItems, knockdownCatalogItems, consumableItems, searchQuery]);
+  }, [stockCatalogTab, productItems, knockdownCatalogItems, consumableItems, searchQuery, knockdownProductByCode]);
+
+  // Knockdown items grouped under the product they're linked to, in first-seen order
+  const knockdownGroups = React.useMemo(() => {
+    if (stockCatalogTab !== 'knockdown') return [];
+    const groups = new Map<string, StockCountItem[]>();
+    const order: string[] = [];
+    activeStockItems.forEach(item => {
+      const label = knockdownProductByCode.get(item.stockCode) || 'Ungrouped';
+      if (!groups.has(label)) { groups.set(label, []); order.push(label); }
+      groups.get(label)!.push(item);
+    });
+    const ordered = order.filter(l => l !== 'Ungrouped');
+    if (groups.has('Ungrouped')) ordered.push('Ungrouped');
+    return ordered.map(label => ({ label, items: groups.get(label)! }));
+  }, [stockCatalogTab, activeStockItems, knockdownProductByCode]);
 
   // All catalog items — used for submit lookup regardless of active tab
   const allCatalogItems = React.useMemo<StockCountItem[]>(() => [
     ...productItems, ...knockdownCatalogItems, ...consumableItems
   ], [productItems, knockdownCatalogItems, consumableItems]);
+
+  const renderStockRow = (item: StockCountItem) => {
+    const itemKey = `${item.stockCode}_${item.description}`;
+    const isLocalChanged = definedCounts[itemKey] !== undefined;
+
+    const matchingInventoryItem = (inventoryItems || []).find(
+      inv => inv.stockCode.toLowerCase().trim() === item.stockCode.toLowerCase().trim()
+    );
+    const currentInventoryAmount = matchingInventoryItem ? (matchingInventoryItem.qty || 0) : 0;
+    const currentVal = isLocalChanged ? definedCounts[itemKey] : currentInventoryAmount;
+
+    let bgClass = 'bg-white border-zinc-200 hover:border-zinc-350 hover:shadow-2xs';
+    if (isLocalChanged) bgClass = 'bg-orange-50/40 border-orange-400 shadow-2xs';
+
+    return (
+      <div
+        key={itemKey}
+        onClick={() => {
+          setActiveGroupToCount(item);
+          setEnteredQty(isLocalChanged ? currentVal.toString() : '');
+        }}
+        className={`p-4 rounded-3xl border transition-all cursor-pointer flex items-center justify-between gap-3 select-none hover:scale-[1.005] ${bgClass}`}
+      >
+        <div className="min-w-0 text-left flex-1">
+          <span className="font-mono text-[10px] font-black uppercase tracking-wider bg-zinc-100 text-zinc-750 px-2 py-0.5 rounded border border-zinc-200 inline-block">
+            {item.stockCode}
+          </span>
+          <p className="text-xs font-black mt-1 leading-snug text-zinc-900">
+            {item.displayName || item.description}
+          </p>
+          {item.displayName && item.description !== item.displayName && (
+            <p className="text-[10px] text-zinc-400 mt-0.5 truncate">{item.description}</p>
+          )}
+        </div>
+        <div className="shrink-0 pl-2">
+          {isLocalChanged ? (
+            <div className="flex items-center justify-center bg-orange-100 border border-orange-350 text-orange-950 px-4 py-2 rounded-2xl min-w-[54px] text-center font-sans font-black text-sm shadow-3xs">
+              {currentVal}
+            </div>
+          ) : (
+            <div className="flex items-center justify-center bg-emerald-50 border border-emerald-300 text-emerald-950 px-4 py-2 rounded-2xl min-w-[54px] text-center font-sans font-black text-sm shadow-3xs">
+              {currentInventoryAmount}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
 
   const handleSubmitStockTake = async () => {
     const records = Object.entries(definedCounts);
@@ -361,6 +446,8 @@ export function TeamDashboard() {
           knockdownItems={knockdownItems}
           catalogProducts={catalogProducts}
           inventoryItems={inventoryItems}
+          staff={staff}
+          ownerSettings={ownerSettings}
           rolesWithFallback={rolesWithFallback}
           currentRole={currentRole}
           onSelectRole={handleSelectRole}
@@ -557,6 +644,7 @@ export function TeamDashboard() {
                 currentRole === 'Loader' ? 'bg-orange-500' :
                 currentRole === 'Invoice Management' ? 'bg-sky-500' :
                 currentRole === 'Trip Overview' ? 'bg-rose-500' :
+                currentRole === 'Time and Attendance' ? 'bg-teal-500' :
                 'bg-purple-500'
               }`} />
               <h2 className="text-base font-black text-zinc-950 uppercase tracking-tight font-sans truncate">
@@ -569,6 +657,7 @@ export function TeamDashboard() {
                currentRole === 'Loader' ? 'Monitor load priority, check vehicle staging schedules, and verify loaded cargo.' :
                currentRole === 'Invoice Management' ? 'Browse the full invoice library. Filter by district, status, or client to find what you need fast.' :
                currentRole === 'Trip Overview' ? 'See every trip with its status and bundled invoices, and drill into invoice line items.' :
+               currentRole === 'Time and Attendance' ? 'Log or bulk-log staff clock in/out times for the business.' :
                'Perform destination check-lists, drop logs, and complete physical deliveries on site.'}
             </p>
             {rolesWithFallback.length > 1 && (
@@ -818,6 +907,8 @@ export function TeamDashboard() {
               </div>
             ) : currentRole === 'Trip Overview' ? (
               <TripOverviewTable trips={trips} invoices={invoices} />
+            ) : currentRole === 'Time and Attendance' ? (
+              profile ? <TeamAttendancePanel staff={staff} ownerId={profile.ownerId} teamMemberId={profile.id} attendanceSettings={ownerSettings?.timeAttendance} /> : null
             ) : currentRole === 'Stock Counter' ? (
               <div className="bg-white rounded-3xl p-6 border border-zinc-200 shadow-sm relative text-left space-y-4">
                 {/* Card Header */}
@@ -866,7 +957,7 @@ export function TeamDashboard() {
                   <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400 pointer-events-none" />
                   <input
                     type="text"
-                    placeholder="Search stock code or description…"
+                    placeholder={stockCatalogTab === 'knockdown' ? 'Search by name…' : 'Search stock code or description…'}
                     value={searchQuery}
                     onChange={e => setSearchQuery(e.target.value)}
                     title="Search items"
@@ -920,54 +1011,40 @@ export function TeamDashboard() {
                         )}
                       </div>
                     </div>
-                  ) : (
-                    activeStockItems.map((item) => {
-                      const itemKey = `${item.stockCode}_${item.description}`;
-                      const isLocalChanged = definedCounts[itemKey] !== undefined;
-
-                      const matchingInventoryItem = (inventoryItems || []).find(
-                        inv => inv.stockCode.toLowerCase().trim() === item.stockCode.toLowerCase().trim()
-                      );
-                      const currentInventoryAmount = matchingInventoryItem ? (matchingInventoryItem.qty || 0) : 0;
-                      const currentVal = isLocalChanged ? definedCounts[itemKey] : currentInventoryAmount;
-
-                      let bgClass = 'bg-white border-zinc-200 hover:border-zinc-350 hover:shadow-2xs';
-                      if (isLocalChanged) bgClass = 'bg-orange-50/40 border-orange-400 shadow-2xs';
-
+                  ) : stockCatalogTab === 'knockdown' ? (
+                    knockdownGroups.map(group => {
+                      const isExpanded = Boolean(searchQuery.trim()) || expandedKnockdownGroups.has(group.label);
+                      const countedInGroup = group.items.filter(item => definedCounts[`${item.stockCode}_${item.description}`] !== undefined).length;
                       return (
-                        <div
-                          key={itemKey}
-                          onClick={() => {
-                            setActiveGroupToCount(item);
-                            setEnteredQty(isLocalChanged ? currentVal.toString() : '');
-                          }}
-                          className={`p-4 rounded-3xl border transition-all cursor-pointer flex items-center justify-between gap-3 select-none hover:scale-[1.005] ${bgClass}`}
-                        >
-                          <div className="min-w-0 text-left flex-1">
-                            <span className="font-mono text-[10px] font-black uppercase tracking-wider bg-zinc-100 text-zinc-750 px-2 py-0.5 rounded border border-zinc-200 inline-block">
-                              {item.stockCode}
+                        <div key={group.label} className="rounded-2xl border border-zinc-200 overflow-hidden">
+                          <button
+                            type="button"
+                            title={isExpanded ? `Collapse ${group.label}` : `Expand ${group.label}`}
+                            onClick={() => setExpandedKnockdownGroups(prev => {
+                              const next = new Set(prev);
+                              if (next.has(group.label)) next.delete(group.label); else next.add(group.label);
+                              return next;
+                            })}
+                            className="w-full flex items-center justify-between gap-2 px-3.5 py-3 bg-zinc-50 hover:bg-zinc-100 transition-colors cursor-pointer"
+                          >
+                            <span className="text-[11px] font-black uppercase tracking-widest text-zinc-600 text-left truncate">
+                              {group.label}
                             </span>
-                            <p className="text-xs font-black mt-1 leading-snug text-zinc-900">
-                              {item.displayName || item.description}
-                            </p>
-                            {item.displayName && item.description !== item.displayName && (
-                              <p className="text-[10px] text-zinc-400 mt-0.5 truncate">{item.description}</p>
-                            )}
-                          </div>
-                          <div className="shrink-0 pl-2">
-                            {isLocalChanged ? (
-                              <div className="flex items-center justify-center bg-orange-100 border border-orange-350 text-orange-950 px-4 py-2 rounded-2xl min-w-[54px] text-center font-sans font-black text-sm shadow-3xs">
-                                {currentVal}
-                              </div>
-                            ) : (
-                              <div className="flex items-center justify-center bg-emerald-50 border border-emerald-300 text-emerald-950 px-4 py-2 rounded-2xl min-w-[54px] text-center font-sans font-black text-sm shadow-3xs">
-                                {currentInventoryAmount}
-                              </div>
-                            )}
-                          </div>
+                            <span className="flex items-center gap-2 shrink-0">
+                              <span className="text-[10px] font-bold text-zinc-400">{countedInGroup}/{group.items.length}</span>
+                              <ChevronDown className={`w-4 h-4 text-zinc-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                            </span>
+                          </button>
+                          {isExpanded && (
+                            <div className="p-2 space-y-2 bg-white">
+                              {group.items.map(item => renderStockRow(item))}
+                            </div>
+                          )}
                         </div>
                       );
                     })
+                  ) : (
+                    activeStockItems.map(item => renderStockRow(item))
                   )}
                 </div>
 

@@ -21,6 +21,7 @@ interface DashboardMobileProps {
   trucks: Truck[];
   paginatedTrucks: Truck[];
   invoices: UIInvoice[];
+  trips: Trip[];
   updateInvoice: (id: string, data: Partial<Record<string, unknown>>) => Promise<boolean>;
   updateTrip: (id: string, data: Partial<Record<string, unknown>>) => Promise<boolean>;
 
@@ -67,7 +68,7 @@ interface DashboardMobileProps {
 }
 
 export function DashboardMobile({
-  trucks, paginatedTrucks, invoices, updateInvoice, updateTrip,
+  trucks, paginatedTrucks, invoices, trips, updateInvoice, updateTrip,
   lastInvoicedAmount, historyInvoicedTotal, fuelLogs,
   trucksPage, setTrucksPage, totalTrucksPages, trucksPerPage,
   showDeliveredModal, setShowDeliveredModal,
@@ -114,6 +115,7 @@ export function DashboardMobile({
         lastInvoicedAmount={lastInvoicedAmount}
         historyInvoicedTotal={historyInvoicedTotal}
         fuelLogs={fuelLogs}
+        weekDays={weekDays}
       />
 
       <DispatchScheduleMobile
@@ -145,6 +147,8 @@ export function DashboardMobile({
 
       <BusinessIntelligencePanelMobile
         invoiceCount={invoices.length}
+        invoices={invoices}
+        trips={trips}
         invoiceTotalsOverTime={invoiceTotalsOverTime}
         topCustomersData={topCustomersData}
         pipelineData={pipelineData}

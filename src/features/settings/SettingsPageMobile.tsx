@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react';
 import { toast } from 'sonner';
 import {
   MapPin, Save, Loader2, Warehouse, Navigation, Image as ImageIcon, Upload, Trash2,
-  Check, AlertCircle, Bell, Send, Link2, Eye, EyeOff, PlugZap, Info, Copy, ChevronDown, CalendarCheck
+  Check, AlertCircle, Bell, Send, Link2, Eye, EyeOff, PlugZap, Info, Copy, CalendarCheck
 } from 'lucide-react';
 import { APIProvider, Map, AdvancedMarker, Pin, useMapsLibrary } from '@vis.gl/react-google-maps';
 import { sendNotification, TEST_NOTIFICATION } from '../../lib/notifications';
@@ -11,7 +11,9 @@ import { Settings, ZohoCredentials } from '../../types';
 import { NRLogo } from '../../components/Logo';
 import { TeamMembersSection } from './components/TeamMembersSection';
 import { CalendarSyncCard } from './components/CalendarSyncCard';
+import { RatesSectionMobile } from './components/RatesSectionMobile';
 import { cn } from '../../lib/utils';
+import { SETTINGS_TABS, SettingsTab } from './SettingsPage';
 
 // Pushover user keys are typically 30 alphanumeric characters. Used for a soft
 // (non-blocking) format warning — Pushover's API remains the source of truth.
@@ -46,48 +48,8 @@ interface SettingsPageMobileProps {
   setAddress: (v: string) => void;
   saveStatus: 'idle' | 'success' | 'error';
   setSaveStatus: (v: 'idle' | 'success' | 'error') => void;
-}
-
-/** Collapsible section shell used to reflow the desktop's stacked cards into an accordion. */
-function AccordionSection({
-  icon: Icon,
-  iconWrapClassName,
-  iconClassName,
-  title,
-  description,
-  defaultOpen = false,
-  children,
-}: {
-  icon: React.ComponentType<{ className?: string }>;
-  iconWrapClassName: string;
-  iconClassName: string;
-  title: string;
-  description: string;
-  defaultOpen?: boolean;
-  children: React.ReactNode;
-}) {
-  const [open, setOpen] = useState(defaultOpen);
-
-  return (
-    <div className="bg-white rounded-2xl shadow-sm border border-zinc-200 overflow-hidden">
-      <button
-        type="button"
-        title={open ? `Collapse ${title}` : `Expand ${title}`}
-        onClick={() => setOpen((o) => !o)}
-        className="w-full flex items-start gap-3 p-4 text-left mobile-tap-target"
-      >
-        <div className={cn('p-2.5 rounded-2xl shrink-0', iconWrapClassName)}>
-          <Icon className={cn('w-5 h-5', iconClassName)} />
-        </div>
-        <div className="flex-1 min-w-0">
-          <h3 className="text-sm font-bold text-zinc-900">{title}</h3>
-          <p className="text-xs text-zinc-500 mt-0.5">{description}</p>
-        </div>
-        <ChevronDown className={cn('w-4 h-4 text-zinc-400 shrink-0 mt-1 transition-transform', open && 'rotate-180')} />
-      </button>
-      {open && <div className="px-4 pb-4">{children}</div>}
-    </div>
-  );
+  activeTab: SettingsTab;
+  setActiveTab: (tab: SettingsTab) => void;
 }
 
 export function SettingsPageMobile({
@@ -100,6 +62,8 @@ export function SettingsPageMobile({
   setAddress,
   saveStatus,
   setSaveStatus,
+  activeTab,
+  setActiveTab,
 }: SettingsPageMobileProps) {
   return (
     <APIProvider apiKey={GOOGLE_MAPS_API_KEY}>
@@ -109,15 +73,38 @@ export function SettingsPageMobile({
           <p className="text-zinc-500 text-xs">Configure your application preferences.</p>
         </div>
 
-        <AccordionSection
-          icon={Warehouse}
-          iconWrapClassName="bg-brand-accent/10"
-          iconClassName="text-brand-accent"
-          title="Warehouse Location"
-          description="Starting point for all your delivery trips."
-          defaultOpen
-        >
-          <div className="space-y-4 pt-1">
+        <div className="flex items-center gap-1 bg-zinc-100 border border-zinc-200 rounded-2xl p-1 overflow-x-auto">
+          {SETTINGS_TABS.map(({ key, icon: Icon, label }) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setActiveTab(key)}
+              title={`Show the ${label} tab`}
+              className={cn(
+                'shrink-0 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-wider transition-all mobile-tap-target',
+                activeTab === key
+                  ? 'bg-white text-brand-primary shadow-sm border border-zinc-200'
+                  : 'text-zinc-400'
+              )}
+            >
+              <Icon className="w-3.5 h-3.5" />
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {activeTab === 'location' && (
+          <div className="bg-white rounded-2xl shadow-sm border border-zinc-200 overflow-hidden p-4 space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="p-2.5 rounded-2xl shrink-0 bg-brand-accent/10">
+                <Warehouse className="w-5 h-5 text-brand-accent" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="text-sm font-bold text-zinc-900">Warehouse Location</h3>
+                <p className="text-xs text-zinc-500 mt-0.5">Starting point for all your delivery trips.</p>
+              </div>
+            </div>
+
             <div className="space-y-2">
               <label className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Warehouse Address</label>
               <div className="relative">
@@ -168,64 +155,77 @@ export function SettingsPageMobile({
               />
             </div>
           </div>
-        </AccordionSection>
+        )}
 
-        <AccordionSection
-          icon={ImageIcon}
-          iconWrapClassName="bg-brand-primary/10"
-          iconClassName="text-brand-primary"
-          title="Sidebar Brand Identity"
-          description="Logo shown in the sidebar. Reverts to NR Logo if cleared."
-        >
-          <div className="pt-1">
+        {activeTab === 'sidebar' && (
+          <div className="bg-white rounded-2xl shadow-sm border border-zinc-200 overflow-hidden p-4 space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="p-2.5 rounded-2xl shrink-0 bg-brand-primary/10">
+                <ImageIcon className="w-5 h-5 text-brand-primary" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="text-sm font-bold text-zinc-900">Sidebar Brand Identity</h3>
+                <p className="text-xs text-zinc-500 mt-0.5">Logo shown in the sidebar. Reverts to NR Logo if cleared.</p>
+              </div>
+            </div>
             <SidebarLogoCustomizer settings={settings} onSave={saveSettings} />
           </div>
-        </AccordionSection>
+        )}
 
-        <AccordionSection
-          icon={Bell}
-          iconWrapClassName="bg-brand-accent/10"
-          iconClassName="text-brand-accent"
-          title="Push Notifications"
-          description="Add your Pushover key for push notifications."
-        >
-          <div className="pt-1">
+        {activeTab === 'notifications' && (
+          <div className="bg-white rounded-2xl shadow-sm border border-zinc-200 overflow-hidden p-4 space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="p-2.5 rounded-2xl shrink-0 bg-brand-accent/10">
+                <Bell className="w-5 h-5 text-brand-accent" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="text-sm font-bold text-zinc-900">Push Notifications</h3>
+                <p className="text-xs text-zinc-500 mt-0.5">Add your Pushover key for push notifications.</p>
+              </div>
+            </div>
             <PushoverKeyCard settings={settings} onSave={saveSettings} />
           </div>
-        </AccordionSection>
+        )}
 
-        <AccordionSection
-          icon={Link2}
-          iconWrapClassName="bg-brand-primary/10"
-          iconClassName="text-brand-primary"
-          title="Zoho Books Integration"
-          description="Push completed Client Invoices to Zoho Books."
-        >
-          <div className="pt-1">
-            {zohoLoading ? (
-              <div className="flex justify-center py-8">
-                <Loader2 className="w-6 h-6 text-brand-accent animate-spin" />
+        {activeTab === 'integrations' && (
+          <div className="space-y-4">
+            <div className="bg-white rounded-2xl shadow-sm border border-zinc-200 overflow-hidden p-4 space-y-4">
+              <div className="flex items-start gap-3">
+                <div className="p-2.5 rounded-2xl shrink-0 bg-brand-primary/10">
+                  <Link2 className="w-5 h-5 text-brand-primary" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-sm font-bold text-zinc-900">Zoho Books Integration</h3>
+                  <p className="text-xs text-zinc-500 mt-0.5">Push completed Client Invoices to Zoho Books.</p>
+                </div>
               </div>
-            ) : (
-              <ZohoIntegrationCard credentials={zohoCredentials} onSave={saveZohoCredentials} />
-            )}
-          </div>
-        </AccordionSection>
+              {zohoLoading ? (
+                <div className="flex justify-center py-8">
+                  <Loader2 className="w-6 h-6 text-brand-accent animate-spin" />
+                </div>
+              ) : (
+                <ZohoIntegrationCard credentials={zohoCredentials} onSave={saveZohoCredentials} />
+              )}
+            </div>
 
-        <AccordionSection
-          icon={CalendarCheck}
-          iconWrapClassName="bg-brand-primary/10"
-          iconClassName="text-brand-primary"
-          title="Google Calendar Sync"
-          description="Add your trips to your own Google Calendar."
-        >
-          <div className="pt-1">
-            <CalendarSyncCard settings={settings} onSave={saveSettings} />
+            <div className="bg-white rounded-2xl shadow-sm border border-zinc-200 overflow-hidden p-4">
+              <div className="flex items-start gap-3 mb-4">
+                <div className="p-2.5 rounded-2xl shrink-0 bg-brand-primary/10">
+                  <CalendarCheck className="w-5 h-5 text-brand-primary" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-sm font-bold text-zinc-900">Google Calendar Sync</h3>
+                  <p className="text-xs text-zinc-500 mt-0.5">Add your trips to your own Google Calendar.</p>
+                </div>
+              </div>
+              <CalendarSyncCard settings={settings} onSave={saveSettings} />
+            </div>
           </div>
-        </AccordionSection>
+        )}
 
-        {/* Team Members Management Section (already reflows itself via useIsMobile) */}
-        <TeamMembersSection />
+        {activeTab === 'team' && <TeamMembersSection />}
+
+        {activeTab === 'rates' && <RatesSectionMobile />}
       </div>
     </APIProvider>
   );

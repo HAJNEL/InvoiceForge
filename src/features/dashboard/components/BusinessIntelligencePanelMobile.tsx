@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import {
   ResponsiveContainer,
   AreaChart,
@@ -12,14 +12,18 @@ import {
   Tooltip,
   Legend
 } from 'recharts';
-import { BarChart3 } from 'lucide-react';
+import { BarChart3, CalendarRange, Info } from 'lucide-react';
 import { cn } from '../../../lib/utils';
 import { useDashboardAnalytics } from '../hooks/useDashboardAnalytics';
+import { UIInvoice } from '../../invoices/hooks/useInvoices';
+import { Trip } from '../../../types';
+import { ChartInfoModal } from './ChartInfoModal';
 
 type Analytics = ReturnType<typeof useDashboardAnalytics>;
 
 type ChartType =
   | 'invoice_totals'
+  | 'weekly_totals'
   | 'top_customers'
   | 'delivery_pipeline'
   | 'truck_utilization'
@@ -31,8 +35,24 @@ type ChartType =
   | 'shortage_analysis'
   | 'route_profitability';
 
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+// Standard ISO-8601 week number (Monday-start weeks, week 1 contains the year's first Thursday)
+function getISOWeek(date: Date): number {
+  const target = new Date(date.valueOf());
+  const dayNr = (date.getDay() + 6) % 7;
+  target.setDate(target.getDate() - dayNr + 3);
+  const firstThursday = target.valueOf();
+  target.setMonth(0, 1);
+  if (target.getDay() !== 4) {
+    target.setMonth(0, 1 + ((4 - target.getDay() + 7) % 7));
+  }
+  return 1 + Math.round((firstThursday - target.valueOf()) / 604800000);
+}
+
 const CHART_TYPE_OPTIONS: { value: ChartType; label: string }[] = [
   { value: 'invoice_totals', label: 'Invoice Totals' },
+  { value: 'weekly_totals', label: 'Weekly Totals' },
   { value: 'top_customers', label: 'Top Customers' },
   { value: 'delivery_pipeline', label: 'Delivery Pipeline' },
   { value: 'truck_utilization', label: 'Fleet Dispatch' },
@@ -55,6 +75,8 @@ const CHART_TYPE_OPTIONS: { value: ChartType; label: string }[] = [
  */
 export function BusinessIntelligencePanelMobile({
   invoiceCount,
+  invoices,
+  trips,
   invoiceTotalsOverTime,
   topCustomersData,
   pipelineData,
@@ -68,6 +90,8 @@ export function BusinessIntelligencePanelMobile({
   routeProfitData
 }: {
   invoiceCount: number;
+  invoices: UIInvoice[];
+  trips: Trip[];
   invoiceTotalsOverTime: Analytics['invoiceTotalsOverTime'];
   topCustomersData: Analytics['topCustomersData'];
   pipelineData: Analytics['pipelineData'];
@@ -83,6 +107,8 @@ export function BusinessIntelligencePanelMobile({
   const [selectedChartType, setSelectedChartType] = useState<ChartType>('invoice_totals');
 
   const [totalsTimeframe, setTotalsTimeframe] = useState<'last_7_days' | 'last_30_days' | 'last_12_months'>('last_30_days');
+  const [weeklyYear, setWeeklyYear] = useState<number>(new Date().getFullYear());
+  const [weeklyMonth, setWeeklyMonth] = useState<number>(new Date().getMonth());
   const [customersMetric, setCustomersMetric] = useState<'value' | 'volume'>('value');
   const [customersLimit, setCustomersLimit] = useState<number>(5);
   const [pipelineMetric, setPipelineMetric] = useState<'count' | 'value'>('value');
@@ -96,6 +122,70 @@ export function BusinessIntelligencePanelMobile({
   const [shortageView, setShortageView] = useState<'reason' | 'product'>('reason');
   const [routeSort, setRouteSort] = useState<'worst' | 'best'>('worst');
   const [routeLimit, setRouteLimit] = useState<number>(8);
+  const [infoOpen, setInfoOpen] = useState(false);
+
+  // Years with scheduled trips, plus the current year
+  const weeklyTotalsYears = useMemo(() => {
+    const years = new Set<number>();
+    trips.forEach(trip => {
+      if (trip.date && trip.date.length >= 4) years.add(parseInt(trip.date.slice(0, 4), 10));
+    });
+    years.add(new Date().getFullYear());
+    return Array.from(years).sort((a, b) => b - a);
+  }, [trips]);
+
+  // Chart: Weekly Totals — same basis as the "Week Total" on Weekly Dispatch Schedule
+  // (sum of invoiceIds' amounts on trips scheduled per day), bucketed into the
+  // selected month's ISO weeks instead of a single week.
+  const weeklyTotalsData = useMemo(() => {
+    const invoiceAmountById = new Map(invoices.map(inv => [inv.id, inv.amount || 0]));
+    const daysInMonth = new Date(weeklyYear, weeklyMonth + 1, 0).getDate();
+
+    const weekOrder: number[] = [];
+    const weekBuckets = new Map<number, { amount: number; count: number }>();
+    for (let day = 1; day <= daysInMonth; day++) {
+      const wk = getISOWeek(new Date(weeklyYear, weeklyMonth, day));
+      if (!weekBuckets.has(wk)) {
+        weekBuckets.set(wk, { amount: 0, count: 0 });
+        weekOrder.push(wk);
+      }
+    }
+
+    const mm = String(weeklyMonth + 1).padStart(2, '0');
+    const monthPrefix = `${weeklyYear}-${mm}-`;
+    trips.forEach(trip => {
+      if (!trip.date || !trip.date.startsWith(monthPrefix)) return;
+      const day = parseInt(trip.date.slice(8, 10), 10);
+      if (isNaN(day)) return;
+      const wk = getISOWeek(new Date(weeklyYear, weeklyMonth, day));
+      const bucket = weekBuckets.get(wk);
+      if (!bucket) return;
+      const tripInvoiceIds = trip.invoiceIds || [];
+      bucket.amount += tripInvoiceIds.reduce((sum, id) => sum + (invoiceAmountById.get(id) || 0), 0);
+      bucket.count += tripInvoiceIds.length;
+    });
+
+    return weekOrder.map(wk => {
+      const b = weekBuckets.get(wk)!;
+      return { week: wk, label: `Week ${wk}`, amount: b.amount, count: b.count };
+    });
+  }, [invoices, trips, weeklyYear, weeklyMonth]);
+
+  const isCurrentMonth = weeklyYear === new Date().getFullYear() && weeklyMonth === new Date().getMonth();
+
+  const goToPrevMonth = () => {
+    if (weeklyMonth === 0) { setWeeklyYear(y => y - 1); setWeeklyMonth(11); }
+    else setWeeklyMonth(m => m - 1);
+  };
+  const goToNextMonth = () => {
+    if (weeklyMonth === 11) { setWeeklyYear(y => y + 1); setWeeklyMonth(0); }
+    else setWeeklyMonth(m => m + 1);
+  };
+  const goToCurrentMonth = () => {
+    const now = new Date();
+    setWeeklyYear(now.getFullYear());
+    setWeeklyMonth(now.getMonth());
+  };
 
   const renderChartFilters = () => {
     switch (selectedChartType) {
@@ -111,6 +201,60 @@ export function BusinessIntelligencePanelMobile({
             <option value="last_30_days">Last 30 Days (Daily)</option>
             <option value="last_12_months">Last 12 Months (Monthly)</option>
           </select>
+        );
+      case 'weekly_totals':
+        return (
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <select
+                title="Year"
+                value={weeklyYear}
+                onChange={(e) => setWeeklyYear(Number(e.target.value))}
+                className="flex-1 text-xs bg-zinc-50 border border-zinc-200 rounded-lg px-2.5 py-2 font-bold text-zinc-700 outline-none"
+              >
+                {weeklyTotalsYears.map(y => <option key={y} value={y}>{y}</option>)}
+              </select>
+              <select
+                title="Month"
+                value={weeklyMonth}
+                onChange={(e) => setWeeklyMonth(Number(e.target.value))}
+                className="flex-1 text-xs bg-zinc-50 border border-zinc-200 rounded-lg px-2.5 py-2 font-bold text-zinc-700 outline-none"
+              >
+                {MONTH_NAMES.map((name, idx) => <option key={name} value={idx}>{name}</option>)}
+              </select>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                title="Previous month"
+                onClick={goToPrevMonth}
+                className="flex-1 px-3 py-1.5 bg-white border border-zinc-200 text-xs font-bold rounded-lg text-zinc-600 active:scale-95 transition-all shadow-sm"
+              >
+                ← Prev
+              </button>
+              <button
+                type="button"
+                title="Jump to current month"
+                onClick={goToCurrentMonth}
+                className={cn(
+                  "flex-1 px-2.5 py-1.5 text-xs font-bold rounded-lg transition-all",
+                  isCurrentMonth
+                    ? "bg-brand-primary text-white"
+                    : "bg-white border border-zinc-200 text-zinc-650 shadow-sm"
+                )}
+              >
+                Current
+              </button>
+              <button
+                type="button"
+                title="Next month"
+                onClick={goToNextMonth}
+                className="flex-1 px-3 py-1.5 bg-white border border-zinc-200 text-xs font-bold rounded-lg text-zinc-600 active:scale-95 transition-all shadow-sm"
+              >
+                Next →
+              </button>
+            </div>
+          </div>
         );
       case 'top_customers':
         return (
@@ -465,6 +609,47 @@ export function BusinessIntelligencePanelMobile({
                 />
                 <Area type="monotone" dataKey="amount" stroke="#10b981" strokeWidth={2.5} fillOpacity={1} fill="url(#colorAmountMobile)" />
               </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        );
+      }
+
+      case 'weekly_totals': {
+        if (weeklyTotalsData.length === 0) {
+          return (
+            <div className="h-[260px] w-full flex items-center justify-center bg-zinc-50 rounded-xl border border-dashed border-zinc-200">
+              <div className="text-center p-6">
+                <CalendarRange className="w-8 h-8 text-zinc-300 mx-auto mb-2" />
+                <p className="text-zinc-500 text-xs">No weeks to show for {MONTH_NAMES[weeklyMonth]} {weeklyYear}.</p>
+              </div>
+            </div>
+          );
+        }
+
+        return (
+          <div className="h-[260px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={weeklyTotalsData} margin={{ top: 10, right: 10, left: 0, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f4f4f5" />
+                <XAxis dataKey="label" stroke="#a1a1aa" fontSize={9} tickLine={false} axisLine={false} dy={8} />
+                <YAxis
+                  stroke="#a1a1aa"
+                  fontSize={9}
+                  tickLine={false}
+                  axisLine={false}
+                  tickFormatter={(val) => `R${val.toLocaleString()}`}
+                  width={44}
+                />
+                <Tooltip
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  formatter={(value: any, _name: any, props: any) => [
+                    `R ${Number(value).toLocaleString(undefined, { minimumFractionDigits: 2 })} (${props.payload.count} invoice${props.payload.count === 1 ? '' : 's'})`,
+                    'Total Value'
+                  ]}
+                  contentStyle={{ backgroundColor: '#fff', borderRadius: '12px', border: '1px solid #e4e4e7', fontSize: '11px', fontWeight: 'bold' }}
+                />
+                <Bar dataKey="amount" fill="#10b981" radius={[6, 6, 0, 0]} maxBarSize={55} />
+              </BarChart>
             </ResponsiveContainer>
           </div>
         );
@@ -868,6 +1053,7 @@ export function BusinessIntelligencePanelMobile({
   const currentTitle = () => {
     switch (selectedChartType) {
       case 'invoice_totals': return 'Financial Performance History';
+      case 'weekly_totals': return `Weekly Revenue — ${MONTH_NAMES[weeklyMonth]} ${weeklyYear}`;
       case 'top_customers': return 'Client Spend Analysis';
       case 'delivery_pipeline': return 'Operations Delivery pipeline';
       case 'truck_utilization': return 'Fleet Trip Frequencies';
@@ -899,11 +1085,26 @@ export function BusinessIntelligencePanelMobile({
         ))}
       </select>
 
-      <div>{renderChartFilters()}</div>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          title="How this graph works"
+          aria-label="How this graph works"
+          onClick={() => setInfoOpen(true)}
+          className="p-2 rounded-lg text-zinc-400 hover:text-sky-600 hover:bg-sky-50 border border-transparent hover:border-sky-200 transition-all shrink-0"
+        >
+          <Info className="w-4 h-4" />
+        </button>
+        <div className="flex-1">{renderChartFilters()}</div>
+      </div>
 
       <div className="relative min-h-[260px] w-full flex items-center justify-center">
         {renderSelectedChart()}
       </div>
+
+      {infoOpen && (
+        <ChartInfoModal chartKey={selectedChartType} onClose={() => setInfoOpen(false)} />
+      )}
     </div>
   );
 }

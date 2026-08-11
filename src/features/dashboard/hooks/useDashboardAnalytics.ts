@@ -419,7 +419,19 @@ export function useDashboardAnalytics({ invoices, trucks, trips, weekOffset, fue
   }, [weekOffset]);
 
   const stats = useMemo(() => {
-    if (!invoices.length) return {
+    // Scoped to the currently selected week (same Monday-Sunday range shown in the
+    // Weekly Dispatch Schedule) so the KPI cards move in lockstep with weekOffset.
+    const weekStart = weekDays[0]?.dateString;
+    const weekEnd = weekDays[weekDays.length - 1]?.dateString;
+    const getFinancialDateStr = (inv: UIInvoice) => inv.deliveredDate || inv.date;
+    const weekInvoices = weekStart && weekEnd
+      ? invoices.filter(inv => {
+          const d = getFinancialDateStr(inv);
+          return d >= weekStart && d <= weekEnd;
+        })
+      : invoices;
+
+    if (!weekInvoices.length) return {
       total: 0,
       assembly: 0,
       loaded: 0,
@@ -427,7 +439,7 @@ export function useDashboardAnalytics({ invoices, trucks, trips, weekOffset, fue
       invoicedAmt: 0
     };
 
-    return invoices.reduce((acc, inv) => {
+    return weekInvoices.reduce((acc, inv) => {
       acc.total += 1;
       const status = inv.status.toLowerCase();
       if (status === 'assembly' || status === 'assembled') acc.assembly += 1;
@@ -436,7 +448,7 @@ export function useDashboardAnalytics({ invoices, trucks, trips, weekOffset, fue
       if (status === 'invoiced') acc.invoicedAmt += (inv.amount || 0);
       return acc;
     }, { total: 0, assembly: 0, loaded: 0, delivered: 0, invoicedAmt: 0 });
-  }, [invoices]);
+  }, [invoices, weekDays]);
 
   const completedInvoices = useMemo(() => {
     // Includes partially-completed invoices so they remain visible alongside fully completed ones.

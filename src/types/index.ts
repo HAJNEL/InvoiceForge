@@ -142,7 +142,24 @@ export interface Settings {
   // Set when the account owner has opted in to Google Calendar sync (mirrors
   // TeamMember.calendarSyncEnabled for team members).
   calendarSyncEnabled?: boolean;
+  timeAttendance?: TimeAttendanceSettings;
+  rateSettings?: RateSettings;
   updatedAt: string;
+}
+
+export interface TimeAttendanceSettings {
+  checkInTime: string;
+  checkOutTime: string;
+  teaBreakStart: string;
+  teaBreakEnd: string;
+  teaBreakEnabledByDefault: boolean;
+  lunchBreakStart: string;
+  lunchBreakEnd: string;
+  lunchBreakEnabledByDefault: boolean;
+  weekStartDay: number; // 0=Sunday .. 6=Saturday
+  weekEndDay: number;   // 0=Sunday .. 6=Saturday
+  payInterval: 'daily' | 'fortnightly' | 'monthly';
+  overtimeThresholdHours: number;
 }
 
 // Lives in its own `zoho_credentials/{uid}` collection (owner-only Firestore
@@ -245,5 +262,99 @@ export interface TeamMember {
   createdAt: string;
   updatedAt: string;
   roles?: string[];
+}
+
+export interface StaffMember {
+  id: string;
+  userId: string;
+  number?: string;
+  firstName: string;
+  lastName: string;
+  birthdate?: string;
+  appointmentDate?: string;
+  identificationType: 'none' | 'rsa_id' | 'passport' | 'asylum_seeker' | 'refugee';
+  idNumber?: string;
+  otherNumber?: string;
+  passportCountryCode?: string;
+  incomeTaxNumber?: string;
+  jobTitle?: string;
+  email?: string;
+  cellNo?: string;
+  paymentMethod: 'cash' | 'cheque' | 'eft_manual';
+  bankAccount?: {
+    bankId?: string;
+    accountNumber?: string;
+    branchCode?: string;
+    accountType?: string;
+    holderRelationship?: string;
+    holderName?: string;
+  };
+  physicalAddress?: {
+    unitNumber?: string;
+    complex?: string;
+    streetNumber?: string;
+    streetOrFarmName?: string;
+    suburbOrDistrict?: string;
+    cityOrTown?: string;
+    code?: string;
+  };
+  postalAddress?: {
+    sameAsPhysical?: boolean;
+    line1?: string;
+    line2?: string;
+    line3?: string;
+    code?: string;
+  };
+  status: 'active' | 'inactive';
+  rateGroupId?: string;
+  rateTierId?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TimeLog {
+  id: string;
+  userId: string;
+  staffId: string;
+  date: string;
+  clockIn: string;
+  clockOut: string;
+  teaBreak?: boolean;
+  teaBreakStart?: string;
+  teaBreakEnd?: string;
+  lunchBreak?: boolean;
+  lunchBreakStart?: string;
+  lunchBreakEnd?: string;
+  breakMinutes?: number;
+  hours: number;
+  note?: string;
+  loggedByTeamMemberId?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// A seniority/performance level within a RateGroup (e.g. a "Casuals" group might
+// have Tier 1/2/3 as staff are promoted), each paying its own rate per 15 minutes.
+export interface RateTier {
+  id: string;
+  label: string;
+  ratePerQuarterHour: number;
+}
+
+export interface RateGroup {
+  id: string;
+  userId: string;
+  name: string;
+  tiers: RateTier[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+// Multipliers applied on top of a staff member's tier rate. Persisted on Settings
+// (like TimeAttendanceSettings) rather than per rate group, since they're
+// pay-rule-wide, not group-specific.
+export interface RateSettings {
+  holidayMultiplier: number;
+  overtimeMultiplier: number;
 }
 

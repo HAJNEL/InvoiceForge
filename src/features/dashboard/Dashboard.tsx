@@ -117,6 +117,7 @@ export function Dashboard() {
         trucks={trucks}
         paginatedTrucks={paginatedTrucks}
         invoices={invoices}
+        trips={trips}
         updateInvoice={updateInvoice}
         updateTrip={updateTrip}
         lastInvoicedAmount={lastInvoicedAmount}
@@ -194,6 +195,7 @@ export function Dashboard() {
         lastInvoicedAmount={lastInvoicedAmount}
         historyInvoicedTotal={historyInvoicedTotal}
         fuelLogs={fuelLogs}
+        weekDays={weekDays}
       />
 
       {/* Weekly Dispatch Schedule */}
@@ -227,6 +229,8 @@ export function Dashboard() {
 
       <BusinessIntelligencePanel
         invoiceCount={invoices.length}
+        invoices={invoices}
+        trips={trips}
         invoiceTotalsOverTime={invoiceTotalsOverTime}
         topCustomersData={topCustomersData}
         pipelineData={pipelineData}

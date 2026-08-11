@@ -9,6 +9,8 @@ import {
   ListTodo,
   Gauge,
   Users,
+  UserCog,
+  Clock,
   LogOut,
   ChevronRight,
   type LucideIcon,
@@ -30,6 +32,8 @@ const moreItems: MoreItem[] = [
   { name: 'Reports', href: '/reports', icon: BarChart3 },
   { name: 'KPI', href: '/kpi', icon: Gauge },
   { name: 'Recurring', href: '/recurring', icon: Repeat },
+  { name: 'Staff Members', href: '/staff', icon: UserCog },
+  { name: 'Time and Attendance', href: '/time-attendance', icon: Clock },
   { name: 'Team Dashboard', href: '/team-dashboard', icon: Users },
   { name: 'Settings', href: '/settings', icon: Settings },
 ];

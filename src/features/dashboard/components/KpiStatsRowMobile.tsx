@@ -20,27 +20,27 @@ const FUEL_PERIOD_OPTIONS: { value: FuelPeriod; label: string }[] = [
   { value: 'yearly', label: 'Yearly' },
 ];
 
-// Whether a 'YYYY-MM-DD' refuel date falls within the given rolling period,
-// anchored to today. Weekly uses a Monday-start calendar week.
+// Whether a 'YYYY-MM-DD' refuel date falls within the given period, anchored to the
+// currently selected Weekly Dispatch Schedule week (weekStart/weekEnd, Monday-Sunday)
+// rather than always "today" - so e.g. Monthly reflects the month the selected week
+// falls in. Daily has no week-scoped analog, so it stays anchored to the real today.
 // Kept identical to KpiStatsRow.tsx's copy so mobile/desktop numbers never drift.
-function isWithinFuelPeriod(refuelDate: string, period: FuelPeriod): boolean {
+function isWithinFuelPeriod(refuelDate: string, period: FuelPeriod, weekStart: string, weekEnd: string): boolean {
   const date = new Date(`${refuelDate}T00:00:00`);
   if (isNaN(date.getTime())) return false;
-  const now = new Date();
+  const anchor = new Date(`${weekStart}T00:00:00`);
 
   switch (period) {
-    case 'daily':
+    case 'daily': {
+      const now = new Date();
       return refuelDate === now.toISOString().slice(0, 10);
-    case 'weekly': {
-      const dayIndex = (now.getDay() + 6) % 7; // Monday = 0 ... Sunday = 6
-      const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - dayIndex);
-      const sunday = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 6, 23, 59, 59, 999);
-      return date >= monday && date <= sunday;
     }
+    case 'weekly':
+      return refuelDate >= weekStart && refuelDate <= weekEnd;
     case 'monthly':
-      return date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth();
+      return date.getFullYear() === anchor.getFullYear() && date.getMonth() === anchor.getMonth();
     case 'yearly':
-      return date.getFullYear() === now.getFullYear();
+      return date.getFullYear() === anchor.getFullYear();
   }
 }
 
@@ -113,7 +113,7 @@ function MiniStatTile({
 
 export function KpiStatsRowMobile({
   stats, onDeliveredClick, onPartiallyCompletedClick, onInvoicedClick, onFuelClick,
-  lastInvoicedAmount, historyInvoicedTotal, fuelLogs
+  lastInvoicedAmount, historyInvoicedTotal, fuelLogs, weekDays
 }: {
   stats: KpiStats;
   onDeliveredClick: () => void;
@@ -123,6 +123,8 @@ export function KpiStatsRowMobile({
   lastInvoicedAmount: number;
   historyInvoicedTotal: number;
   fuelLogs: FuelLog[];
+  // The Weekly Dispatch Schedule's selected week - anchors the Fuel period filter.
+  weekDays: { dateString: string }[];
 }) {
   const [invoicedMode, setInvoicedMode] = useState<InvoicedMetricMode>('last');
   const invoicedValue = invoicedMode === 'last' ? lastInvoicedAmount : historyInvoicedTotal;
@@ -131,9 +133,12 @@ export function KpiStatsRowMobile({
   const [fuelMetricMode, setFuelMetricMode] = useState<FuelMetricMode>('liters');
   const [fuelPeriod, setFuelPeriod] = useState<FuelPeriod>('monthly');
 
+  const weekStart = weekDays[0]?.dateString ?? '';
+  const weekEnd = weekDays[weekDays.length - 1]?.dateString ?? '';
+
   const fuelPeriodLogs = useMemo(
-    () => fuelLogs.filter(log => isWithinFuelPeriod(log.refuelDate, fuelPeriod)),
-    [fuelLogs, fuelPeriod]
+    () => fuelLogs.filter(log => isWithinFuelPeriod(log.refuelDate, fuelPeriod, weekStart, weekEnd)),
+    [fuelLogs, fuelPeriod, weekStart, weekEnd]
   );
   const fuelLitersTotal = useMemo(
     () => fuelPeriodLogs.reduce((sum, log) => sum + (log.liters || 0), 0),

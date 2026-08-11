@@ -3,8 +3,9 @@ import { onSnapshot, doc, collection, query, where, getDocs, limit, updateDoc, w
 import type { FieldValue } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { useAuth } from '../../core/hooks/useAuth';
-import { TeamMember, Trip, DayPlanner } from '../../types';
+import { TeamMember, Trip, DayPlanner, StaffMember, Settings } from '../../types';
 import { KnockdownItem } from '../stock/hooks/useStock';
+import { ProductComponent } from '../products/hooks/useProducts';
 
 export interface TeamInventoryItem {
   id: string;
@@ -73,6 +74,7 @@ export interface CatalogProduct {
   description: string;
   unitPrice: number;
   category?: 'product' | 'consumable';
+  components?: ProductComponent[];
   userId: string;
 }
 
@@ -90,6 +92,8 @@ export function useTeamDashboard() {
   const [teamStockSubmissions, setTeamStockSubmissions] = useState<StockTakeItem[]>([]);
   const [teamStockTakes, setTeamStockTakes] = useState<StockTakeSubmission[]>([]);
   const [dayPlanners, setDayPlanners] = useState<DayPlanner[]>([]);
+  const [staff, setStaff] = useState<StaffMember[]>([]);
+  const [ownerSettings, setOwnerSettings] = useState<Settings | null>(null);
   const [isOwner, setIsOwner] = useState(false);
   const [loading, setLoading] = useState(true);
   const [errorWord, setErrorWord] = useState('');
@@ -128,7 +132,7 @@ export function useTeamDashboard() {
             userId: user.uid,
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
-            roles: ['Assembler', 'Loader', 'Delivered Checker', 'Stock Counter', 'Invoice Management', 'Trip Overview'],
+            roles: ['Assembler', 'Loader', 'Delivered Checker', 'Stock Counter', 'Invoice Management', 'Trip Overview', 'Time and Attendance'],
           });
           return;
         }
@@ -195,6 +199,13 @@ export function useTeamDashboard() {
       collection(db, 'day_planners'),
       where('userId', '==', profile.ownerId)
     );
+
+    const qStaff = query(
+      collection(db, 'staff'),
+      where('userId', '==', profile.ownerId)
+    );
+
+    const ownerSettingsRef = doc(db, 'settings', profile.ownerId);
 
     let tripsDone = false;
     let invoicesDone = false;
@@ -275,6 +286,7 @@ export function useTeamDashboard() {
           description: v.description || '',
           unitPrice: Number(v.unitPrice) || 0,
           category: v.category || 'product',
+          components: v.components || [],
           userId: v.userId || ''
         });
       });
@@ -323,6 +335,22 @@ export function useTeamDashboard() {
       console.error("Fetch shared day planners error:", err);
     });
 
+    const unsubscribeStaff = onSnapshot(qStaff, (snap) => {
+      const results: StaffMember[] = [];
+      snap.forEach((d) => {
+        results.push({ id: d.id, ...d.data() } as StaffMember);
+      });
+      setStaff(results);
+    }, (err) => {
+      console.error("Fetch shared staff error:", err);
+    });
+
+    const unsubscribeOwnerSettings = onSnapshot(ownerSettingsRef, (snap) => {
+      setOwnerSettings(snap.exists() ? ({ id: snap.id, ...snap.data() } as Settings) : null);
+    }, (err) => {
+      console.error("Fetch owner settings error:", err);
+    });
+
     return () => {
       unsubscribeTrips();
       unsubscribeInvoices();
@@ -332,6 +360,8 @@ export function useTeamDashboard() {
       unsubscribeStockTakes();
       unsubscribeInventory();
       unsubscribeDayPlanners();
+      unsubscribeStaff();
+      unsubscribeOwnerSettings();
     };
   }, [profile]);
 
@@ -526,6 +556,8 @@ export function useTeamDashboard() {
     teamStockSubmissions,
     teamStockTakes,
     dayPlanners,
-    toggleDayPlannerEntry
+    toggleDayPlannerEntry,
+    staff,
+    ownerSettings
   };
 }

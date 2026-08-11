@@ -57,6 +57,9 @@ service cloud.firestore {
     function isValidKpiTemplates(data) { return true; }
     function isValidKpiReading(data) { return true; }
     function isValidKpiTruckCapacity(data) { return true; }
+    function isValidStaff(data) { return true; }
+    function isValidTimeLog(data) { return true; }
+    function isValidRateGroup(data) { return true; }
 
     match /invoices/{invoiceId} {
       allow get: if isSignedIn() && (resource == null || isOwner(resource.data) || isTeamMemberOfOwner(resource.data.userId));
@@ -415,6 +418,54 @@ service cloud.firestore {
       
       allow delete: if isSignedIn()
         && (existing().userId == request.auth.uid || isTeamMemberOfOwner(existing().userId));
+    }
+
+    match /staff/{staffId} {
+      allow get: if isSignedIn() && (resource == null || isOwner(resource.data) || isTeamMemberOfOwner(resource.data.userId));
+      allow list: if isSignedIn() && (resource == null || resource.data.userId == request.auth.uid || isTeamMember());
+
+      allow create: if isSignedIn()
+        && isValidId(staffId)
+        && isValidStaff(incoming())
+        && (incoming().userId == request.auth.uid || isTeamMemberOfOwner(incoming().userId));
+
+      allow update: if (isOwner(existing()) || isTeamMemberOfOwner(existing().userId))
+        && isValidStaff(incoming())
+        && incoming().userId == existing().userId;
+
+      allow delete: if isOwner(existing()) || isTeamMemberOfOwner(existing().userId);
+    }
+
+    match /time_logs/{timeLogId} {
+      allow get: if isSignedIn() && (resource == null || isOwner(resource.data) || isTeamMemberOfOwner(resource.data.userId));
+      allow list: if isSignedIn() && (resource == null || resource.data.userId == request.auth.uid || isTeamMember());
+
+      allow create: if isSignedIn()
+        && isValidId(timeLogId)
+        && isValidTimeLog(incoming())
+        && (incoming().userId == request.auth.uid || isTeamMemberOfOwner(incoming().userId));
+
+      allow update: if (isOwner(existing()) || isTeamMemberOfOwner(existing().userId))
+        && isValidTimeLog(incoming())
+        && incoming().userId == existing().userId;
+
+      allow delete: if isOwner(existing()) || isTeamMemberOfOwner(existing().userId);
+    }
+
+    match /rate_groups/{rateGroupId} {
+      allow get: if isSignedIn() && (resource == null || isOwner(resource.data) || isTeamMemberOfOwner(resource.data.userId));
+      allow list: if isSignedIn() && (resource == null || resource.data.userId == request.auth.uid || isTeamMember());
+
+      allow create: if isSignedIn()
+        && isValidId(rateGroupId)
+        && isValidRateGroup(incoming())
+        && (incoming().userId == request.auth.uid || isTeamMemberOfOwner(incoming().userId));
+
+      allow update: if (isOwner(existing()) || isTeamMemberOfOwner(existing().userId))
+        && isValidRateGroup(incoming())
+        && incoming().userId == existing().userId;
+
+      allow delete: if isOwner(existing()) || isTeamMemberOfOwner(existing().userId);
     }
   }
 }

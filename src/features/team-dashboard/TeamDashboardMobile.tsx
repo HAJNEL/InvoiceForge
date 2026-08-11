@@ -2,11 +2,11 @@ import { useState } from 'react';
 import { toast } from 'sonner';
 import { Link } from 'react-router-dom';
 import {
-  Search, Calendar, CalendarDays, ChevronRight, LogOut, Loader2, Shield, Info, AlertTriangle, Truck, RefreshCw,
+  Search, Calendar, CalendarDays, ChevronRight, ChevronDown, LogOut, Loader2, Shield, Info, AlertTriangle, Truck, RefreshCw,
   Package, ClipboardList, X, ListTodo, FileText, MapPin, Filter, UserCircle, CalendarCheck
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
-import { Trip, TripStatus, TeamMember } from '../../types';
+import { Trip, TripStatus, TeamMember, StaffMember, Settings } from '../../types';
 import { UIDashboardInvoice, CatalogProduct, TeamInventoryItem } from './useTeamDashboard';
 import { KnockdownItem } from '../stock/hooks/useStock';
 import { NRLogo } from '../../components/Logo';
@@ -14,6 +14,7 @@ import { MobileSheet } from '../../components/mobile/MobileSheet';
 import { MobileCard } from '../../components/mobile/MobileCard';
 import { TripOverviewTableMobile } from './components/TripOverviewTableMobile';
 import { applyStockCount } from '../stock/utils/applyStockCount';
+import { TeamAttendancePanel } from '../time-attendance/components/TeamAttendancePanel';
 
 interface StockCountItem {
   stockCode: string;
@@ -29,6 +30,7 @@ const ROLE_DOT_COLOR: Record<string, string> = {
   'Loader': 'bg-orange-500',
   'Invoice Management': 'bg-sky-500',
   'Trip Overview': 'bg-rose-500',
+  'Time and Attendance': 'bg-teal-500',
 };
 
 interface TeamDashboardMobileProps {
@@ -42,6 +44,8 @@ interface TeamDashboardMobileProps {
   knockdownItems: KnockdownItem[];
   catalogProducts: CatalogProduct[];
   inventoryItems: TeamInventoryItem[];
+  staff: StaffMember[];
+  ownerSettings: Settings | null;
 
   rolesWithFallback: string[];
   currentRole: string;
@@ -68,7 +72,7 @@ interface TeamDashboardMobileProps {
  */
 export function TeamDashboardMobile({
   profile, trips, invoices, invoicesCount, isOwner, loading, errorWord,
-  knockdownItems, catalogProducts, inventoryItems,
+  knockdownItems, catalogProducts, inventoryItems, staff, ownerSettings,
   rolesWithFallback, currentRole, onSelectRole,
   todayPlannerEntriesCount, onOpenPlanner, onOpenTasks, openTaskCount,
   onBackToMainAccount, onLogout, onOpenProfile,
@@ -82,6 +86,7 @@ export function TeamDashboardMobile({
   const [activeGroupToCount, setActiveGroupToCount] = useState<StockCountItem | null>(null);
   const [enteredQty, setEnteredQty] = useState<string>('');
   const [isSubmittingStock, setIsSubmittingStock] = useState(false);
+  const [expandedKnockdownGroups, setExpandedKnockdownGroups] = useState<Set<string>>(new Set());
 
   // Invoice Management filter state
   const [invoiceSearch, setInvoiceSearch] = useState('');
@@ -105,17 +110,45 @@ export function TeamDashboardMobile({
     ...(knockdownItems || []).filter(k => k.type === 'consumable').map(k => ({ stockCode: k.stockCode, description: k.description, displayName: k.displayName }))
   ];
 
+  // Which product each knockdown stock code belongs to (first linked product wins)
+  const knockdownProductByCode = new Map<string, string>();
+  (catalogProducts || []).forEach(p => {
+    (p.components || []).forEach(c => {
+      if (c.type === 'knockdown' && !knockdownProductByCode.has(c.stockCode)) {
+        knockdownProductByCode.set(c.stockCode, p.description || p.stockCode);
+      }
+    });
+  });
+
   const activeStockItemsBase = stockCatalogTab === 'products' ? productItems
     : stockCatalogTab === 'knockdown' ? knockdownCatalogItems
     : consumableItems;
   const stockQ = searchQuery.toLowerCase().trim();
   const activeStockItems = !stockQ ? activeStockItemsBase : activeStockItemsBase.filter(i =>
-    i.stockCode.toLowerCase().includes(stockQ) ||
-    i.description.toLowerCase().includes(stockQ) ||
-    (i.displayName || '').toLowerCase().includes(stockQ)
+    stockCatalogTab === 'knockdown'
+      ? (i.displayName || '').toLowerCase().includes(stockQ) ||
+        (knockdownProductByCode.get(i.stockCode) || '').toLowerCase().includes(stockQ)
+      : i.stockCode.toLowerCase().includes(stockQ) ||
+        i.description.toLowerCase().includes(stockQ) ||
+        (i.displayName || '').toLowerCase().includes(stockQ)
   );
 
   const allCatalogItems: StockCountItem[] = [...productItems, ...knockdownCatalogItems, ...consumableItems];
+
+  // Knockdown items grouped under the product they're linked to, in first-seen order
+  const knockdownGroups: { label: string; items: StockCountItem[] }[] = (() => {
+    if (stockCatalogTab !== 'knockdown') return [];
+    const groups = new Map<string, StockCountItem[]>();
+    const order: string[] = [];
+    activeStockItems.forEach(item => {
+      const label = knockdownProductByCode.get(item.stockCode) || 'Ungrouped';
+      if (!groups.has(label)) { groups.set(label, []); order.push(label); }
+      groups.get(label)!.push(item);
+    });
+    const ordered = order.filter(l => l !== 'Ungrouped');
+    if (groups.has('Ungrouped')) ordered.push('Ungrouped');
+    return ordered.map(label => ({ label, items: groups.get(label)! }));
+  })();
 
   const handleSubmitStockTake = async () => {
     const records = Object.entries(definedCounts);
@@ -254,6 +287,49 @@ export function TeamDashboardMobile({
   // strip (snap-scroll, consistent with KpiStatsRowMobile) rather than a
   // <select>, since this is a primary navigation control the user taps often.
   const showRolePills = rolesWithFallback.length > 0;
+
+  const renderStockRow = (item: StockCountItem) => {
+    const itemKey = `${item.stockCode}_${item.description}`;
+    const isLocalChanged = definedCounts[itemKey] !== undefined;
+
+    const matchingInventoryItem = (inventoryItems || []).find(
+      inv => inv.stockCode.toLowerCase().trim() === item.stockCode.toLowerCase().trim()
+    );
+    const currentInventoryAmount = matchingInventoryItem ? (matchingInventoryItem.qty || 0) : 0;
+    const currentVal = isLocalChanged ? definedCounts[itemKey] : currentInventoryAmount;
+
+    return (
+      <div
+        key={itemKey}
+        onClick={() => {
+          setActiveGroupToCount(item);
+          setEnteredQty(isLocalChanged ? currentVal.toString() : '');
+        }}
+        className={cn(
+          "p-3.5 rounded-2xl border transition-all flex items-center justify-between gap-3 select-none active:scale-[0.99]",
+          isLocalChanged ? "bg-orange-50/40 border-orange-400" : "bg-white border-zinc-200"
+        )}
+      >
+        <div className="min-w-0 text-left flex-1">
+          <span className="font-mono text-[10px] font-black uppercase tracking-wider bg-zinc-100 text-zinc-750 px-2 py-0.5 rounded border border-zinc-200 inline-block">
+            {item.stockCode}
+          </span>
+          <p className="text-xs font-black mt-1 leading-snug text-zinc-900">{item.displayName || item.description}</p>
+          {item.displayName && item.description !== item.displayName && (
+            <p className="text-[10px] text-zinc-400 mt-0.5 truncate">{item.description}</p>
+          )}
+        </div>
+        <div className="shrink-0 pl-2">
+          <div className={cn(
+            "flex items-center justify-center px-3.5 py-2 rounded-2xl min-w-[50px] text-center font-sans font-black text-sm border",
+            isLocalChanged ? "bg-orange-100 border-orange-350 text-orange-950" : "bg-emerald-50 border-emerald-300 text-emerald-950"
+          )}>
+            {currentVal}
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="min-h-screen bg-zinc-50 flex flex-col justify-start">
@@ -573,6 +649,8 @@ export function TeamDashboardMobile({
           </div>
         ) : currentRole === 'Trip Overview' ? (
           <TripOverviewTableMobile trips={trips} invoices={invoices} />
+        ) : currentRole === 'Time and Attendance' ? (
+          profile ? <TeamAttendancePanel staff={staff} ownerId={profile.ownerId} teamMemberId={profile.id} attendanceSettings={ownerSettings?.timeAttendance} /> : null
         ) : currentRole === 'Stock Counter' ? (
           <div className="bg-white rounded-3xl p-4 border border-zinc-200 shadow-sm relative space-y-4">
             <div className="flex flex-col gap-1">
@@ -616,7 +694,7 @@ export function TeamDashboardMobile({
               <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400 pointer-events-none" />
               <input
                 type="text"
-                placeholder="Search stock code or description…"
+                placeholder={stockCatalogTab === 'knockdown' ? 'Search by name…' : 'Search stock code or description…'}
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
                 title="Search items"
@@ -664,49 +742,40 @@ export function TeamDashboardMobile({
                     )}
                   </div>
                 </div>
-              ) : (
-                activeStockItems.map((item) => {
-                  const itemKey = `${item.stockCode}_${item.description}`;
-                  const isLocalChanged = definedCounts[itemKey] !== undefined;
-
-                  const matchingInventoryItem = (inventoryItems || []).find(
-                    inv => inv.stockCode.toLowerCase().trim() === item.stockCode.toLowerCase().trim()
-                  );
-                  const currentInventoryAmount = matchingInventoryItem ? (matchingInventoryItem.qty || 0) : 0;
-                  const currentVal = isLocalChanged ? definedCounts[itemKey] : currentInventoryAmount;
-
+              ) : stockCatalogTab === 'knockdown' ? (
+                knockdownGroups.map(group => {
+                  const isExpanded = Boolean(searchQuery.trim()) || expandedKnockdownGroups.has(group.label);
+                  const countedInGroup = group.items.filter(item => definedCounts[`${item.stockCode}_${item.description}`] !== undefined).length;
                   return (
-                    <div
-                      key={itemKey}
-                      onClick={() => {
-                        setActiveGroupToCount(item);
-                        setEnteredQty(isLocalChanged ? currentVal.toString() : '');
-                      }}
-                      className={cn(
-                        "p-3.5 rounded-2xl border transition-all flex items-center justify-between gap-3 select-none active:scale-[0.99]",
-                        isLocalChanged ? "bg-orange-50/40 border-orange-400" : "bg-white border-zinc-200"
-                      )}
-                    >
-                      <div className="min-w-0 text-left flex-1">
-                        <span className="font-mono text-[10px] font-black uppercase tracking-wider bg-zinc-100 text-zinc-750 px-2 py-0.5 rounded border border-zinc-200 inline-block">
-                          {item.stockCode}
+                    <div key={group.label} className="rounded-2xl border border-zinc-200 overflow-hidden">
+                      <button
+                        type="button"
+                        title={isExpanded ? `Collapse ${group.label}` : `Expand ${group.label}`}
+                        onClick={() => setExpandedKnockdownGroups(prev => {
+                          const next = new Set(prev);
+                          if (next.has(group.label)) next.delete(group.label); else next.add(group.label);
+                          return next;
+                        })}
+                        className="w-full flex items-center justify-between gap-2 px-3.5 py-3 bg-zinc-50 active:bg-zinc-100 transition-colors"
+                      >
+                        <span className="text-[11px] font-black uppercase tracking-widest text-zinc-600 text-left truncate">
+                          {group.label}
                         </span>
-                        <p className="text-xs font-black mt-1 leading-snug text-zinc-900">{item.displayName || item.description}</p>
-                        {item.displayName && item.description !== item.displayName && (
-                          <p className="text-[10px] text-zinc-400 mt-0.5 truncate">{item.description}</p>
-                        )}
-                      </div>
-                      <div className="shrink-0 pl-2">
-                        <div className={cn(
-                          "flex items-center justify-center px-3.5 py-2 rounded-2xl min-w-[50px] text-center font-sans font-black text-sm border",
-                          isLocalChanged ? "bg-orange-100 border-orange-350 text-orange-950" : "bg-emerald-50 border-emerald-300 text-emerald-950"
-                        )}>
-                          {currentVal}
+                        <span className="flex items-center gap-2 shrink-0">
+                          <span className="text-[10px] font-bold text-zinc-400">{countedInGroup}/{group.items.length}</span>
+                          <ChevronDown className={cn("w-4 h-4 text-zinc-400 transition-transform", isExpanded && "rotate-180")} />
+                        </span>
+                      </button>
+                      {isExpanded && (
+                        <div className="p-2 space-y-2 bg-white">
+                          {group.items.map(item => renderStockRow(item))}
                         </div>
-                      </div>
+                      )}
                     </div>
                   );
                 })
+              ) : (
+                activeStockItems.map(item => renderStockRow(item))
               )}
             </div>
 

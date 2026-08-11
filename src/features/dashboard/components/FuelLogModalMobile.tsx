@@ -23,6 +23,7 @@ export function FuelLogModalMobile({ trucks, onClose }: {
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [logFilterTruckId, setLogFilterTruckId] = useState<string>('all');
 
   const isValid = truckId && liters && fuelPrice && odometerReading && refuelDate
     && Number(liters) > 0 && Number(fuelPrice) > 0 && Number(odometerReading) >= 0;
@@ -89,6 +90,24 @@ export function FuelLogModalMobile({ trucks, onClose }: {
     const truck = trucks.find(t => t.id === id);
     return truck ? `${truck.name} (${truck.licensePlate})` : 'Unknown truck';
   };
+
+  // Distance driven since the previous refuel for the same truck, keyed by log id.
+  const distanceSincePrevById = (() => {
+    const map = new Map<string, number | null>();
+    const byTruck = new Map<string, FuelLog[]>();
+    for (const log of fuelLogs) {
+      const list = byTruck.get(log.truckId) || [];
+      list.push(log);
+      byTruck.set(log.truckId, list);
+    }
+    for (const list of byTruck.values()) {
+      const sorted = [...list].sort((a, b) => a.odometerReading - b.odometerReading);
+      sorted.forEach((log, index) => {
+        map.set(log.id, index === 0 ? null : log.odometerReading - sorted[index - 1].odometerReading);
+      });
+    }
+    return map;
+  })();
 
   return (
     <MobileSheet
@@ -207,7 +226,21 @@ export function FuelLogModalMobile({ trucks, onClose }: {
         </div>
 
         <div className="space-y-2">
-          <p className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Recent Logs</p>
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Recent Logs</p>
+            <select
+              title="Filter logs by truck"
+              aria-label="Filter logs by truck"
+              value={logFilterTruckId}
+              onChange={(e) => setLogFilterTruckId(e.target.value)}
+              className="text-xs bg-zinc-50 border border-zinc-200 rounded-lg px-2 py-1 font-bold text-zinc-700 outline-none"
+            >
+              <option value="all">All Trucks</option>
+              {trucks.map(t => (
+                <option key={t.id} value={t.id}>{t.name} ({t.licensePlate})</option>
+              ))}
+            </select>
+          </div>
           {loading ? (
             <div className="flex justify-center py-8">
               <Loader2 className="w-6 h-6 text-brand-accent animate-spin" />
@@ -217,9 +250,15 @@ export function FuelLogModalMobile({ trucks, onClose }: {
               <Inbox className="w-10 h-10 text-zinc-200 mx-auto mb-3" />
               <p className="text-zinc-400 text-xs">No fuel logs yet.</p>
             </div>
+          ) : fuelLogs.filter(log => logFilterTruckId === 'all' || log.truckId === logFilterTruckId).length === 0 ? (
+            <div className="py-8 text-center">
+              <Inbox className="w-10 h-10 text-zinc-200 mx-auto mb-3" />
+              <p className="text-zinc-400 text-xs">No fuel logs for this truck yet.</p>
+            </div>
           ) : (
             <div className="space-y-2">
               {[...fuelLogs]
+                .filter(log => logFilterTruckId === 'all' || log.truckId === logFilterTruckId)
                 .sort((a, b) => b.refuelDate.localeCompare(a.refuelDate))
                 .map(log => (
                   <MobileCard key={log.id} className={editingId === log.id ? 'border-brand-primary/40 bg-brand-primary/5' : undefined}>
@@ -227,12 +266,16 @@ export function FuelLogModalMobile({ trucks, onClose }: {
                       <div className="min-w-0">
                         <p className="font-bold text-xs text-zinc-800 truncate">{getTruckLabel(log.truckId)}</p>
                         <p className="text-zinc-400 text-[10px] mt-0.5">
-                          {log.refuelDate} · {log.liters} L · {log.odometerReading.toLocaleString()} km odo
+                          {log.refuelDate} · {log.liters} L · {
+                            distanceSincePrevById.get(log.id) != null
+                              ? `${distanceSincePrevById.get(log.id)!.toLocaleString()} km since last refuel`
+                              : 'first log for this truck'
+                          }
                         </p>
                       </div>
                       <div className="text-right shrink-0">
                         <p className="font-black text-xs text-zinc-800">R {log.cost.toLocaleString()}</p>
-                        <p className="text-zinc-400 text-[10px] mt-0.5">R {log.fuelPrice}/L</p>
+                        <p className="text-zinc-400 text-[10px] mt-0.5">R {log.fuelPrice.toFixed(2)}/L</p>
                       </div>
                     </MobileCard.Primary>
                     <MobileCard.Actions>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { toast } from 'sonner';
-import { MapPin, Save, Loader2, Warehouse, Navigation, Image as ImageIcon, Upload, Trash2, Check, AlertCircle, Bell, Send, Link2, Eye, EyeOff, PlugZap, Info, Copy } from 'lucide-react';
+import { MapPin, Save, Loader2, Warehouse, Navigation, Image as ImageIcon, Upload, Trash2, Check, AlertCircle, Bell, Send, Link2, Eye, EyeOff, PlugZap, Info, Copy, Layers, Users } from 'lucide-react';
 import { APIProvider, Map, AdvancedMarker, Pin, useMapsLibrary } from '@vis.gl/react-google-maps';
 import { useSettings } from './hooks/useSettings';
 import { useZohoCredentials } from './hooks/useZohoCredentials';
@@ -10,8 +10,21 @@ import { Settings, ZohoCredentials } from '../../types';
 import { NRLogo } from '../../components/Logo';
 import { TeamMembersSection } from './components/TeamMembersSection';
 import { CalendarSyncCard } from './components/CalendarSyncCard';
+import { RatesSection } from './components/RatesSection';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { SettingsPageMobile } from './SettingsPageMobile';
+import { cn } from '../../lib/utils';
+
+export type SettingsTab = 'location' | 'sidebar' | 'notifications' | 'integrations' | 'team' | 'rates';
+
+export const SETTINGS_TABS: { key: SettingsTab; label: string; icon: React.ElementType }[] = [
+  { key: 'location', label: 'Location', icon: Warehouse },
+  { key: 'sidebar', label: 'Sidebar', icon: ImageIcon },
+  { key: 'notifications', label: 'Notifications', icon: Bell },
+  { key: 'integrations', label: 'Integrations', icon: Link2 },
+  { key: 'team', label: 'Team Members', icon: Users },
+  { key: 'rates', label: 'Rates', icon: Layers },
+];
 
 const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_PLATFORM_KEY || '';
 
@@ -41,6 +54,7 @@ export function SettingsPage() {
   const { credentials: zohoCredentials, loading: zohoLoading, saveCredentials: saveZohoCredentials } = useZohoCredentials();
   const [address, setAddress] = useState('');
   const [saveStatus, setSaveStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [activeTab, setActiveTab] = useState<SettingsTab>('location');
   const isMobile = useIsMobile();
 
   useEffect(() => {
@@ -69,6 +83,8 @@ export function SettingsPage() {
         setAddress={setAddress}
         saveStatus={saveStatus}
         setSaveStatus={setSaveStatus}
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
       />
     );
   }
@@ -76,146 +92,188 @@ export function SettingsPage() {
   return (
     <APIProvider apiKey={GOOGLE_MAPS_API_KEY}>
       <div className="space-y-6 max-w-4xl mx-auto">
-        <div>
-          <h1 className="text-2xl font-black text-brand-primary tracking-tight uppercase">Settings</h1>
-          <p className="text-zinc-500 text-sm">Configure your application preferences.</p>
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-black text-brand-primary tracking-tight uppercase">Settings</h1>
+            <p className="text-zinc-500 text-sm">Configure your application preferences.</p>
+          </div>
+
+          <div className="flex items-center gap-1 bg-zinc-100 border border-zinc-200 rounded-2xl p-1 overflow-x-auto max-w-full">
+            {SETTINGS_TABS.map(tab => (
+              <SettingsTabButton
+                key={tab.key}
+                active={activeTab === tab.key}
+                onClick={() => setActiveTab(tab.key)}
+                icon={tab.icon}
+                label={tab.label}
+              />
+            ))}
+          </div>
         </div>
 
-        {/* Warehouse Location Card */}
-        <div className="bg-white rounded-3xl shadow-sm border border-zinc-200 overflow-hidden">
-          <div className="p-8 space-y-8">
-            <div className="flex items-start gap-4">
-              <div className="p-3 bg-brand-accent/10 rounded-2xl">
-                <Warehouse className="w-6 h-6 text-brand-accent" />
-              </div>
-              <div className="flex-1">
-                <h3 className="text-lg font-bold text-zinc-900 mb-1">Warehouse Location</h3>
-                <p className="text-sm text-zinc-500 mb-6">Set the starting point for all your delivery trips.</p>
-                
-                <div className="space-y-6">
-                  <div className="space-y-2">
-                    <label htmlFor="warehouse-address" className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Warehouse Address</label>
-                    <div className="relative">
-                      <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
-                      <input
-                        id="warehouse-address"
-                        type="text"
-                        value={address}
-                        onChange={(e) => setAddress(e.target.value)}
-                        placeholder="Enter warehouse street address, city, and province"
-                        className="w-full pl-11 pr-4 py-3 border border-zinc-200 rounded-xl focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent transition-all bg-zinc-50/50"
+        {activeTab === 'location' && (
+          <div className="bg-white rounded-3xl shadow-sm border border-zinc-200 overflow-hidden">
+            <div className="p-8 space-y-8">
+              <div className="flex items-start gap-4">
+                <div className="p-3 bg-brand-accent/10 rounded-2xl">
+                  <Warehouse className="w-6 h-6 text-brand-accent" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-lg font-bold text-zinc-900 mb-1">Warehouse Location</h3>
+                  <p className="text-sm text-zinc-500 mb-6">Set the starting point for all your delivery trips.</p>
+
+                  <div className="space-y-6">
+                    <div className="space-y-2">
+                      <label htmlFor="warehouse-address" className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Warehouse Address</label>
+                      <div className="relative">
+                        <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
+                        <input
+                          id="warehouse-address"
+                          type="text"
+                          value={address}
+                          onChange={(e) => setAddress(e.target.value)}
+                          placeholder="Enter warehouse street address, city, and province"
+                          className="w-full pl-11 pr-4 py-3 border border-zinc-200 rounded-xl focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent transition-all bg-zinc-50/50"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="h-[300px] rounded-2xl border border-zinc-200 overflow-hidden relative bg-zinc-50">
+                      {GOOGLE_MAPS_API_KEY ? (
+                        <GeocodePreview address={address} settings={settings} />
+                      ) : (
+                        <div className="p-4 h-full flex items-center justify-center text-center text-sm text-red-500" title="Google Maps API Key is missing">
+                          Map preview unavailable: Google Maps API Key is missing. Please add it to secrets.
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex justify-end gap-4 items-center">
+                      {saveStatus === 'success' && (
+                        <span className="text-emerald-500 text-sm font-bold flex items-center gap-2">
+                          <Navigation className="w-4 h-4" />
+                          Settings saved!
+                        </span>
+                      )}
+
+                      <SaveButton
+                        address={address}
+                        onSave={async (lat, lng) => {
+                          setSaveStatus('idle');
+                          const success = await saveSettings({
+                            warehouseAddress: address,
+                            warehouseLat: lat,
+                            warehouseLng: lng
+                          });
+                          setSaveStatus(success ? 'success' : 'error');
+                          if (success) {
+                            setTimeout(() => setSaveStatus('idle'), 3000);
+                          }
+                        }}
                       />
                     </div>
-                  </div>
-
-                  <div className="h-[300px] rounded-2xl border border-zinc-200 overflow-hidden relative bg-zinc-50">
-                    {GOOGLE_MAPS_API_KEY ? (
-                      <GeocodePreview address={address} settings={settings} />
-                    ) : (
-                      <div className="p-4 h-full flex items-center justify-center text-center text-sm text-red-500" title="Google Maps API Key is missing">
-                        Map preview unavailable: Google Maps API Key is missing. Please add it to secrets.
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="flex justify-end gap-4 items-center">
-                    {saveStatus === 'success' && (
-                      <span className="text-emerald-500 text-sm font-bold flex items-center gap-2">
-                        <Navigation className="w-4 h-4" />
-                        Settings saved!
-                      </span>
-                    )}
-                    
-                    <SaveButton 
-                      address={address} 
-                      onSave={async (lat, lng) => {
-                        setSaveStatus('idle');
-                        const success = await saveSettings({
-                          warehouseAddress: address,
-                          warehouseLat: lat,
-                          warehouseLng: lng
-                        });
-                        setSaveStatus(success ? 'success' : 'error');
-                        if (success) {
-                          setTimeout(() => setSaveStatus('idle'), 3000);
-                        }
-                      }}
-                    />
                   </div>
                 </div>
               </div>
             </div>
           </div>
-        </div>
+        )}
 
-        {/* Sidebar Logo Configuration Card */}
-        <div className="bg-white rounded-3xl shadow-sm border border-zinc-200 overflow-hidden">
-          <div className="p-8 space-y-8">
-            <div className="flex items-start gap-4">
-              <div className="p-3 bg-brand-primary/10 rounded-2xl animate-fade-in flex-shrink-0">
-                <ImageIcon className="w-6 h-6 text-brand-primary" />
-              </div>
-              <div className="flex-1">
-                <h3 className="text-lg font-bold text-zinc-900 mb-1">Sidebar Brand Identity</h3>
-                <p className="text-sm text-zinc-500 mb-6">Customize the logo displayed in the upper sidebar of the application. Reverts to default NR Logo if cleared.</p>
-                
-                <SidebarLogoCustomizer settings={settings} onSave={saveSettings} />
-              </div>
-            </div>
-          </div>
-        </div>
+        {activeTab === 'sidebar' && (
+          <div className="bg-white rounded-3xl shadow-sm border border-zinc-200 overflow-hidden">
+            <div className="p-8 space-y-8">
+              <div className="flex items-start gap-4">
+                <div className="p-3 bg-brand-primary/10 rounded-2xl animate-fade-in flex-shrink-0">
+                  <ImageIcon className="w-6 h-6 text-brand-primary" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-lg font-bold text-zinc-900 mb-1">Sidebar Brand Identity</h3>
+                  <p className="text-sm text-zinc-500 mb-6">Customize the logo displayed in the upper sidebar of the application. Reverts to default NR Logo if cleared.</p>
 
-        {/* Push Notifications Card */}
-        <div className="bg-white rounded-3xl shadow-sm border border-zinc-200 overflow-hidden">
-          <div className="p-8 space-y-8">
-            <div className="flex items-start gap-4">
-              <div className="p-3 bg-brand-accent/10 rounded-2xl flex-shrink-0">
-                <Bell className="w-6 h-6 text-brand-accent" />
-              </div>
-              <div className="flex-1">
-                <h3 className="text-lg font-bold text-zinc-900 mb-1">Push Notifications</h3>
-                <p className="text-sm text-zinc-500 mb-6">Add your personal Pushover user key to receive push notifications on your own devices.</p>
-
-                <PushoverKeyCard settings={settings} onSave={saveSettings} />
+                  <SidebarLogoCustomizer settings={settings} onSave={saveSettings} />
+                </div>
               </div>
             </div>
           </div>
-        </div>
+        )}
 
-        {/* Zoho Books Integration Card */}
-        <div className="bg-white rounded-3xl shadow-sm border border-zinc-200 overflow-hidden">
-          <div className="p-8 space-y-8">
-            <div className="flex items-start gap-4">
-              <div className="p-3 bg-brand-primary/10 rounded-2xl flex-shrink-0">
-                <Link2 className="w-6 h-6 text-brand-primary" />
+        {activeTab === 'notifications' && (
+          <div className="bg-white rounded-3xl shadow-sm border border-zinc-200 overflow-hidden">
+            <div className="p-8 space-y-8">
+              <div className="flex items-start gap-4">
+                <div className="p-3 bg-brand-accent/10 rounded-2xl flex-shrink-0">
+                  <Bell className="w-6 h-6 text-brand-accent" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-lg font-bold text-zinc-900 mb-1">Push Notifications</h3>
+                  <p className="text-sm text-zinc-500 mb-6">Add your personal Pushover user key to receive push notifications on your own devices.</p>
+
+                  <PushoverKeyCard settings={settings} onSave={saveSettings} />
+                </div>
               </div>
-              <div className="flex-1">
-                <h3 className="text-lg font-bold text-zinc-900 mb-1">Zoho Books Integration</h3>
-                <p className="text-sm text-zinc-500 mb-6">Connect your own Zoho Books account so completed Client Invoices are pushed there automatically.</p>
+            </div>
+          </div>
+        )}
 
-                {zohoLoading ? (
-                  <div className="flex justify-center py-8">
-                    <Loader2 className="w-6 h-6 text-brand-accent animate-spin" />
+        {activeTab === 'integrations' && (
+          <div className="space-y-6">
+            <div className="bg-white rounded-3xl shadow-sm border border-zinc-200 overflow-hidden">
+              <div className="p-8 space-y-8">
+                <div className="flex items-start gap-4">
+                  <div className="p-3 bg-brand-primary/10 rounded-2xl flex-shrink-0">
+                    <Link2 className="w-6 h-6 text-brand-primary" />
                   </div>
-                ) : (
-                  <ZohoIntegrationCard credentials={zohoCredentials} onSave={saveZohoCredentials} />
-                )}
+                  <div className="flex-1">
+                    <h3 className="text-lg font-bold text-zinc-900 mb-1">Zoho Books Integration</h3>
+                    <p className="text-sm text-zinc-500 mb-6">Connect your own Zoho Books account so completed Client Invoices are pushed there automatically.</p>
+
+                    {zohoLoading ? (
+                      <div className="flex justify-center py-8">
+                        <Loader2 className="w-6 h-6 text-brand-accent animate-spin" />
+                      </div>
+                    ) : (
+                      <ZohoIntegrationCard credentials={zohoCredentials} onSave={saveZohoCredentials} />
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-3xl shadow-sm border border-zinc-200 overflow-hidden">
+              <div className="p-8">
+                <CalendarSyncCard settings={settings} onSave={saveSettings} />
               </div>
             </div>
           </div>
-        </div>
+        )}
 
-        {/* Google Calendar Sync Card */}
-        <div className="bg-white rounded-3xl shadow-sm border border-zinc-200 overflow-hidden">
-          <div className="p-8">
-            <CalendarSyncCard settings={settings} onSave={saveSettings} />
-          </div>
-        </div>
+        {activeTab === 'team' && <TeamMembersSection />}
 
-        {/* Team Members Management Section */}
-        <TeamMembersSection />
+        {activeTab === 'rates' && <RatesSection />}
       </div>
     </APIProvider>
+  );
+}
+
+function SettingsTabButton({ active, onClick, icon: Icon, label }: {
+  active: boolean;
+  onClick: () => void;
+  icon: React.ElementType;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={`Show the ${label} tab`}
+      className={cn(
+        'flex shrink-0 items-center gap-2 px-4 py-2 rounded-xl font-black text-[11px] uppercase tracking-wider transition-all cursor-pointer',
+        active ? 'bg-white text-brand-primary shadow-sm border border-zinc-200' : 'text-zinc-400 hover:text-zinc-600'
+      )}
+    >
+      <Icon className="w-3.5 h-3.5" />
+      {label}
+    </button>
   );
 }
 
