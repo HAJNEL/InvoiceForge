@@ -20,7 +20,8 @@ const ROLE_OPTIONS = [
   { id: 'Loader', label: 'Loader', desc: 'Verifies correct inventory units are successfully loaded onboard transport trucks.' },
   { id: 'Delivered Checker', label: 'Delivered Checker', desc: 'Checks Off individual route components and receipt validations upon delivery.' },
   { id: 'Invoice Management', label: 'Invoice Management', desc: 'Browse and filter the full invoice library by district, status, and client.' },
-  { id: 'Trip Overview', label: 'Trip Overview', desc: 'View every trip with its status and bundled invoices, and drill into invoice line items.' }
+  { id: 'Trip Overview', label: 'Trip Overview', desc: 'View every trip with its status and bundled invoices, and drill into invoice line items.' },
+  { id: 'Time and Attendance', label: 'Time and Attendance', desc: 'Log or bulk-log staff attendance (clock in/out) on behalf of the business.' }
 ];
 
 interface TeamMembersSectionMobileProps {
