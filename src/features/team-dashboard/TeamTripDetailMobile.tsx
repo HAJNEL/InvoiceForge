@@ -35,6 +35,7 @@ interface LoaderChecklistItem {
 }
 
 interface AssemblerItemToCount {
+  invoiceId: string;
   stockCode: string;
   description: string;
   qty: number;
@@ -425,7 +426,7 @@ export function TeamTripDetailMobile({
                             key={`${inv.id}-${stockCode}-${idx}`}
                             onClick={() => {
                               if (!canCheck || isUpdating) return;
-                              const itemToCount: AssemblerItemToCount = { stockCode, description, qty, keyUnified, keyLegacy, isPart, parentItem };
+                              const itemToCount: AssemblerItemToCount = { invoiceId: inv.id, stockCode, description, qty, keyUnified, keyLegacy, isPart, parentItem };
                               if (activeRole === 'Assembler') {
                                 if (isChecked) handleClearAssemblerCount(itemToCount);
                                 else handleSaveAssemblerCount(itemToCount, qty.toString());
@@ -545,7 +546,9 @@ export function TeamTripDetailMobile({
                             if (activeRole === 'Assembler' || activeRole === 'Loader') {
                               const pInfo = trip?.partialItems?.[keyUnified] || trip?.partialItems?.[keyLegacy];
                               const currentCount = pInfo?.isPartial ? pInfo.actualQty : item.qty;
-                              setActiveItemToCount({ ...item, keyUnified, keyLegacy });
+                              // Unreachable at runtime: this grouped-by-manifest-code view only
+                              // renders when activeRole is neither 'Assembler' nor 'Loader'.
+                              setActiveItemToCount({ ...item, invoiceId: '', keyUnified, keyLegacy });
                               setAssemblerEnteredQty(activeRole === 'Loader' ? '' : currentCount.toString());
                             } else {
                               handleToggle(keyUnified, isChecked);

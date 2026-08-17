@@ -162,12 +162,13 @@ export function InvoiceListMobile({
     setStatusError(null);
     try {
       const isDelivered = newStatusValue === 'delivered' || newStatusValue === 'completed' || newStatusValue === 'complete';
+      const { auth } = await import('../../lib/firebase');
+      const { deductForInvoiceDelivery, restoreForInvoiceDelivery, isDeliveredStatus } = await import('../../utils/inventory');
+      const wasDelivered = isDeliveredStatus(selectedInvoiceForStatus.status);
+      const userUid = auth.currentUser?.uid || '';
 
       if (isDelivered) {
-        const { auth } = await import('../../lib/firebase');
-        const { validateAndSubtractInventory } = await import('../../utils/inventory');
-        const userUid = auth.currentUser?.uid || '';
-        const invCheck = await validateAndSubtractInventory(selectedInvoiceForStatus.id, userUid, bypassWarning);
+        const invCheck = await deductForInvoiceDelivery(selectedInvoiceForStatus.id, userUid, bypassWarning);
         if (!invCheck.success) {
           setStatusError(
             (invCheck.error || "Limited inventory stock available.") +
@@ -177,6 +178,8 @@ export function InvoiceListMobile({
           setIsUpdatingStatus(false);
           return;
         }
+      } else if (wasDelivered) {
+        await restoreForInvoiceDelivery(selectedInvoiceForStatus.id, userUid);
       }
 
       const updateData: Record<string, unknown> = { status: newStatusValue };

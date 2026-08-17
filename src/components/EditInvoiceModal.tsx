@@ -4,9 +4,10 @@ import {
   X, Save, Plus, Trash2, AlertTriangle, Loader2, DollarSign, Calendar, MapPin, Clock
 } from 'lucide-react';
 import { doc, updateDoc } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { db, auth } from '../lib/firebase';
 import { GoogleMapsAutocomplete } from './GoogleMapsAutocomplete';
 import { useEscapeKey } from '../hooks/useEscapeKey';
+import { deductForInvoiceDelivery, restoreForInvoiceDelivery, isDeliveredStatus } from '../utils/inventory';
 
 interface EditInvoiceModalProps {
   isOpen: boolean;
@@ -201,6 +202,21 @@ export function EditInvoiceModal({ isOpen, onClose, invoice, trips = [], onSucce
         },
         updatedAt: new Date().toISOString()
       });
+
+      const wasDelivered = isDeliveredStatus(invoice.status);
+      const isNowDelivered = isDeliveredStatus(status);
+      const userUid = auth.currentUser?.uid || '';
+      if (isNowDelivered && !wasDelivered) {
+        const invCheck = await deductForInvoiceDelivery(invoice.id, userUid, false);
+        if (!invCheck.success) {
+          setErrorMsg(
+            (invCheck.error || "Limited inventory stock available.") +
+            "\n\nThe invoice details were saved, but stock was not deducted. Use the invoice's status control to confirm delivery and bypass this warning if needed."
+          );
+        }
+      } else if (!isNowDelivered && wasDelivered) {
+        await restoreForInvoiceDelivery(invoice.id, userUid);
+      }
 
       setIsSaving(false);
       if (onSuccess) onSuccess();

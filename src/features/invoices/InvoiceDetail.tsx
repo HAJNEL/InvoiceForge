@@ -25,6 +25,8 @@ import { useInvoices } from './hooks/useInvoices';
 import { cn, formatCurrency } from '../../lib/utils';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { InvoiceDetailMobile } from './InvoiceDetailMobile';
+import { deductForInvoiceDelivery, restoreForInvoiceDelivery, isDeliveredStatus } from '../../utils/inventory';
+import { auth } from '../../lib/firebase';
 
 const STATUS_DISPLAY_MAP: Record<string, string> = {
   'partially_complete': 'Partially Complete',
@@ -96,6 +98,10 @@ export function InvoiceDetail() {
       }
       setIsUpdatingStatus(true);
       try {
+        if (isDeliveredStatus(invoice.status)) {
+          const userUid = auth.currentUser?.uid || '';
+          await restoreForInvoiceDelivery(id, userUid);
+        }
         await updateInvoice(id, { status: newStatus });
       } catch (err) {
         console.error('Failed to update status:', err);
@@ -110,8 +116,18 @@ export function InvoiceDetail() {
       setIsUpdatingStatus(true);
       setStatusError(null);
       try {
-        // Stock is now deducted at assembly (per item, when the Assembler counts it),
-        // so delivery no longer touches inventory — it only records the delivery.
+        const userUid = auth.currentUser?.uid || '';
+        const invCheck = await deductForInvoiceDelivery(id, userUid, bypassWarning);
+        if (!invCheck.success) {
+          setStatusError(
+            (invCheck.error || "Limited inventory stock available.") +
+            "\n\nYou can still proceed to catch up on data. Click 'Save Anyway' to bypass validation and record delivery."
+          );
+          setBypassWarning(true);
+          setIsUpdatingStatus(false);
+          return;
+        }
+
         await updateInvoice(id, {
           status: pendingStatus || 'delivered',
           deliveredDate: deliveredDateInput

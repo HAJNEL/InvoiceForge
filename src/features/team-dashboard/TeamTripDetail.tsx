@@ -11,7 +11,7 @@ import { useTeamDashboard } from './useTeamDashboard';
 import { db, auth } from '../../lib/firebase';
 import { Trip, Invoice } from '../../types';
 import { cn } from '../../lib/utils';
-import { subtractSingleItemFromInventory } from '../../utils/inventory';
+import { deductLineItemForAssembly } from '../../utils/inventory';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { TeamTripDetailMobile } from './TeamTripDetailMobile';
 
@@ -54,6 +54,7 @@ interface LoaderChecklistItem {
 }
 
 interface AssemblerItemToCount {
+  invoiceId: string;
   stockCode: string;
   description: string;
   qty: number;
@@ -366,9 +367,9 @@ export function TeamTripDetail() {
         updatedAt: new Date().toISOString()
       });
 
-      if (shouldDeduct) {
+      if (shouldDeduct && item.invoiceId) {
         const userUid = auth.currentUser?.uid || '';
-        const result = await subtractSingleItemFromInventory(item.stockCode, qtyValue, userUid);
+        const result = await deductLineItemForAssembly(item.invoiceId, item.stockCode, qtyValue, userUid);
         if (!result.success) {
           console.error('Inventory deduction at assembly failed:', result.error);
         }
@@ -1212,6 +1213,7 @@ export function TeamTripDetail() {
                             onClick={() => {
                               if (!canCheck || isUpdating) return;
                               const itemToCount: AssemblerItemToCount = {
+                                invoiceId: inv.id,
                                 stockCode,
                                 description,
                                 qty,
@@ -1398,7 +1400,11 @@ export function TeamTripDetail() {
                               const currentCount = partialInfo?.isPartial 
                                 ? partialInfo.actualQty 
                                 : (isChecked ? item.qty : item.qty);
-                              setActiveItemToCount({ ...item, keyUnified, keyLegacy });
+                              // This grouped-by-manifest-code view only renders when
+                              // activeRole is neither 'Assembler' nor 'Loader' (see the
+                              // ternary above), so this branch is unreachable at runtime;
+                              // invoiceId is a placeholder to satisfy the type.
+                              setActiveItemToCount({ ...item, invoiceId: '', keyUnified, keyLegacy });
                               setAssemblerEnteredQty(activeRole === 'Loader' ? '' : currentCount.toString());
                             } else {
                               handleToggle(keyUnified, isChecked);

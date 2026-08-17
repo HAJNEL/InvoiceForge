@@ -32,6 +32,8 @@ import { TripFormMobile } from './tripFormComponents/TripFormMobile';
 import { SchoolMatchModal } from './tripFormComponents/SchoolMatchModal';
 import { InvoiceDetailsPanel } from './TripListComponents/InvoiceDetailsPanel';
 import { printTripManifest } from './utils/printTripManifest';
+import { deductForInvoiceDelivery, restoreForInvoiceDelivery, tripHoldsStock } from '../../utils/inventory';
+import { auth } from '../../lib/firebase';
 
 const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_PLATFORM_KEY || '';
 const hasValidKey = Boolean(GOOGLE_MAPS_API_KEY);
@@ -62,6 +64,7 @@ export function TripForm() {
   const isEditMode = Boolean(id);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [originalInvoiceIds, setOriginalInvoiceIds] = useState<string[]>([]);
+  const [originalTripStatus, setOriginalTripStatus] = useState<TripStatus | null>(null);
   const hasInitializedRef = useRef(false);
   const [checkedItems, setCheckedItems] = useState<{ [key: string]: boolean }>({});
   const [copied, setCopied] = useState(false);
@@ -165,6 +168,7 @@ export function TripForm() {
           invoiceIds: trip.invoiceIds || []
         });
         setOriginalInvoiceIds(trip.invoiceIds || []);
+        setOriginalTripStatus(trip.status);
         if (trip.checkedItems) {
           setCheckedItems(trip.checkedItems);
         }
@@ -683,6 +687,28 @@ export function TripForm() {
         if (formData.invoiceIds && formData.invoiceIds.length > 0) {
           await Promise.all(
             formData.invoiceIds.map(invId => updateInvoice(invId, { status: 'delivered' }))
+          );
+
+          // Top up inventory deduction for anything not already removed at assembly time
+          // (e.g. a historical trip whose status is set straight to Delivered/Completed,
+          // skipping the Assembler checklist entirely).
+          const userUid = auth.currentUser?.uid || '';
+          await Promise.all(
+            formData.invoiceIds.map(async (invId) => {
+              const result = await deductForInvoiceDelivery(invId, userUid, true);
+              if (!result.success) {
+                console.error(`Inventory deduction at delivery failed for invoice ${invId}:`, result.error);
+              }
+            })
+          );
+        }
+      } else if (originalTripStatus && tripHoldsStock(originalTripStatus) && !tripHoldsStock(effectiveStatus)) {
+        // Editing a historical trip back from a stage that already had stock removed
+        // (assembled/on-route/delivered) to an earlier planning stage restores it.
+        if (formData.invoiceIds && formData.invoiceIds.length > 0) {
+          const userUid = auth.currentUser?.uid || '';
+          await Promise.all(
+            formData.invoiceIds.map(invId => restoreForInvoiceDelivery(invId, userUid))
           );
         }
       }

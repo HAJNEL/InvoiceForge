@@ -24,7 +24,7 @@ import { InvoiceDetailsPanel } from './TripListComponents/InvoiceDetailsPanel';
 import { DayPlannerModal } from './TripListComponents/DayPlannerModal';
 import { DayPlannerModalMobile } from './TripListComponents/DayPlannerModalMobile';
 import { TripListMobile } from './TripListComponents/TripListMobile';
-import { restoreInventoryForItems } from '../../utils/inventory';
+import { deductForInvoiceDelivery, restoreForInvoiceDelivery } from '../../utils/inventory';
 import { geocodeAddress, resolveInvoicePin } from '../../lib/geocoding';
 import { printTripManifest } from './utils/printTripManifest';
 
@@ -171,20 +171,9 @@ export function TripList() {
   const handleDeleteTrip = async (trip: Trip) => {
     try {
       if (needsInventoryRestore(trip.status) && trip.invoiceIds?.length) {
-        const itemMap: Record<string, { stockCode: string; qty: number }> = {};
-        trip.invoiceIds.forEach(id => {
-          const inv = invoices.find(i => i.id === id);
-          inv?.lineItems?.forEach(li => {
-            const code = String(li.stockCode || '').trim().toUpperCase();
-            if (!code || code === 'N/A') return;
-            if (itemMap[code]) {
-              itemMap[code].qty += li.qty;
-            } else {
-              itemMap[code] = { stockCode: li.stockCode, qty: li.qty };
-            }
-          });
-        });
-        await restoreInventoryForItems(Object.values(itemMap), user?.uid || '');
+        await Promise.all(
+          trip.invoiceIds.map(id => restoreForInvoiceDelivery(id, user?.uid || ''))
+        );
       }
 
       await deleteTrip(trip.id);
@@ -590,20 +579,9 @@ export function TripList() {
       // stock to inventory so it is not double-counted when the trip is re-assembled.
       const isRevertToPlanning = targetStatus === TripStatus.PROPOSED || targetStatus === TripStatus.PENDING;
       if (isRevertToPlanning && needsInventoryRestore(trip.status) && trip.invoiceIds?.length) {
-        const itemMap: Record<string, { stockCode: string; qty: number }> = {};
-        trip.invoiceIds.forEach(id => {
-          const inv = invoices.find(i => i.id === id);
-          inv?.lineItems?.forEach(li => {
-            const code = String(li.stockCode || '').trim().toUpperCase();
-            if (!code || code === 'N/A') return;
-            if (itemMap[code]) {
-              itemMap[code].qty += li.qty;
-            } else {
-              itemMap[code] = { stockCode: li.stockCode, qty: li.qty };
-            }
-          });
-        });
-        await restoreInventoryForItems(Object.values(itemMap), user?.uid || '');
+        await Promise.all(
+          trip.invoiceIds.map(id => restoreForInvoiceDelivery(id, user?.uid || ''))
+        );
       }
 
       await updateTrip(trip.id, {
@@ -618,6 +596,19 @@ export function TripList() {
             status: invoiceStatus,
             updatedAt: new Date().toISOString()
           }))
+        );
+      }
+
+      // Jumping straight to Delivered/Completed from this cycling control also tops up
+      // inventory deduction for anything not already removed at assembly time.
+      if ((targetStatus === TripStatus.DELIVERED || targetStatus === TripStatus.COMPLETED) && trip.invoiceIds?.length) {
+        await Promise.all(
+          trip.invoiceIds.map(async (id) => {
+            const result = await deductForInvoiceDelivery(id, user?.uid || '', true);
+            if (!result.success) {
+              console.error(`Inventory deduction at delivery failed for invoice ${id}:`, result.error);
+            }
+          })
         );
       }
 

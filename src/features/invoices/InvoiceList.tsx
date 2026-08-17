@@ -20,7 +20,7 @@ import { cn, formatCurrency } from '../../lib/utils';
 import { Link } from 'react-router-dom';
 import { useInvoices, UIInvoice } from './hooks/useInvoices';
 import { useTrips } from '../trips/hooks/useTrips';
-import { validateAndSubtractInventory } from '../../utils/inventory';
+import { deductForInvoiceDelivery, restoreForInvoiceDelivery, isDeliveredStatus } from '../../utils/inventory';
 import { auth } from '../../lib/firebase';
 import { PartialConfirmModal } from '../../components/PartialConfirmModal';
 import { PartialConfirmModalMobile } from '../../components/PartialConfirmModalMobile';
@@ -832,19 +832,22 @@ export function InvoicesList() {
                       setStatusError(null);
                       try {
                         const isDelivered = newStatusValue === 'delivered' || newStatusValue === 'completed' || newStatusValue === 'complete';
-                        
+                        const wasDelivered = isDeliveredStatus(selectedInvoiceForStatus.status);
+                        const userUid = auth.currentUser?.uid || '';
+
                         if (isDelivered) {
-                          const userUid = auth.currentUser?.uid || '';
-                          const invCheck = await validateAndSubtractInventory(selectedInvoiceForStatus.id, userUid, bypassWarning);
+                          const invCheck = await deductForInvoiceDelivery(selectedInvoiceForStatus.id, userUid, bypassWarning);
                           if (!invCheck.success) {
                             setStatusError(
-                              (invCheck.error || "Limited inventory stock available.") + 
+                              (invCheck.error || "Limited inventory stock available.") +
                               "\n\nYou can still proceed to catch up on data. Click 'Save Anyway' to bypass validation and record delivery."
                             );
                             setBypassWarning(true);
                             setIsUpdatingStatus(false);
                             return;
                           }
+                        } else if (wasDelivered) {
+                          await restoreForInvoiceDelivery(selectedInvoiceForStatus.id, userUid);
                         }
 
                         const updateData: Record<string, unknown> = {

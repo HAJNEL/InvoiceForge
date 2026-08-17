@@ -6,6 +6,7 @@ import { useAuth } from '../../core/hooks/useAuth';
 import { TeamMember, Trip, DayPlanner, StaffMember, Settings } from '../../types';
 import { KnockdownItem } from '../stock/hooks/useStock';
 import { ProductComponent } from '../products/hooks/useProducts';
+import { deductForInvoiceDelivery, restoreForInvoiceDelivery, tripHoldsStock } from '../../utils/inventory';
 
 export interface TeamInventoryItem {
   id: string;
@@ -398,9 +399,12 @@ export function useTeamDashboard() {
     const targetTrip = trips.find(t => t.id === tripId);
 
     try {
+      const userUid = user?.uid || '';
+
       if (status === 'delivered' && targetTrip) {
         const batch = writeBatch(db);
-        
+        const affectedInvoiceIds: string[] = [];
+
         // 1. Update trip status
         batch.update(tripRef, {
           status: 'delivered',
@@ -416,6 +420,7 @@ export function useTeamDashboard() {
             deliveredDate: new Date().toISOString().split('T')[0],
             updatedAt: new Date().toISOString()
           });
+          affectedInvoiceIds.push(id);
 
           // 3. Find any child/split invoices of this invoice and set them to 'delivered'
           // as well — EXCEPT loader-created partial (outstanding stock) invoices. Those
@@ -436,6 +441,7 @@ export function useTeamDashboard() {
                 deliveredDate: new Date().toISOString().split('T')[0],
                 updatedAt: new Date().toISOString()
               });
+              affectedInvoiceIds.push(cDoc.id);
             });
           } catch (innerErr) {
             console.error("Error finding child/split invoices during trip delivery closure:", innerErr);
@@ -443,7 +449,30 @@ export function useTeamDashboard() {
         }
 
         await batch.commit();
+
+        // Top up inventory deduction for every affected invoice — a no-op for whatever
+        // was already removed at assembly time, and the full amount for anything (or
+        // anyone) that skipped assembly and jumped straight to delivered.
+        await Promise.all(
+          affectedInvoiceIds.map(async (invId) => {
+            const result = await deductForInvoiceDelivery(invId, userUid, true);
+            if (!result.success) {
+              console.error(`Inventory deduction at delivery failed for invoice ${invId}:`, result.error);
+            }
+          })
+        );
+
         return true;
+      }
+
+      // Reverting away from a status that already had stock removed (assembled/on-route/
+      // delivered) back to an earlier planning stage restores every linked invoice's
+      // deducted inventory before the status actually changes.
+      if (targetTrip && tripHoldsStock(targetTrip.status) && !tripHoldsStock(status)) {
+        const invoiceIds = targetTrip.invoiceIds || [];
+        await Promise.all(
+          invoiceIds.map((invId) => restoreForInvoiceDelivery(invId, userUid))
+        );
       }
 
       // For non-delivered statuses, do a regular single document status update
