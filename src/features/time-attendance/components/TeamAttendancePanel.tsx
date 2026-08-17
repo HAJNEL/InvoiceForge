@@ -2,9 +2,12 @@ import { useState, useMemo } from 'react';
 import { Clock, Plus, Users, Loader2, Inbox } from 'lucide-react';
 import { StaffMember, TimeAttendanceSettings } from '../../../types';
 import { useTimeLogs } from '../hooks/useTimeLogs';
+import { useIsMobile } from '../../../hooks/useIsMobile';
 import { DEFAULT_TIME_ATTENDANCE_SETTINGS } from '../constants';
 import { TimeLogModal } from './TimeLogModal';
 import { BulkTimeLogDialog } from './BulkTimeLogDialog';
+import { TimeLogModalMobile } from './TimeLogModalMobile';
+import { BulkTimeLogDialogMobile } from './BulkTimeLogDialogMobile';
 
 // Slimmed-down Team Dashboard surface for the "Time and Attendance" role: Log / Bulk Log
 // only — no staff CRUD, no graph (those stay owner-only on the main Time and Attendance page).
@@ -16,6 +19,7 @@ export function TeamAttendancePanel({ staff, ownerId, teamMemberId, attendanceSe
 }) {
   const settings = { ...DEFAULT_TIME_ATTENDANCE_SETTINGS, ...attendanceSettings };
   const { timeLogs, loading, addTimeLog, addTimeLogsBulk } = useTimeLogs(ownerId, teamMemberId);
+  const isMobile = useIsMobile();
   const [isLogOpen, setIsLogOpen] = useState(false);
   const [isBulkOpen, setIsBulkOpen] = useState(false);
 
@@ -83,10 +87,18 @@ export function TeamAttendancePanel({ staff, ownerId, teamMemberId, attendanceSe
       </div>
 
       {isLogOpen && (
-        <TimeLogModal staff={staff} settings={settings} onSave={addTimeLog} onClose={() => setIsLogOpen(false)} />
+        isMobile ? (
+          <TimeLogModalMobile staff={staff} settings={settings} onSave={addTimeLog} onClose={() => setIsLogOpen(false)} />
+        ) : (
+          <TimeLogModal staff={staff} settings={settings} onSave={addTimeLog} onClose={() => setIsLogOpen(false)} />
+        )
       )}
       {isBulkOpen && (
-        <BulkTimeLogDialog staff={staff} settings={settings} onSaveBulk={addTimeLogsBulk} onClose={() => setIsBulkOpen(false)} />
+        isMobile ? (
+          <BulkTimeLogDialogMobile staff={staff} settings={settings} onSaveBulk={addTimeLogsBulk} onClose={() => setIsBulkOpen(false)} />
+        ) : (
+          <BulkTimeLogDialog staff={staff} settings={settings} onSaveBulk={addTimeLogsBulk} onClose={() => setIsBulkOpen(false)} />
+        )
       )}
     </div>
   );

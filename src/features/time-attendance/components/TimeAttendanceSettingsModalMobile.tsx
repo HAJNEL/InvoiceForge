@@ -5,7 +5,7 @@ import { TimeAttendanceSettings } from '../../../types';
 import { MobileSheet } from '../../../components/mobile/MobileSheet';
 import { WEEKDAY_OPTIONS, PAY_INTERVAL_OPTIONS, OVERTIME_UNIT_LABEL } from '../constants';
 
-const inputClass = "w-full px-3 py-2.5 border border-zinc-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent transition-all";
+const inputClass = "w-full min-w-0 px-3 py-2.5 border border-zinc-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent transition-all";
 const labelClass = "text-[10px] font-black uppercase tracking-widest text-zinc-400";
 
 export function TimeAttendanceSettingsModalMobile({ settings, onSave, onClose }: {
@@ -56,11 +56,11 @@ export function TimeAttendanceSettingsModalMobile({ settings, onSave, onClose }:
     >
       <div className="space-y-4">
         <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1">
+          <div className="space-y-1 min-w-0">
             <label className={labelClass}>Default Check In</label>
             <input title="Default check-in time" type="time" value={form.checkInTime} onChange={e => set('checkInTime', e.target.value)} className={inputClass} />
           </div>
-          <div className="space-y-1">
+          <div className="space-y-1 min-w-0">
             <label className={labelClass}>Default Check Out</label>
             <input title="Default check-out time" type="time" value={form.checkOutTime} onChange={e => set('checkOutTime', e.target.value)} className={inputClass} />
           </div>
@@ -102,25 +102,25 @@ export function TimeAttendanceSettingsModalMobile({ settings, onSave, onClose }:
               <input title="Lunch break end time" type="time" value={form.lunchBreakEnd} onChange={e => set('lunchBreakEnd', e.target.value)} className={inputClass} />
             </div>
           </div>
-          <div className="space-y-1">
+          <div className="space-y-1 min-w-0">
             <label className={labelClass}>Week Start</label>
             <select title="Week start day" value={form.weekStartDay} onChange={e => set('weekStartDay', Number(e.target.value))} className={inputClass}>
               {WEEKDAY_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
           </div>
-          <div className="space-y-1">
+          <div className="space-y-1 min-w-0">
             <label className={labelClass}>Week End</label>
             <select title="Week end day" value={form.weekEndDay} onChange={e => set('weekEndDay', Number(e.target.value))} className={inputClass}>
               {WEEKDAY_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
           </div>
-          <div className="space-y-1">
+          <div className="space-y-1 min-w-0">
             <label className={labelClass}>Pay Interval</label>
             <select title="Pay interval" value={form.payInterval} onChange={e => set('payInterval', e.target.value as TimeAttendanceSettings['payInterval'])} className={inputClass}>
               {PAY_INTERVAL_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
           </div>
-          <div className="space-y-1">
+          <div className="space-y-1 min-w-0">
             <label className={labelClass}>Overtime ({OVERTIME_UNIT_LABEL[form.payInterval]})</label>
             <input title={`Hours threshold per ${form.payInterval === 'daily' ? 'day' : form.payInterval === 'monthly' ? 'month' : 'fortnight'} before overtime applies`} type="number" min="0" step="0.5" value={form.overtimeThresholdHours} onChange={e => set('overtimeThresholdHours', Math.max(0, Number(e.target.value) || 0))} className={inputClass} />
           </div>

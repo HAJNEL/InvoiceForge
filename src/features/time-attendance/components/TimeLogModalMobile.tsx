@@ -144,24 +144,24 @@ export function TimeLogModalMobile({ staff, settings, editingLog, onSave, onClos
         </div>
 
         <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1">
+          <div className="space-y-1 min-w-0">
             <label className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Clock In</label>
             <input
               type="time"
               title="Clock in time"
               value={clockIn}
               onChange={(e) => setClockIn(e.target.value)}
-              className="w-full px-3 py-2.5 border border-zinc-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent transition-all"
+              className="w-full min-w-0 px-3 py-2.5 border border-zinc-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent transition-all"
             />
           </div>
-          <div className="space-y-1">
+          <div className="space-y-1 min-w-0">
             <label className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Clock Out</label>
             <input
               type="time"
               title="Clock out time"
               value={clockOut}
               onChange={(e) => setClockOut(e.target.value)}
-              className="w-full px-3 py-2.5 border border-zinc-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent transition-all"
+              className="w-full min-w-0 px-3 py-2.5 border border-zinc-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent transition-all"
             />
           </div>
         </div>

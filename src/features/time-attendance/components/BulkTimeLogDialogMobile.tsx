@@ -78,24 +78,24 @@ export function BulkTimeLogDialogMobile({ staff, settings, onSaveBulk, onClose }
           />
         </div>
         <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1">
+          <div className="space-y-1 min-w-0">
             <label className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Default Clock In</label>
             <input
               type="time"
               title="Default clock-in time applied to all ticked staff"
               value={defaultClockIn}
               onChange={(e) => applyDefaultClockIn(e.target.value)}
-              className="w-full px-3 py-2.5 border border-zinc-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent transition-all"
+              className="w-full min-w-0 px-3 py-2.5 border border-zinc-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent transition-all"
             />
           </div>
-          <div className="space-y-1">
+          <div className="space-y-1 min-w-0">
             <label className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Default Clock Out</label>
             <input
               type="time"
               title="Default clock-out time applied to all ticked staff"
               value={defaultClockOut}
               onChange={(e) => applyDefaultClockOut(e.target.value)}
-              className="w-full px-3 py-2.5 border border-zinc-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent transition-all"
+              className="w-full min-w-0 px-3 py-2.5 border border-zinc-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent transition-all"
             />
           </div>
         </div>
@@ -198,14 +198,14 @@ export function BulkTimeLogDialogMobile({ staff, settings, onSaveBulk, onClose }
                         title={`Clock in time for ${s.firstName} ${s.lastName}`}
                         value={row.clockIn}
                         onChange={(e) => setRowTime(s.id, 'clockIn', e.target.value)}
-                        className="w-full px-2 py-2 border border-zinc-200 rounded-lg text-xs font-medium focus:outline-none focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent transition-all"
+                        className="w-full min-w-0 px-2 py-2 border border-zinc-200 rounded-lg text-xs font-medium focus:outline-none focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent transition-all"
                       />
                       <input
                         type="time"
                         title={`Clock out time for ${s.firstName} ${s.lastName}`}
                         value={row.clockOut}
                         onChange={(e) => setRowTime(s.id, 'clockOut', e.target.value)}
-                        className="w-full px-2 py-2 border border-zinc-200 rounded-lg text-xs font-medium focus:outline-none focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent transition-all"
+                        className="w-full min-w-0 px-2 py-2 border border-zinc-200 rounded-lg text-xs font-medium focus:outline-none focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent transition-all"
                       />
                     </div>
                     <div className="space-y-1.5 pl-7">
