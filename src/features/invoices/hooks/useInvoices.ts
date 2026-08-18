@@ -15,6 +15,16 @@ export interface UIInvoice {
   status: string;
   clientEmail: string;
   district?: string;
+  // Additive fields for Stock Control (Product Phases) — optional since most
+  // existing invoice docs won't carry them yet; render blank when absent.
+  schoolType?: string;
+  clientNumber?: string;
+  priority?: 'normal' | 'high' | 'urgent';
+  dueDate?: string;
+  // The school's own purchase order number (e.g. "OR-012159"), distinct from
+  // `number` above which is this document's own tax invoice number (e.g.
+  // "118258") — Stock Control shows this one wherever it labels an "Order No.".
+  orderNumber?: string;
   // Canonical pin address: the Google-resolved school address, or a manual
   // override entered on the invoice edit screens. See src/lib/geocoding.ts.
   deliveryAddress?: string;
@@ -101,6 +111,11 @@ function ensureSubscription(userId: string | null) {
         status: d.status || 'draft',
         clientEmail: d.email || d.customerContact || 'No Email',
         district: d.district || d.deliveryRegion || 'Unassigned',
+        schoolType: d.schoolType || '',
+        clientNumber: d.clientNumber || '',
+        priority: (d.priority === 'high' || d.priority === 'urgent') ? d.priority : 'normal',
+        dueDate: d.dueDate || '',
+        orderNumber: d.customerPO || d.customer_purchase_order_number || '',
         deliveryAddress: d.deliveryAddress || '',
         deliveryAddressManual: d.deliveryAddressManual === true,
         deliveryAddressLine1: d.deliveryAddressLine1 || '',

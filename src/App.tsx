@@ -25,6 +25,8 @@ import { Login } from './features/auth/Login';
 import { Register } from './features/auth/Register';
 import { useAuth } from './core/hooks/useAuth';
 import { ProductList } from './features/products/components/ProductList';
+import { StockControlPage } from './features/stock-control/StockControlPage';
+import { OrdersList } from './features/orders/OrdersList';
 import { TeamRegister } from './features/auth/TeamRegister';
 import { TeamDashboard } from './features/team-dashboard/TeamDashboard';
 import { TeamTripDetail } from './features/team-dashboard/TeamTripDetail';
@@ -146,6 +148,8 @@ export default function App() {
           <Route path="/invoices" element={<InvoicesList />} />
           <Route path="/products" element={<ProductList />} />
           <Route path="/stock" element={<StockScreen />} />
+          <Route path="/stock-control" element={<StockControlPage />} />
+          <Route path="/orders" element={<OrdersList />} />
           <Route path="/invoices/new" element={<InvoiceForm />} />
           <Route path="/invoices/import" element={<BulkImport />} />
           <Route path="/tools/pdf-extractor" element={<PdfExtractorTool />} />

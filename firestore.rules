@@ -60,6 +60,9 @@ service cloud.firestore {
     function isValidStaff(data) { return true; }
     function isValidTimeLog(data) { return true; }
     function isValidRateGroup(data) { return true; }
+    function isValidStockAllocation(data) { return true; }
+    function isValidAssemblyLog(data) { return true; }
+    function isValidOrder(data) { return true; }
 
     match /invoices/{invoiceId} {
       allow get: if isSignedIn() && (resource == null || isOwner(resource.data) || isTeamMemberOfOwner(resource.data.userId));
@@ -466,6 +469,65 @@ service cloud.firestore {
         && incoming().userId == existing().userId;
 
       allow delete: if isOwner(existing()) || isTeamMemberOfOwner(existing().userId);
+    }
+
+    // Stock Control: immutable allocation ledger (Knockdown -> Booked reservations).
+    // Written transactionally alongside inventory.reservedQty, see useAllocations.ts.
+    match /stock_allocations/{allocationId} {
+      allow get: if isSignedIn() && (resource == null || resource.data.userId == request.auth.uid || isTeamMemberOfOwner(resource.data.userId));
+      allow list: if isSignedIn() && (resource == null || resource.data.userId == request.auth.uid || isTeamMember());
+
+      allow create: if isSignedIn()
+        && isValidId(allocationId)
+        && isValidStockAllocation(incoming())
+        && (incoming().userId == request.auth.uid || isTeamMemberOfOwner(incoming().userId));
+
+      allow update: if isSignedIn()
+        && isValidStockAllocation(incoming())
+        && (existing().userId == request.auth.uid || isTeamMemberOfOwner(existing().userId))
+        && incoming().userId == existing().userId;
+
+      allow delete: if isSignedIn()
+        && (existing().userId == request.auth.uid || isTeamMemberOfOwner(existing().userId));
+    }
+
+    // Stock Control: immutable assembly-progress ledger (In Assembly build increments).
+    match /assembly_logs/{logId} {
+      allow get: if isSignedIn() && (resource == null || resource.data.userId == request.auth.uid || isTeamMemberOfOwner(resource.data.userId));
+      allow list: if isSignedIn() && (resource == null || resource.data.userId == request.auth.uid || isTeamMember());
+
+      allow create: if isSignedIn()
+        && isValidId(logId)
+        && isValidAssemblyLog(incoming())
+        && (incoming().userId == request.auth.uid || isTeamMemberOfOwner(incoming().userId));
+
+      allow update: if isSignedIn()
+        && isValidAssemblyLog(incoming())
+        && (existing().userId == request.auth.uid || isTeamMemberOfOwner(existing().userId))
+        && incoming().userId == existing().userId;
+
+      allow delete: if isSignedIn()
+        && (existing().userId == request.auth.uid || isTeamMemberOfOwner(existing().userId));
+    }
+
+    // School furniture orders (Orders screen) — raw school/SKU/quantity rows imported
+    // from the delivery-schedule spreadsheet, or entered manually.
+    match /orders/{orderId} {
+      allow get: if isSignedIn() && (resource == null || resource.data.userId == request.auth.uid || isTeamMemberOfOwner(resource.data.userId));
+      allow list: if isSignedIn() && (resource == null || resource.data.userId == request.auth.uid || isTeamMember());
+
+      allow create: if isSignedIn()
+        && isValidId(orderId)
+        && isValidOrder(incoming())
+        && (incoming().userId == request.auth.uid || isTeamMemberOfOwner(incoming().userId));
+
+      allow update: if isSignedIn()
+        && isValidOrder(incoming())
+        && (existing().userId == request.auth.uid || isTeamMemberOfOwner(existing().userId))
+        && incoming().userId == existing().userId;
+
+      allow delete: if isSignedIn()
+        && (existing().userId == request.auth.uid || isTeamMemberOfOwner(existing().userId));
     }
   }
 }

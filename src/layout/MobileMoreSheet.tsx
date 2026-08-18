@@ -13,6 +13,8 @@ import {
   Clock,
   LogOut,
   ChevronRight,
+  Workflow,
+  ClipboardList,
   type LucideIcon,
 } from 'lucide-react';
 import { auth } from '../lib/firebase';
@@ -26,8 +28,10 @@ interface MoreItem {
 
 const moreItems: MoreItem[] = [
   { name: 'Todo Lists', href: '/todos', icon: ListTodo },
+  { name: 'Orders', href: '/orders', icon: ClipboardList },
   { name: 'Stock', href: '/stock', icon: Boxes },
   { name: 'Products', href: '/products', icon: Package },
+  { name: 'Stock Control', href: '/stock-control', icon: Workflow },
   { name: 'Trucks', href: '/trucks', icon: Truck },
   { name: 'Reports', href: '/reports', icon: BarChart3 },
   { name: 'KPI', href: '/kpi', icon: Gauge },

@@ -20,7 +20,9 @@ import {
   BarChart3,
   CalendarDays,
   CalendarCheck,
-  Gauge
+  Gauge,
+  Workflow,
+  ClipboardList
 } from 'lucide-react';
 import { auth } from '../lib/firebase';
 import { cn } from '../lib/utils';
@@ -39,9 +41,11 @@ const navigation = [
   { name: 'Trips', href: '/trips', icon: MapPin },
   { name: 'Todo Lists', href: '/todos', icon: ListTodo },
   { name: 'Daily Planner', href: '/daily-planner', icon: CalendarDays },
+  { name: 'Orders', href: '/orders', icon: ClipboardList },
   { name: 'Stock', href: '/stock', icon: Boxes },
   { name: 'Invoices', href: '/invoices', icon: FileText },
   { name: 'Products', href: '/products', icon: Package },
+  { name: 'Stock Control', href: '/stock-control', icon: Workflow },
   { name: 'Trucks', href: '/trucks', icon: Truck },
   { name: 'Staff Members', href: '/staff', icon: UserCog },
   { name: 'Time and Attendance', href: '/time-attendance', icon: Clock },
