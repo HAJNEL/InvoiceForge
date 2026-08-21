@@ -20,7 +20,8 @@ import {
   CalendarCheck,
   Gauge,
   Workflow,
-  ClipboardList
+  ClipboardList,
+  ChevronDown
 } from 'lucide-react';
 import { auth } from '../lib/firebase';
 import { cn } from '../lib/utils';
@@ -34,25 +35,58 @@ import { CalendarSyncModal } from '../features/team-dashboard/CalendarSyncModal'
 import { useIsMobile } from '../hooks/useIsMobile';
 import { MobileLayout } from './MobileLayout';
 
-const navigation = [
-  { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-  { name: 'Trips', href: '/trips', icon: MapPin },
-  { name: 'Todo Lists', href: '/todos', icon: ListTodo },
-  { name: 'Daily Planner', href: '/daily-planner', icon: CalendarDays },
-  { name: 'Orders', href: '/orders', icon: ClipboardList },
-  { name: 'Stock', href: '/stock', icon: Boxes },
-  { name: 'Invoices', href: '/invoices', icon: FileText },
-  { name: 'Products', href: '/products', icon: Package },
-  { name: 'Stock Control', href: '/stock-control', icon: Workflow },
-  { name: 'Time and Attendance', href: '/time-attendance', icon: Clock },
-  { name: 'Reports', href: '/reports', icon: BarChart3 },
-  { name: 'KPI', href: '/kpi', icon: Gauge },
-  { name: 'Settings', href: '/settings', icon: Settings },
+const navigationGroups = [
+  {
+    label: 'Overview',
+    items: [
+      { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
+    ],
+  },
+  {
+    label: 'Planning',
+    items: [
+      { name: 'Trips', href: '/trips', icon: MapPin },
+      { name: 'Todo Lists', href: '/todos', icon: ListTodo },
+      { name: 'Daily Planner', href: '/daily-planner', icon: CalendarDays },
+    ],
+  },
+  {
+    label: 'Operations',
+    items: [
+      { name: 'Invoices', href: '/invoices', icon: FileText },
+      { name: 'Orders', href: '/orders', icon: ClipboardList },
+      { name: 'Stock', href: '/stock', icon: Boxes },
+      { name: 'Stock Control', href: '/stock-control', icon: Workflow },
+      { name: 'Products', href: '/products', icon: Package },
+    ],
+  },
+  {
+    label: 'Workforce',
+    items: [
+      { name: 'Time and Attendance', href: '/time-attendance', icon: Clock },
+    ],
+  },
+  {
+    label: 'Insights',
+    items: [
+      { name: 'Reports', href: '/reports', icon: BarChart3 },
+      { name: 'KPI', href: '/kpi', icon: Gauge },
+    ],
+  },
+  {
+    label: 'System',
+    items: [
+      { name: 'Settings', href: '/settings', icon: Settings },
+    ],
+  },
 ];
 
 export function Layout() {
   const [isSidebarOpen, setSidebarOpen] = useState(true);
   const [isSyncOpen, setIsSyncOpen] = useState(false);
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>(
+    () => Object.fromEntries(navigationGroups.map(group => [group.label, true]))
+  );
   const { settings } = useSettings();
   const { trips } = useTrips();
   const calSync = useCalendarSync(trips, Boolean(settings?.calendarSyncEnabled), 'settings');
@@ -97,22 +131,45 @@ export function Layout() {
           </div>
         </div>
 
-        <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-          {navigation.map((item) => (
-            <NavLink
-              key={item.name}
-              to={item.href}
-              className={({ isActive }) => cn(
-                "flex items-center gap-3 px-3 py-2 rounded-lg transition-colors group",
-                isActive ? "bg-white/10 text-white" : "text-zinc-400 hover:text-white hover:bg-white/5"
-              )}
-            >
-              <item.icon className="w-5 h-5 shrink-0" />
-              {isSidebarOpen && (
-                <span className="font-medium text-sm">{item.name}</span>
-              )}
-            </NavLink>
-          ))}
+        <nav className="flex-1 px-3 py-4 space-y-4 overflow-y-auto">
+          {navigationGroups.map((group) => {
+            const isExpanded = expandedGroups[group.label];
+            return (
+              <div key={group.label}>
+                {isSidebarOpen && (
+                  <button
+                    type="button"
+                    title={`${isExpanded ? 'Collapse' : 'Expand'} ${group.label}`}
+                    onClick={() => setExpandedGroups(prev => ({ ...prev, [group.label]: !prev[group.label] }))}
+                    className="w-full flex items-center justify-between px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-zinc-500 hover:text-white transition-colors"
+                  >
+                    <span>{group.label}</span>
+                    <ChevronDown className={cn("w-3.5 h-3.5 transition-transform", !isExpanded && "-rotate-90")} />
+                  </button>
+                )}
+                {(isExpanded || !isSidebarOpen) && (
+                  <div className="space-y-1 mt-1">
+                    {group.items.map((item) => (
+                      <NavLink
+                        key={item.name}
+                        to={item.href}
+                        title={item.name}
+                        className={({ isActive }) => cn(
+                          "flex items-center gap-3 px-3 py-2 rounded-lg transition-colors group",
+                          isActive ? "bg-white/10 text-white" : "text-zinc-400 hover:text-white hover:bg-white/5"
+                        )}
+                      >
+                        <item.icon className="w-5 h-5 shrink-0" />
+                        {isSidebarOpen && (
+                          <span className="font-medium text-sm">{item.name}</span>
+                        )}
+                      </NavLink>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </nav>
 
         <div className="p-3 border-t border-white/10 shrink-0">
