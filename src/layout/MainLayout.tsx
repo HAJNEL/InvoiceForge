@@ -131,7 +131,7 @@ export function Layout() {
           </div>
         </div>
 
-        <nav className="flex-1 px-3 py-4 space-y-4 overflow-y-auto">
+        <nav className="flex-1 px-3 py-4 space-y-4 overflow-y-auto no-scrollbar">
           {navigationGroups.map((group) => {
             const isExpanded = expandedGroups[group.label];
             return (
