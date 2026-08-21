@@ -5,13 +5,15 @@ import { APIProvider } from '@vis.gl/react-google-maps';
 import { useOrders } from '../orders/hooks/useOrders';
 import { useOrderBuilds } from './hooks/useOrderBuilds';
 import { useSettings } from '../settings/hooks/useSettings';
+import { schoolKeyFor } from '../../lib/geocoding';
 import { OrderBuilderMap } from './components/OrderBuilderMap';
+import { BuildGroupingPanel } from './components/BuildGroupingPanel';
 
 const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_PLATFORM_KEY || '';
 const hasValidKey = Boolean(GOOGLE_MAPS_API_KEY);
 
 // Full-screen build view: map (per-school pins) + delivery date + Save, with the
-// order-grouping/consolidation panel (a later issue) slotting in below the map.
+// order-grouping/consolidation panel slotting in below the map.
 // selectedOrderIds/deliveryDate are lifted here (not trapped in the map) so that
 // later panel can consume the same state without a rewrite.
 export function OrderBuilderScreen() {
@@ -71,7 +73,7 @@ export function OrderBuilderScreen() {
   };
 
   const schoolCount = useMemo(() => {
-    const keys = new Set(eligibleOrders.filter(o => selectedOrderIds.has(o.id)).map(o => o.schoolName.trim().toLowerCase()));
+    const keys = new Set(eligibleOrders.filter(o => selectedOrderIds.has(o.id)).map(o => schoolKeyFor(o.schoolName)));
     return keys.size;
   }, [eligibleOrders, selectedOrderIds]);
 
@@ -145,10 +147,11 @@ export function OrderBuilderScreen() {
         </APIProvider>
       )}
 
-      {/* Order sorting/grouping/consolidation panel lands in a later Order Builder issue. */}
-      <div className="mt-6 p-8 text-center text-sm text-zinc-400 border border-dashed border-zinc-200 rounded-2xl">
-        Order grouping & summary — coming soon.
-      </div>
+      <BuildGroupingPanel
+        orders={eligibleOrders}
+        selectedOrderIds={selectedOrderIds}
+        onRemoveOrder={toggleOrder}
+      />
     </div>
   );
 }
