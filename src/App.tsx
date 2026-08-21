@@ -27,6 +27,8 @@ import { useAuth } from './core/hooks/useAuth';
 import { ProductList } from './features/products/components/ProductList';
 import { StockControlPage } from './features/stock-control/StockControlPage';
 import { OrdersList } from './features/orders/OrdersList';
+import { OrderBuilderList } from './features/order-builder/OrderBuilderList';
+import { OrderBuilderScreen } from './features/order-builder/OrderBuilderScreen';
 import { TeamRegister } from './features/auth/TeamRegister';
 import { TeamDashboard } from './features/team-dashboard/TeamDashboard';
 import { TeamTripDetail } from './features/team-dashboard/TeamTripDetail';
@@ -166,6 +168,9 @@ export default function App() {
           <Route path="/daily-planner" element={<DailyPlannerPage />} />
           <Route path="/trips/new" element={<TripForm />} />
           <Route path="/trips/edit/:id" element={<TripForm />} />
+          <Route path="/order-builder" element={<OrderBuilderList />} />
+          <Route path="/order-builder/build" element={<OrderBuilderScreen />} />
+          <Route path="/order-builder/build/:id" element={<OrderBuilderScreen />} />
           <Route path="/recurring" element={<RecurringList />} />
           <Route path="/settings" element={<SettingsPage />} />
         </Route>

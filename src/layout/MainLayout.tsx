@@ -21,7 +21,8 @@ import {
   Gauge,
   Workflow,
   ClipboardList,
-  ChevronDown
+  ChevronDown,
+  PackagePlus
 } from 'lucide-react';
 import { auth } from '../lib/firebase';
 import { cn } from '../lib/utils';
@@ -46,6 +47,7 @@ const navigationGroups = [
     label: 'Planning',
     items: [
       { name: 'Trips', href: '/trips', icon: MapPin },
+      { name: 'Order Builder', href: '/order-builder', icon: PackagePlus },
       { name: 'Todo Lists', href: '/todos', icon: ListTodo },
       { name: 'Daily Planner', href: '/daily-planner', icon: CalendarDays },
     ],

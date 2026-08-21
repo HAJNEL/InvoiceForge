@@ -13,6 +13,7 @@ import {
   ChevronRight,
   Workflow,
   ClipboardList,
+  PackagePlus,
   type LucideIcon,
 } from 'lucide-react';
 import { auth } from '../lib/firebase';
@@ -27,6 +28,7 @@ interface MoreItem {
 const moreItems: MoreItem[] = [
   { name: 'Todo Lists', href: '/todos', icon: ListTodo },
   { name: 'Orders', href: '/orders', icon: ClipboardList },
+  { name: 'Order Builder', href: '/order-builder', icon: PackagePlus },
   { name: 'Stock', href: '/stock', icon: Boxes },
   { name: 'Products', href: '/products', icon: Package },
   { name: 'Stock Control', href: '/stock-control', icon: Workflow },
