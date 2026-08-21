@@ -4,6 +4,7 @@ import { Warehouse, Loader2 } from 'lucide-react';
 import { Map, AdvancedMarker, Pin, useMap, useMapsLibrary } from '@vis.gl/react-google-maps';
 import { cn } from '../../../lib/utils';
 import { Settings } from '../../../types';
+import { useIsMobile } from '../../../hooks/useIsMobile';
 import type { Order } from '../../orders/hooks/useOrders';
 import {
   buildOrderSearchAddress,
@@ -13,6 +14,7 @@ import {
   type CachedSchoolPin
 } from '../../../lib/geocoding';
 import { SchoolOrdersSelectModal } from './SchoolOrdersSelectModal';
+import { SchoolOrdersSelectModalMobile } from './SchoolOrdersSelectModalMobile';
 
 interface SchoolPinGroup {
   schoolKey: string;
@@ -77,6 +79,7 @@ export function OrderBuilderMap({
 }) {
   const map = useMap();
   const geocodingLib = useMapsLibrary('geocoding');
+  const isMobile = useIsMobile();
   const processingKeys = useRef<Set<string>>(new Set());
   const lastFitSignatureRef = useRef<string>('');
   const [hasFitted, setHasFitted] = useState(false);
@@ -258,17 +261,31 @@ export function OrderBuilderMap({
       )}
 
       {activeModalSchool && (
-        <SchoolOrdersSelectModal
-          isOpen={true}
-          schoolName={activeModalSchool.schoolName}
-          orders={activeModalSchool.orders}
-          selectedOrderIds={selectedOrderIds}
-          onConfirm={(tickedIds) => {
-            onSetOrdersForSchool(activeModalSchool.orders.map(o => o.id), tickedIds);
-            setActiveModalSchool(null);
-          }}
-          onClose={() => setActiveModalSchool(null)}
-        />
+        isMobile ? (
+          <SchoolOrdersSelectModalMobile
+            isOpen={true}
+            schoolName={activeModalSchool.schoolName}
+            orders={activeModalSchool.orders}
+            selectedOrderIds={selectedOrderIds}
+            onConfirm={(tickedIds) => {
+              onSetOrdersForSchool(activeModalSchool.orders.map(o => o.id), tickedIds);
+              setActiveModalSchool(null);
+            }}
+            onClose={() => setActiveModalSchool(null)}
+          />
+        ) : (
+          <SchoolOrdersSelectModal
+            isOpen={true}
+            schoolName={activeModalSchool.schoolName}
+            orders={activeModalSchool.orders}
+            selectedOrderIds={selectedOrderIds}
+            onConfirm={(tickedIds) => {
+              onSetOrdersForSchool(activeModalSchool.orders.map(o => o.id), tickedIds);
+              setActiveModalSchool(null);
+            }}
+            onClose={() => setActiveModalSchool(null)}
+          />
+        )
       )}
     </div>
   );

@@ -4,12 +4,14 @@ import { ArrowLeft, PackagePlus, AlertCircle, Loader2, Check, Copy } from 'lucid
 import { APIProvider } from '@vis.gl/react-google-maps';
 import { toast } from 'sonner';
 import { useAuth } from '../../core/hooks/useAuth';
+import { useIsMobile } from '../../hooks/useIsMobile';
 import { useOrders } from '../orders/hooks/useOrders';
 import { useOrderBuilds, createBuild, updateBuild } from './hooks/useOrderBuilds';
 import { useSettings } from '../settings/hooks/useSettings';
 import { schoolKeyFor } from '../../lib/geocoding';
 import { OrderBuilderMap } from './components/OrderBuilderMap';
 import { BuildGroupingPanel } from './components/BuildGroupingPanel';
+import { OrderBuilderScreenMobile } from './OrderBuilderScreenMobile';
 import { buildSchoolGroups, formatBuildAsText } from './utils';
 
 const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_PLATFORM_KEY || '';
@@ -26,6 +28,7 @@ export function OrderBuilderScreen() {
   const { orders } = useOrders();
   const { builds } = useOrderBuilds();
   const { settings } = useSettings();
+  const isMobile = useIsMobile();
 
   const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(new Set());
   const [deliveryDate, setDeliveryDate] = useState('');
@@ -130,6 +133,26 @@ export function OrderBuilderScreen() {
       toast.error('Failed to copy build details', { description: err instanceof Error ? err.message : String(err) });
     }
   };
+
+  if (isMobile) {
+    return (
+      <OrderBuilderScreenMobile
+        editingBuild={editingBuild}
+        eligibleOrders={eligibleOrders}
+        selectedOrderIds={selectedOrderIds}
+        deliveryDate={deliveryDate}
+        setDeliveryDate={setDeliveryDate}
+        toggleOrder={toggleOrder}
+        setOrdersForSchool={setOrdersForSchool}
+        warehouse={settings}
+        saving={saving}
+        schoolCount={schoolCount}
+        onSave={handleSave}
+        onCopy={handleCopy}
+        onBack={handleBack}
+      />
+    );
+  }
 
   return (
     <div className="flex flex-col h-full">

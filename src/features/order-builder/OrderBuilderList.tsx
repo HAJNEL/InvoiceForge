@@ -2,8 +2,11 @@ import { useState, useMemo } from 'react';
 import { PackagePlus, Search, Loader2, AlertCircle, Trash2, Check, X, School, Copy } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
+import { useIsMobile } from '../../hooks/useIsMobile';
 import { useOrderBuilds, deleteBuild } from './hooks/useOrderBuilds';
 import { formatBuildDate, formatBuildAsText } from './utils';
+import { OrderBuilderListMobile } from './OrderBuilderListMobile';
+import type { OrderBuild } from './types';
 
 export function OrderBuilderList() {
   const { builds, loading, error } = useOrderBuilds();
@@ -11,6 +14,7 @@ export function OrderBuilderList() {
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
 
   const handleDelete = async (buildId: string) => {
     const build = builds.find(b => b.id === buildId);
@@ -51,6 +55,22 @@ export function OrderBuilderList() {
     const units = b.schoolGroups.reduce((s, g) => s + g.lineItems.reduce((s2, li) => s2 + li.qty, 0), 0);
     return { schools, orders, units };
   };
+
+  if (isMobile) {
+    return (
+      <OrderBuilderListMobile
+        builds={filteredBuilds}
+        loading={loading}
+        error={error}
+        searchQuery={searchQuery}
+        setSearchQuery={setSearchQuery}
+        onOpenBuild={(id) => navigate(`/order-builder/build/${id}`)}
+        onNewBuild={() => navigate('/order-builder/build')}
+        onCopy={handleCopy}
+        onDelete={(build: OrderBuild) => handleDelete(build.id)}
+      />
+    );
+  }
 
   return (
     <div className="space-y-6">
