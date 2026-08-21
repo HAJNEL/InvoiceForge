@@ -190,3 +190,56 @@ export function upsertCachedPin(pin: CachedPin): void {
   pins.push(pin);
   localStorage.setItem('geocoded_invoices', JSON.stringify(pins));
 }
+
+// Order Builder's school-pin resolution is deliberately simpler than an invoice's:
+// search by school name ALONE, always normalized to English first, and take
+// Google's first result unconditionally - no district-combined retry, no street-
+// address fallback chain, since Order docs don't carry that data at all (only an
+// `area` field, which isn't reliable enough to feed into a geocoding query). Never
+// silently defaults to a fixed location - returns null (no pin) if geocoding
+// fails, same as geocodeAddress/resolveInvoicePin.
+export async function resolveOrderPin(schoolName: string, bias?: GeocodeBias): Promise<GeocodeResult | null> {
+  const normalized = normalizeSchoolName(schoolName.trim());
+  if (!normalized) return null;
+  return geocodeAddress(`${normalized}, South Africa`, bias);
+}
+
+// The cache key an order's school resolves to - normalized name, trimmed, lower-
+// cased, so "Klaasvoogds Primêre Skool" and "klaasvoogds primary school " both
+// collapse onto the same pin.
+export function schoolKeyFor(schoolName: string): string {
+  return normalizeSchoolName(schoolName).trim().toLowerCase();
+}
+
+// A school's resolved map pin, cached ONCE and reused by every order for that
+// school - unlike CachedPin above (keyed per invoice id), many Order docs can
+// share one schoolKey, so geocoding must happen once per unique school, not once
+// per order. Kept in a separate localStorage key from `geocoded_invoices` since
+// the two caches are keyed differently and mixing them would corrupt both.
+export interface CachedSchoolPin {
+  schoolKey: string;
+  schoolName: string;
+  searchAddress: string;
+  address: string;
+  position: { lat: number; lng: number };
+}
+
+export function loadCachedSchoolPins(): CachedSchoolPin[] {
+  try {
+    const saved = localStorage.getItem('geocoded_order_schools');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed)) return parsed as CachedSchoolPin[];
+    }
+  } catch (e) {
+    console.error('[geocoding] Error loading cached school pins:', e);
+  }
+  return [];
+}
+
+// Replaces any existing pin for the same school key and persists the cache.
+export function upsertCachedSchoolPin(pin: CachedSchoolPin): void {
+  const pins = loadCachedSchoolPins().filter(p => p.schoolKey !== pin.schoolKey);
+  pins.push(pin);
+  localStorage.setItem('geocoded_order_schools', JSON.stringify(pins));
+}

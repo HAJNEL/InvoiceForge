@@ -7,6 +7,7 @@ import * as XLSX from 'xlsx';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../../../lib/utils';
+import { normalizeSchoolName } from '../../../lib/geocoding';
 import type { Order, OrderLineItem, OrderStatus } from '../hooks/useOrders';
 
 interface ParsedOrderRow {
@@ -87,7 +88,11 @@ function parseOrdersSheet(ws: XLSX.WorkSheet): ParsedOrderRow[] {
     return {
       schoolId: String(row[0] ?? '').trim(),
       clientNumber: String(row[1] ?? '').trim(),
-      schoolName: String(row[2] ?? '').trim(),
+      // Normalize the Afrikaans "Primêre Skool" -> "Primary School" at import time,
+      // same as invoices do (see BulkImport.tsx) - Google indexes SA schools under
+      // the English term, and Order Builder's map (a later issue) geocodes by this
+      // name, so it needs to already be in the searchable form once stored.
+      schoolName: normalizeSchoolName(String(row[2] ?? '').trim()),
       area: String(row[3] ?? '').trim(),
       schoolType: String(row[4] ?? '').trim(),
       orderNumber: String(row[5] ?? '').trim(),
