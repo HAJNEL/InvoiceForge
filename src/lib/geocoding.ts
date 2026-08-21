@@ -198,10 +198,19 @@ export function upsertCachedPin(pin: CachedPin): void {
 // `area` field, which isn't reliable enough to feed into a geocoding query). Never
 // silently defaults to a fixed location - returns null (no pin) if geocoding
 // fails, same as geocodeAddress/resolveInvoicePin.
-export async function resolveOrderPin(schoolName: string, bias?: GeocodeBias): Promise<GeocodeResult | null> {
+// Extracted from resolveOrderPin so the map component (which geocodes via the
+// client-side @vis.gl Geocoder, not this REST helper, since it already has the JS
+// Maps library loaded - same reasoning InteractiveTripMap.tsx follows) can build
+// the identical search string without duplicating the normalize+suffix logic.
+export function buildOrderSearchAddress(schoolName: string): string | null {
   const normalized = normalizeSchoolName(schoolName.trim());
-  if (!normalized) return null;
-  return geocodeAddress(`${normalized}, South Africa`, bias);
+  return normalized ? `${normalized}, South Africa` : null;
+}
+
+export async function resolveOrderPin(schoolName: string, bias?: GeocodeBias): Promise<GeocodeResult | null> {
+  const address = buildOrderSearchAddress(schoolName);
+  if (!address) return null;
+  return geocodeAddress(address, bias);
 }
 
 // The cache key an order's school resolves to - normalized name, trimmed, lower-
