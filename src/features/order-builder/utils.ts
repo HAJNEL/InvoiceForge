@@ -4,7 +4,7 @@
 
 import { schoolKeyFor } from '../../lib/geocoding';
 import type { Order } from '../orders/hooks/useOrders';
-import type { OrderBuildSchoolGroup } from './types';
+import type { OrderBuild, OrderBuildSchoolGroup } from './types';
 
 // Human-readable delivery date, matching this app's existing en-ZA date-formatting
 // convention (see src/features/trips/utils/printTripManifest.ts).
@@ -82,4 +82,37 @@ export function buildSchoolGroups(orders: Order[], selectedOrderIds: Set<string>
   }
 
   return groupKeyOrder.map(key => groups[key]);
+}
+
+// Plain-text summary of a build, meant to paste cleanly into an email body - no
+// markdown/HTML, ASCII-safe punctuation (a hyphen, not an em-dash, for the footer
+// separator - broader email-client compatibility). `buildNumber` may be the
+// literal "(unsaved)" placeholder for an in-progress build preview; callers must
+// NOT call getNextBuildNumber() just to fill this in before a real save, since
+// that would burn a real sequence number for a copy action that might never be
+// saved.
+export function formatBuildAsText(build: Pick<OrderBuild, 'buildNumber' | 'deliveryDate' | 'schoolGroups'>): string {
+  const lines: string[] = [];
+  lines.push(`Build #${build.buildNumber} - Delivery: ${formatBuildDate(build.deliveryDate)}`);
+  lines.push('');
+
+  let totalOrders = 0;
+  let totalUnits = 0;
+
+  build.schoolGroups.forEach((group, i) => {
+    if (i > 0) lines.push('');
+    lines.push(`${group.schoolName} (${group.area || '—'})`);
+    lines.push(`  Orders: ${group.orderNumbers.join(', ')}`);
+    group.lineItems.forEach(li => {
+      lines.push(`  ${li.stockCode}: ${li.qty}`);
+      totalUnits += li.qty;
+    });
+    totalOrders += group.orderIds.length;
+  });
+
+  lines.push('');
+  lines.push('-');
+  lines.push(`${build.schoolGroups.length} school${build.schoolGroups.length === 1 ? '' : 's'}, ${totalOrders} order${totalOrders === 1 ? '' : 's'}, ${totalUnits} unit${totalUnits === 1 ? '' : 's'} total`);
+
+  return lines.join('\n');
 }

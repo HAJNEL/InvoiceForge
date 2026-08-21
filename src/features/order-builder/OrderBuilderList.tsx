@@ -1,9 +1,9 @@
 import { useState, useMemo } from 'react';
-import { PackagePlus, Search, Loader2, AlertCircle, Trash2, Check, X, School } from 'lucide-react';
+import { PackagePlus, Search, Loader2, AlertCircle, Trash2, Check, X, School, Copy } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useOrderBuilds, deleteBuild } from './hooks/useOrderBuilds';
-import { formatBuildDate } from './utils';
+import { formatBuildDate, formatBuildAsText } from './utils';
 
 export function OrderBuilderList() {
   const { builds, loading, error } = useOrderBuilds();
@@ -24,6 +24,15 @@ export function OrderBuilderList() {
       toast.error('Failed to delete build', { description: err instanceof Error ? err.message : String(err) });
     } finally {
       setDeletingId(null);
+    }
+  };
+
+  const handleCopy = async (build: typeof builds[number]) => {
+    try {
+      await navigator.clipboard.writeText(formatBuildAsText(build));
+      toast.success(`Build #${build.buildNumber} copied to clipboard`);
+    } catch (err) {
+      toast.error('Failed to copy build details', { description: err instanceof Error ? err.message : String(err) });
     }
   };
 
@@ -129,7 +138,7 @@ export function OrderBuilderList() {
                   <th className="px-5 py-3.5 text-xs font-bold text-zinc-500 uppercase tracking-wider text-right">Orders</th>
                   <th className="px-5 py-3.5 text-xs font-bold text-zinc-500 uppercase tracking-wider text-right">Units</th>
                   <th className="px-5 py-3.5 text-xs font-bold text-zinc-500 uppercase tracking-wider">Created</th>
-                  <th className="px-5 py-3.5 text-xs font-bold text-zinc-500 uppercase tracking-wider text-right w-[90px]">Actions</th>
+                  <th className="px-5 py-3.5 text-xs font-bold text-zinc-500 uppercase tracking-wider text-right w-[120px]">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-100">
@@ -150,37 +159,47 @@ export function OrderBuilderList() {
                         {b.createdAt ? new Date(b.createdAt).toLocaleDateString('en-ZA') : '—'}
                       </td>
                       <td className="px-5 py-4 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                        {deleteConfirmId === b.id ? (
-                          <div className="inline-flex items-center gap-1 justify-end">
-                            <button
-                              type="button"
-                              title="Confirm delete"
-                              onClick={() => handleDelete(b.id)}
-                              disabled={deletingId === b.id}
-                              className="p-1.5 text-white bg-red-500 rounded-lg border border-red-600 transition-all disabled:opacity-50 cursor-pointer"
-                            >
-                              {deletingId === b.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-                            </button>
-                            <button
-                              type="button"
-                              title="Cancel delete"
-                              onClick={() => setDeleteConfirmId(null)}
-                              disabled={deletingId === b.id}
-                              className="p-1.5 text-zinc-400 hover:text-zinc-600 hover:bg-white rounded-lg border border-transparent hover:border-zinc-200 transition-all cursor-pointer"
-                            >
-                              <X className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        ) : (
+                        <div className="inline-flex items-center gap-1 justify-end">
                           <button
                             type="button"
-                            title="Delete build"
-                            onClick={() => setDeleteConfirmId(b.id)}
-                            className="p-1.5 text-zinc-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                            title="Copy build details"
+                            onClick={() => handleCopy(b)}
+                            className="p-1.5 text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 rounded-lg transition-colors cursor-pointer"
                           >
-                            <Trash2 className="w-4 h-4" />
+                            <Copy className="w-4 h-4" />
                           </button>
-                        )}
+                          {deleteConfirmId === b.id ? (
+                            <>
+                              <button
+                                type="button"
+                                title="Confirm delete"
+                                onClick={() => handleDelete(b.id)}
+                                disabled={deletingId === b.id}
+                                className="p-1.5 text-white bg-red-500 rounded-lg border border-red-600 transition-all disabled:opacity-50 cursor-pointer"
+                              >
+                                {deletingId === b.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                              </button>
+                              <button
+                                type="button"
+                                title="Cancel delete"
+                                onClick={() => setDeleteConfirmId(null)}
+                                disabled={deletingId === b.id}
+                                className="p-1.5 text-zinc-400 hover:text-zinc-600 hover:bg-white rounded-lg border border-transparent hover:border-zinc-200 transition-all cursor-pointer"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              type="button"
+                              title="Delete build"
+                              onClick={() => setDeleteConfirmId(b.id)}
+                              className="p-1.5 text-zinc-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );

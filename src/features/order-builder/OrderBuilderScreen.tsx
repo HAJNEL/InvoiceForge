@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, PackagePlus, AlertCircle, Loader2, Check } from 'lucide-react';
+import { ArrowLeft, PackagePlus, AlertCircle, Loader2, Check, Copy } from 'lucide-react';
 import { APIProvider } from '@vis.gl/react-google-maps';
 import { toast } from 'sonner';
 import { useAuth } from '../../core/hooks/useAuth';
@@ -10,7 +10,7 @@ import { useSettings } from '../settings/hooks/useSettings';
 import { schoolKeyFor } from '../../lib/geocoding';
 import { OrderBuilderMap } from './components/OrderBuilderMap';
 import { BuildGroupingPanel } from './components/BuildGroupingPanel';
-import { buildSchoolGroups } from './utils';
+import { buildSchoolGroups, formatBuildAsText } from './utils';
 
 const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_PLATFORM_KEY || '';
 const hasValidKey = Boolean(GOOGLE_MAPS_API_KEY);
@@ -113,6 +113,24 @@ export function OrderBuilderScreen() {
     }
   };
 
+  // Preview copy of the in-progress build, before it's saved - never calls
+  // getNextBuildNumber() just to fill in a real number for a copy action that
+  // might never be saved (that would needlessly burn a sequence number).
+  const handleCopy = async () => {
+    const groups = buildSchoolGroups(eligibleOrders, selectedOrderIds);
+    const text = formatBuildAsText({
+      buildNumber: editingBuild?.buildNumber ?? '(unsaved)',
+      deliveryDate,
+      schoolGroups: groups
+    });
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success('Build details copied to clipboard');
+    } catch (err) {
+      toast.error('Failed to copy build details', { description: err instanceof Error ? err.message : String(err) });
+    }
+  };
+
   return (
     <div className="flex flex-col h-full">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-zinc-200 shadow-xs mb-6 shrink-0">
@@ -148,6 +166,15 @@ export function OrderBuilderScreen() {
               className="px-3.5 py-2.5 border border-zinc-200 rounded-xl text-sm font-medium text-zinc-700 focus:outline-none focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent bg-white transition-all shadow-2xs"
             />
           </div>
+          <button
+            type="button"
+            onClick={handleCopy}
+            title="Copy build details"
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50 font-semibold text-sm transition-all shadow-2xs cursor-pointer self-end"
+          >
+            <Copy className="w-4 h-4 text-zinc-500" />
+            Copy
+          </button>
           <button
             type="button"
             onClick={handleSave}
