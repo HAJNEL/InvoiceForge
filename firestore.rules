@@ -63,6 +63,7 @@ service cloud.firestore {
     function isValidStockAllocation(data) { return true; }
     function isValidAssemblyLog(data) { return true; }
     function isValidOrder(data) { return true; }
+    function isValidOrderBuild(data) { return true; }
 
     match /invoices/{invoiceId} {
       allow get: if isSignedIn() && (resource == null || isOwner(resource.data) || isTeamMemberOfOwner(resource.data.userId));
@@ -528,6 +529,34 @@ service cloud.firestore {
 
       allow delete: if isSignedIn()
         && (existing().userId == request.auth.uid || isTeamMemberOfOwner(existing().userId));
+    }
+
+    // Order Builder: bundles of `orders` docs grouped by school into one delivery-
+    // ready build. Same owner/team scoping shape as `orders` above.
+    match /orderBuilds/{buildId} {
+      allow get: if isSignedIn() && (resource == null || resource.data.userId == request.auth.uid || isTeamMemberOfOwner(resource.data.userId));
+      allow list: if isSignedIn() && (resource == null || resource.data.userId == request.auth.uid || isTeamMember());
+
+      allow create: if isSignedIn()
+        && isValidId(buildId)
+        && isValidOrderBuild(incoming())
+        && (incoming().userId == request.auth.uid || isTeamMemberOfOwner(incoming().userId));
+
+      allow update: if isSignedIn()
+        && isValidOrderBuild(incoming())
+        && (existing().userId == request.auth.uid || isTeamMemberOfOwner(existing().userId))
+        && incoming().userId == existing().userId;
+
+      allow delete: if isSignedIn()
+        && (existing().userId == request.auth.uid || isTeamMemberOfOwner(existing().userId));
+    }
+
+    // Order Builder: per-(user, year) atomic sequence counter for build numbers.
+    // Doc id is "{userId}_{year}"; no PII/business data, just a counter, so kept as
+    // simple/permissive as the `stock` collection above rather than re-deriving the
+    // owner/team match logic for a bare integer.
+    match /buildCounters/{counterId} {
+      allow read, write: if isSignedIn();
     }
   }
 }

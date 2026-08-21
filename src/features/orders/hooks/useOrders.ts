@@ -24,6 +24,13 @@ export interface Order {
   lineItems: OrderLineItem[];
   createdAt: string;
   updatedAt: string;
+  // Set once this order is consumed into an Order Builder build (see
+  // src/features/order-builder/). buildNumber is denormalized from that build for
+  // quick display here without a join. Both are undefined (not '') when the order
+  // hasn't been bundled - that's the "available to bundle" sentinel Order Builder
+  // filters on.
+  buildId?: string;
+  buildNumber?: string;
 }
 
 interface OrdersState {
@@ -83,7 +90,9 @@ function ensureSubscription(userId: string | null) {
           qty: typeof l.qty === 'number' ? l.qty : 0
         })),
         createdAt: v.createdAt || '',
-        updatedAt: v.updatedAt || ''
+        updatedAt: v.updatedAt || '',
+        buildId: v.buildId || undefined,
+        buildNumber: v.buildNumber || undefined
       } as Order;
     });
 
