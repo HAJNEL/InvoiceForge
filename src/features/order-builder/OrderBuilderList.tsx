@@ -1,13 +1,31 @@
 import { useState, useMemo } from 'react';
-import { PackagePlus, Search, Loader2, AlertCircle, Trash2, School } from 'lucide-react';
+import { PackagePlus, Search, Loader2, AlertCircle, Trash2, Check, X, School } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { useOrderBuilds } from './hooks/useOrderBuilds';
+import { toast } from 'sonner';
+import { useOrderBuilds, deleteBuild } from './hooks/useOrderBuilds';
 import { formatBuildDate } from './utils';
 
 export function OrderBuilderList() {
   const { builds, loading, error } = useOrderBuilds();
   const [searchQuery, setSearchQuery] = useState('');
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const navigate = useNavigate();
+
+  const handleDelete = async (buildId: string) => {
+    const build = builds.find(b => b.id === buildId);
+    if (!build) return;
+    setDeletingId(buildId);
+    try {
+      await deleteBuild(build);
+      toast.success(`Build #${build.buildNumber} deleted`, { description: 'Its orders are available to bundle again.' });
+      setDeleteConfirmId(null);
+    } catch (err) {
+      toast.error('Failed to delete build', { description: err instanceof Error ? err.message : String(err) });
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   const filteredBuilds = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
@@ -132,14 +150,37 @@ export function OrderBuilderList() {
                         {b.createdAt ? new Date(b.createdAt).toLocaleDateString('en-ZA') : '—'}
                       </td>
                       <td className="px-5 py-4 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                        <button
-                          type="button"
-                          disabled
-                          title="Coming soon"
-                          className="p-1.5 text-zinc-300 rounded-lg cursor-not-allowed"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        {deleteConfirmId === b.id ? (
+                          <div className="inline-flex items-center gap-1 justify-end">
+                            <button
+                              type="button"
+                              title="Confirm delete"
+                              onClick={() => handleDelete(b.id)}
+                              disabled={deletingId === b.id}
+                              className="p-1.5 text-white bg-red-500 rounded-lg border border-red-600 transition-all disabled:opacity-50 cursor-pointer"
+                            >
+                              {deletingId === b.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                            </button>
+                            <button
+                              type="button"
+                              title="Cancel delete"
+                              onClick={() => setDeleteConfirmId(null)}
+                              disabled={deletingId === b.id}
+                              className="p-1.5 text-zinc-400 hover:text-zinc-600 hover:bg-white rounded-lg border border-transparent hover:border-zinc-200 transition-all cursor-pointer"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            title="Delete build"
+                            onClick={() => setDeleteConfirmId(b.id)}
+                            className="p-1.5 text-zinc-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
                       </td>
                     </tr>
                   );

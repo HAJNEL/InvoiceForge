@@ -1,13 +1,16 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, PackagePlus, AlertCircle } from 'lucide-react';
+import { ArrowLeft, PackagePlus, AlertCircle, Loader2, Check } from 'lucide-react';
 import { APIProvider } from '@vis.gl/react-google-maps';
+import { toast } from 'sonner';
+import { useAuth } from '../../core/hooks/useAuth';
 import { useOrders } from '../orders/hooks/useOrders';
-import { useOrderBuilds } from './hooks/useOrderBuilds';
+import { useOrderBuilds, createBuild, updateBuild } from './hooks/useOrderBuilds';
 import { useSettings } from '../settings/hooks/useSettings';
 import { schoolKeyFor } from '../../lib/geocoding';
 import { OrderBuilderMap } from './components/OrderBuilderMap';
 import { BuildGroupingPanel } from './components/BuildGroupingPanel';
+import { buildSchoolGroups } from './utils';
 
 const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_PLATFORM_KEY || '';
 const hasValidKey = Boolean(GOOGLE_MAPS_API_KEY);
@@ -19,12 +22,14 @@ const hasValidKey = Boolean(GOOGLE_MAPS_API_KEY);
 export function OrderBuilderScreen() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const { orders } = useOrders();
   const { builds } = useOrderBuilds();
   const { settings } = useSettings();
 
   const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(new Set());
   const [deliveryDate, setDeliveryDate] = useState('');
+  const [saving, setSaving] = useState(false);
   const initializedRef = useRef(false);
 
   const editingBuild = id ? builds.find(b => b.id === id) : undefined;
@@ -77,6 +82,37 @@ export function OrderBuilderScreen() {
     return keys.size;
   }, [eligibleOrders, selectedOrderIds]);
 
+  const handleSave = async () => {
+    if (!user) return;
+    if (!deliveryDate) {
+      toast.error('Set a delivery date before saving.');
+      return;
+    }
+    const groups = buildSchoolGroups(eligibleOrders, selectedOrderIds);
+    if (groups.length === 0) {
+      toast.error('Add at least one order before saving.');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      if (editingBuild) {
+        await updateBuild(editingBuild, deliveryDate, groups);
+        toast.success(`Build #${editingBuild.buildNumber} updated`);
+      } else {
+        const created = await createBuild(user.uid, deliveryDate, groups);
+        toast.success(`Build #${created.buildNumber} saved`);
+      }
+      navigate('/order-builder');
+    } catch (err) {
+      // Keep the user on the screen with their in-progress work intact - a failed
+      // save must never navigate away or clear state.
+      toast.error('Failed to save build', { description: err instanceof Error ? err.message : String(err) });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div className="flex flex-col h-full">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-zinc-200 shadow-xs mb-6 shrink-0">
@@ -114,10 +150,12 @@ export function OrderBuilderScreen() {
           </div>
           <button
             type="button"
-            disabled
-            title="Coming soon"
-            className="px-5 py-2.5 bg-zinc-200 text-zinc-400 font-semibold text-sm rounded-xl cursor-not-allowed self-end"
+            onClick={handleSave}
+            disabled={saving}
+            title="Save build"
+            className="flex items-center gap-2 px-5 py-2.5 bg-brand-accent text-white font-semibold text-sm rounded-xl hover:bg-brand-accent/95 active:scale-98 transition-all shadow-xs disabled:opacity-60 cursor-pointer self-end"
           >
+            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
             Save Build
           </button>
         </div>
