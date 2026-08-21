@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type MouseEvent } from 'react';
 import { toast } from 'sonner';
-import { Zap, Loader2, ChevronRight } from 'lucide-react';
+import { Zap, Loader2, ChevronRight, ChevronDown, ChevronUp } from 'lucide-react';
 import { PhaseModal } from './PhaseModal';
 import { PhaseProgressBar } from './PhaseColumn';
 import { computeAutoBookCandidates, normalize } from '../utils/phaseCalculations';
@@ -19,15 +19,27 @@ export function AutoBookModal({ isOpen, onClose, orderRows, stockRows, allocateS
   const candidates = useMemo(() => computeAutoBookCandidates(orderRows, stockRows), [orderRows, stockRows]);
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [submitting, setSubmitting] = useState(false);
   const [progress, setProgress] = useState(0);
   const [summary, setSummary] = useState<{ fullyBooked: number; partiallyBooked: number; unitsBooked: number } | null>(null);
+
+  const toggleExpanded = (id: string, e: MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setExpandedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
 
   // Fresh selection (default to everything Auto-Book can fully close out) each
   // time the dialog opens, and drop the previous run's summary.
   useEffect(() => {
     if (isOpen) {
       setSelectedIds(new Set(candidates.filter(c => c.pct >= 100).map(c => c.order.invoiceId)));
+      setExpandedIds(new Set());
       setSubmitting(false);
       setProgress(0);
       setSummary(null);
@@ -200,38 +212,77 @@ export function AutoBookModal({ isOpen, onClose, orderRows, stockRows, allocateS
           <div className="max-h-96 overflow-y-auto space-y-2">
             {candidates.map((c) => {
               const selected = selectedIds.has(c.order.invoiceId);
+              const expanded = expandedIds.has(c.order.invoiceId);
               return (
-                <label
+                <div
                   key={c.order.invoiceId}
                   className={cn(
-                    'flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all',
+                    'rounded-xl border transition-all overflow-hidden',
                     selected ? 'bg-brand-accent/5 border-brand-accent/30' : 'bg-zinc-50/50 border-zinc-150 hover:border-zinc-250'
                   )}
                 >
-                  <input
-                    type="checkbox"
-                    title={`Select ${c.order.schoolName}`}
-                    checked={selected}
-                    onChange={() => toggleOne(c.order.invoiceId)}
-                    disabled={submitting}
-                    className="w-4 h-4 mt-0.5 rounded border-zinc-300 text-brand-accent focus:ring-brand-accent/30 shrink-0"
-                  />
-                  <div className="flex-1 min-w-0 space-y-1.5">
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-xs font-black text-brand-primary uppercase truncate">{c.order.schoolName}</p>
-                      <span className={cn('text-[10px] font-black shrink-0', c.pct >= 100 ? 'text-emerald-600' : 'text-amber-600')}>{c.pct}%</span>
+                  <label className="flex items-start gap-3 p-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      title={`Select ${c.order.schoolName}`}
+                      checked={selected}
+                      onChange={() => toggleOne(c.order.invoiceId)}
+                      disabled={submitting}
+                      className="w-4 h-4 mt-0.5 rounded border-zinc-300 text-brand-accent focus:ring-brand-accent/30 shrink-0"
+                    />
+                    <div className="flex-1 min-w-0 space-y-1.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-xs font-black text-brand-primary uppercase truncate">{c.order.schoolName}</p>
+                        <span className={cn('text-[10px] font-black shrink-0', c.pct >= 100 ? 'text-emerald-600' : 'text-amber-600')}>{c.pct}%</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-[10px] font-mono text-zinc-400">
+                        <span>{c.order.orderNumber || '—'}</span>
+                        <span>&middot;</span>
+                        <span>{c.order.area || 'Unassigned'}</span>
+                      </div>
+                      <PhaseProgressBar pct={c.pct} accent={c.pct >= 100 ? 'emerald' : 'amber'} />
+                      <p className="text-[10px] font-mono text-zinc-500">
+                        Needs {c.neededUnits} &middot; In stock now: <strong className="text-zinc-700">{c.coverableUnits}</strong>
+                      </p>
                     </div>
-                    <div className="flex items-center gap-2 text-[10px] font-mono text-zinc-400">
-                      <span>{c.order.orderNumber || '—'}</span>
-                      <span>&middot;</span>
-                      <span>{c.order.area || 'Unassigned'}</span>
+                    <button
+                      type="button"
+                      title={expanded ? 'Hide SKU breakdown' : 'Show SKU breakdown — what\'s missing and what\'s there'}
+                      onClick={(e) => toggleExpanded(c.order.invoiceId, e)}
+                      className="p-1 -m-1 mt-0.5 text-zinc-400 hover:text-zinc-600 rounded-lg transition-all cursor-pointer shrink-0"
+                    >
+                      {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                    </button>
+                  </label>
+
+                  {expanded && (
+                    <div className="border-t border-zinc-150 bg-white p-3 overflow-x-auto">
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="text-zinc-400 uppercase font-mono tracking-wide">
+                            <th className="text-left font-black pb-1.5">SKU</th>
+                            <th className="text-right font-black pb-1.5">Needed</th>
+                            <th className="text-right font-black pb-1.5">There</th>
+                            <th className="text-right font-black pb-1.5">Missing</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {c.lines.map(line => {
+                            const missing = line.shortBy - line.coverable;
+                            return (
+                              <tr key={line.stockCode} className="border-t border-zinc-100">
+                                <td className="py-1.5 font-mono font-bold text-zinc-700 truncate max-w-[110px]" title={line.description}>{line.stockCode}</td>
+                                <td className="py-1.5 text-right font-mono text-zinc-600">{line.shortBy}</td>
+                                <td className={cn('py-1.5 text-right font-mono font-bold', line.coverable > 0 ? 'text-emerald-600' : 'text-zinc-400')}>{line.coverable}</td>
+                                <td className={cn('py-1.5 text-right font-mono font-bold', missing > 0 ? 'text-red-600' : 'text-zinc-400')}>{missing}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
                     </div>
-                    <PhaseProgressBar pct={c.pct} accent={c.pct >= 100 ? 'emerald' : 'amber'} />
-                    <p className="text-[10px] font-mono text-zinc-500">
-                      Needs {c.neededUnits} &middot; In stock now: <strong className="text-zinc-700">{c.coverableUnits}</strong>
-                    </p>
-                  </div>
-                </label>
+                  )}
+                </div>
               );
             })}
           </div>

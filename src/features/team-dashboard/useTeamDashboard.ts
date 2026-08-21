@@ -14,6 +14,7 @@ export interface TeamInventoryItem {
   description: string;
   displayName: string;
   qty: number;
+  damagedQty?: number;
   isPart?: boolean;
   parentItem?: string | null;
   createdAt?: string;

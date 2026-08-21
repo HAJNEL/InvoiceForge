@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { Link } from 'react-router-dom';
 import {
   Search, Calendar, CalendarDays, ChevronRight, ChevronDown, LogOut, Loader2, Shield, Info, AlertTriangle, Truck, RefreshCw,
-  Package, ClipboardList, X, ListTodo, FileText, MapPin, Filter, UserCircle, CalendarCheck
+  Package, ClipboardList, X, ListTodo, FileText, MapPin, Filter, UserCircle, CalendarCheck, PackageX
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { Trip, TripStatus, TeamMember, StaffMember, Settings } from '../../types';
@@ -83,8 +83,17 @@ export function TeamDashboardMobile({
   // Stock counter catalog tab
   const [stockCatalogTab, setStockCatalogTab] = useState<'products' | 'knockdown' | 'consumables'>('products');
   const [definedCounts, setDefinedCounts] = useState<Record<string, number>>({});
+  const [definedDamagedCounts, setDefinedDamagedCounts] = useState<Record<string, number>>({});
   const [activeGroupToCount, setActiveGroupToCount] = useState<StockCountItem | null>(null);
   const [enteredQty, setEnteredQty] = useState<string>('');
+  const [enteredDamagedQty, setEnteredDamagedQty] = useState<string>('');
+  const [isDamageMode, setIsDamageMode] = useState(false);
+
+  // Damage mode is per-item — never carry it over to the next item opened, or
+  // leave it stuck on after the sheet closes.
+  useEffect(() => {
+    setIsDamageMode(false);
+  }, [activeGroupToCount]);
   const [isSubmittingStock, setIsSubmittingStock] = useState(false);
   const [expandedKnockdownGroups, setExpandedKnockdownGroups] = useState<Set<string>>(new Set());
 
@@ -152,7 +161,8 @@ export function TeamDashboardMobile({
 
   const handleSubmitStockTake = async () => {
     const records = Object.entries(definedCounts);
-    if (records.length === 0) {
+    const damagedRecords = Object.entries(definedDamagedCounts);
+    if (records.length === 0 && damagedRecords.length === 0) {
       toast.warning('Nothing Counted Yet', { description: 'Tap an item and enter its physical quantity before submitting.' });
       return;
     }
@@ -196,7 +206,26 @@ export function TeamDashboardMobile({
         };
       });
 
-      await Promise.all(itemsToSave.map(item => applyStockCount(ownerId, item)));
+      // Damaged counts go through the exact same immediate-write path, just
+      // targeting inventory.damagedQty instead of qty (see applyStockCount) —
+      // so logging damage here never touches the available count above.
+      const damagedItemsToSave = damagedRecords.map(([key, qty]) => {
+        const item = allCatalogItems.find(i => `${i.stockCode}_${i.description}` === key);
+        return {
+          stockCode: item?.stockCode || key.split('_')[0],
+          description: item?.description || '',
+          isPart: false,
+          parentItem: null,
+          countedQty: qty,
+          expectedQty: 0,
+          status: 'approved' as const
+        };
+      });
+
+      await Promise.all([
+        ...itemsToSave.map(item => applyStockCount(ownerId, item, 'qty')),
+        ...damagedItemsToSave.map(item => applyStockCount(ownerId, item, 'damagedQty'))
+      ]);
 
       const newTakeId = doc(collection(db, 'stock_takes')).id;
 
@@ -208,10 +237,12 @@ export function TeamDashboardMobile({
         userId: ownerId,
         submittedAt: new Date().toISOString(),
         status: 'completed',
-        items: itemsToSave
+        items: itemsToSave,
+        damagedItems: damagedItemsToSave
       });
 
       setDefinedCounts({});
+      setDefinedDamagedCounts({});
       toast.success('Stock Take Logged', { description: `Stock take #${nextCode} has updated inventory levels immediately.` });
     } catch (err) {
       console.error("Failed to submit stock take:", err);
@@ -291,12 +322,15 @@ export function TeamDashboardMobile({
   const renderStockRow = (item: StockCountItem) => {
     const itemKey = `${item.stockCode}_${item.description}`;
     const isLocalChanged = definedCounts[itemKey] !== undefined;
+    const isDamagedLocalChanged = definedDamagedCounts[itemKey] !== undefined;
 
     const matchingInventoryItem = (inventoryItems || []).find(
       inv => inv.stockCode.toLowerCase().trim() === item.stockCode.toLowerCase().trim()
     );
     const currentInventoryAmount = matchingInventoryItem ? (matchingInventoryItem.qty || 0) : 0;
     const currentVal = isLocalChanged ? definedCounts[itemKey] : currentInventoryAmount;
+    const currentDamagedAmount = matchingInventoryItem ? (matchingInventoryItem.damagedQty || 0) : 0;
+    const currentDamagedVal = isDamagedLocalChanged ? definedDamagedCounts[itemKey] : currentDamagedAmount;
 
     return (
       <div
@@ -304,10 +338,11 @@ export function TeamDashboardMobile({
         onClick={() => {
           setActiveGroupToCount(item);
           setEnteredQty(isLocalChanged ? currentVal.toString() : '');
+          setEnteredDamagedQty(isDamagedLocalChanged ? currentDamagedVal.toString() : '');
         }}
         className={cn(
           "p-3.5 rounded-2xl border transition-all flex items-center justify-between gap-3 select-none active:scale-[0.99]",
-          isLocalChanged ? "bg-orange-50/40 border-orange-400" : "bg-white border-zinc-200"
+          (isLocalChanged || isDamagedLocalChanged) ? "bg-orange-50/40 border-orange-400" : "bg-white border-zinc-200"
         )}
       >
         <div className="min-w-0 text-left flex-1">
@@ -319,13 +354,26 @@ export function TeamDashboardMobile({
             <p className="text-[10px] text-zinc-400 mt-0.5 truncate">{item.description}</p>
           )}
         </div>
-        <div className="shrink-0 pl-2">
-          <div className={cn(
-            "flex items-center justify-center px-3.5 py-2 rounded-2xl min-w-[50px] text-center font-sans font-black text-sm border",
-            isLocalChanged ? "bg-orange-100 border-orange-350 text-orange-950" : "bg-emerald-50 border-emerald-300 text-emerald-950"
-          )}>
+        <div className="shrink-0 pl-2 flex items-center gap-1.5">
+          <div
+            title="Available stock"
+            className={cn(
+              "flex items-center justify-center px-3.5 py-2 rounded-2xl min-w-[50px] text-center font-sans font-black text-sm border",
+              isLocalChanged ? "bg-orange-100 border-orange-350 text-orange-950" : "bg-emerald-50 border-emerald-300 text-emerald-950"
+            )}>
             {currentVal}
           </div>
+          {(currentDamagedVal > 0 || isDamagedLocalChanged) && (
+            <div
+              title="Damaged stock"
+              className={cn(
+                "flex items-center justify-center gap-1 px-2.5 py-2 rounded-2xl min-w-[42px] text-center font-sans font-black text-sm border",
+                isDamagedLocalChanged ? "bg-orange-200 border-orange-500 text-orange-950" : "bg-orange-50 border-orange-300 text-orange-800"
+              )}>
+              <PackageX className="w-3.5 h-3.5 shrink-0" />
+              {currentDamagedVal}
+            </div>
+          )}
         </div>
       </div>
     );
@@ -785,13 +833,13 @@ export function TeamDashboardMobile({
                   type="button"
                   title="Submit stock take"
                   onClick={handleSubmitStockTake}
-                  disabled={isSubmittingStock || Object.keys(definedCounts).length === 0}
+                  disabled={isSubmittingStock || (Object.keys(definedCounts).length === 0 && Object.keys(definedDamagedCounts).length === 0)}
                   className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-zinc-200 disabled:text-zinc-400 text-white font-sans font-black text-xs uppercase tracking-widest rounded-2xl transition-all flex items-center justify-center gap-2 shadow-md mobile-tap-target"
                 >
                   {isSubmittingStock ? (
                     <><Loader2 className="w-4 h-4 animate-spin shrink-0" />Submitting Ledger...</>
                   ) : (
-                    <><ClipboardList className="w-4 h-4 shrink-0" />Submit Stock Take ({Object.keys(definedCounts).length} Items Counted)</>
+                    <><ClipboardList className="w-4 h-4 shrink-0" />Submit Stock Take ({Object.keys(definedCounts).length + Object.keys(definedDamagedCounts).length} Items Counted)</>
                   )}
                 </button>
                 <p className="text-[10px] text-zinc-450 text-center font-medium leading-normal">
@@ -889,24 +937,45 @@ export function TeamDashboardMobile({
         title="Define Count"
         subtitle={activeGroupToCount?.stockCode}
         fullHeight={false}
+        headerRight={
+          <button
+            type="button"
+            title={isDamageMode ? 'Switch back to available count' : 'Log damaged stock instead'}
+            onClick={() => setIsDamageMode(prev => !prev)}
+            className={cn(
+              "p-2 rounded-xl transition-all border shrink-0 mobile-tap-target",
+              isDamageMode
+                ? "bg-orange-100 border-orange-300 text-orange-700"
+                : "bg-transparent border-transparent text-zinc-400 hover:bg-zinc-100 hover:border-zinc-200"
+            )}
+          >
+            <PackageX className="w-5 h-5" />
+          </button>
+        }
       >
         {activeGroupToCount && (
           <div className="space-y-4">
             <p className="text-[11px] font-medium text-zinc-500 leading-normal">
-              Enter the exact physical quantity counted on shelves for <strong className="text-zinc-850">{activeGroupToCount.description}</strong>:
+              {isDamageMode ? (
+                <>Enter the quantity of <strong className="text-zinc-850">{activeGroupToCount.description}</strong> found damaged — this is tracked separately and never affects available stock:</>
+              ) : (
+                <>Enter the exact physical quantity counted on shelves for <strong className="text-zinc-850">{activeGroupToCount.description}</strong>:</>
+              )}
             </p>
 
             <div className="space-y-1">
-              <label className="text-[10px] font-mono font-bold text-zinc-400 uppercase tracking-wider">Actual Quantity</label>
+              <label className="text-[10px] font-mono font-bold text-zinc-400 uppercase tracking-wider">
+                {isDamageMode ? 'Damaged Quantity' : 'Actual Quantity'}
+              </label>
               <input
                 type="number"
                 inputMode="numeric"
                 pattern="[0-9]*"
                 autoFocus
                 placeholder="e.g. 15"
-                title="Actual quantity"
-                value={enteredQty}
-                onChange={(e) => setEnteredQty(e.target.value)}
+                title={isDamageMode ? 'Damaged quantity' : 'Actual quantity'}
+                value={isDamageMode ? enteredDamagedQty : enteredQty}
+                onChange={(e) => (isDamageMode ? setEnteredDamagedQty(e.target.value) : setEnteredQty(e.target.value))}
                 className="w-full px-4 py-3 bg-zinc-50 border border-zinc-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 font-sans text-sm font-black text-zinc-800"
               />
             </div>
@@ -916,7 +985,7 @@ export function TeamDashboardMobile({
                 k => k.stockCode.toLowerCase().trim() === activeGroupToCount.stockCode.toLowerCase().trim() && k.type === 'knockdown'
               );
               if (!matchingKnockdown || !matchingKnockdown.parts || matchingKnockdown.parts.length === 0) return null;
-              const multiplier = parseInt(enteredQty, 10) || 0;
+              const multiplier = parseInt(isDamageMode ? enteredDamagedQty : enteredQty, 10) || 0;
               return (
                 <div className="bg-zinc-50 border border-zinc-200/60 rounded-2xl p-4 space-y-2.5">
                   <div className="flex items-center justify-between border-b border-zinc-200 pb-1.5">
@@ -943,40 +1012,54 @@ export function TeamDashboardMobile({
               );
             })()}
 
-            <div className="flex items-center gap-2 pt-2">
-              <button
-                type="button"
-                title="Set count"
-                onClick={() => {
-                  const qtyValue = parseInt(enteredQty, 10);
-                  if (isNaN(qtyValue) || qtyValue < 0) {
-                    toast.error('Invalid Quantity', { description: 'Please enter a valid number (0 or greater).' });
-                    return;
-                  }
-                  const itemKey = `${activeGroupToCount.stockCode}_${activeGroupToCount.description}`;
-                  setDefinedCounts(prev => ({ ...prev, [itemKey]: qtyValue }));
-                  setActiveGroupToCount(null);
-                }}
-                className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-sans font-black text-xs uppercase tracking-wider rounded-xl transition-colors shadow-xs mobile-tap-target"
-              >
-                Set Count
-              </button>
-              <button
-                type="button"
-                title="Clear count"
-                onClick={() => {
-                  const itemKey = `${activeGroupToCount.stockCode}_${activeGroupToCount.description}`;
-                  setDefinedCounts(prev => {
-                    const next = { ...prev };
-                    delete next[itemKey];
-                    return next;
-                  });
-                  setActiveGroupToCount(null);
-                }}
-                className="px-3 py-3 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-sans font-black text-xs uppercase tracking-wider rounded-xl transition-colors mobile-tap-target"
-              >
-                Clear
-              </button>
+            <div className="space-y-2 pt-2">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  title={isDamageMode ? 'Set damage count' : 'Set count'}
+                  onClick={() => {
+                    const qtyValue = parseInt(isDamageMode ? enteredDamagedQty : enteredQty, 10);
+                    if (isNaN(qtyValue) || qtyValue < 0) {
+                      toast.error('Invalid Quantity', { description: 'Please enter a valid number (0 or greater).' });
+                      return;
+                    }
+                    const itemKey = `${activeGroupToCount.stockCode}_${activeGroupToCount.description}`;
+                    if (isDamageMode) {
+                      setDefinedDamagedCounts(prev => ({ ...prev, [itemKey]: qtyValue }));
+                    } else {
+                      setDefinedCounts(prev => ({ ...prev, [itemKey]: qtyValue }));
+                    }
+                    setActiveGroupToCount(null);
+                  }}
+                  className={cn(
+                    "flex-1 py-3 text-white font-sans font-black text-xs uppercase tracking-wider rounded-xl transition-colors shadow-xs mobile-tap-target",
+                    isDamageMode ? "bg-orange-600 hover:bg-orange-700" : "bg-emerald-600 hover:bg-emerald-700"
+                  )}
+                >
+                  {isDamageMode ? 'Set Damage Count' : 'Set Count'}
+                </button>
+                <button
+                  type="button"
+                  title="Clear count"
+                  onClick={() => {
+                    const itemKey = `${activeGroupToCount.stockCode}_${activeGroupToCount.description}`;
+                    setDefinedCounts(prev => {
+                      const next = { ...prev };
+                      delete next[itemKey];
+                      return next;
+                    });
+                    setDefinedDamagedCounts(prev => {
+                      const next = { ...prev };
+                      delete next[itemKey];
+                      return next;
+                    });
+                    setActiveGroupToCount(null);
+                  }}
+                  className="px-3 py-3 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-sans font-black text-xs uppercase tracking-wider rounded-xl transition-colors mobile-tap-target"
+                >
+                  Clear
+                </button>
+              </div>
             </div>
           </div>
         )}

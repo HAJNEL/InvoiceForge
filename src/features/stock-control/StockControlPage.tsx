@@ -127,7 +127,7 @@ export function StockControlPage() {
     });
   }, [stockControl.orderRows, filters]);
 
-  const bookedOrders = useMemo(() => filteredOrderRows.filter(o => o.totalReserved > 0), [filteredOrderRows]);
+  const bookedOrders = useMemo(() => filteredOrderRows.filter(o => o.totalReserved > 0 && !o.isReady), [filteredOrderRows]);
   const assemblyOrders = useMemo(() => filteredOrderRows.filter(o => o.totalAssembled > 0 && !o.isReady), [filteredOrderRows]);
   const readyOrders = useMemo(() => filteredOrderRows.filter(o => o.isReady), [filteredOrderRows]);
 
@@ -243,6 +243,7 @@ export function StockControlPage() {
         row={allocateRow}
         orders={stockControl.schoolOrders}
         allocations={stockControl.allocations}
+        orderById={orderById}
         onClose={() => setAllocateRow(null)}
         onAllocate={stockControl.allocateStock}
       />

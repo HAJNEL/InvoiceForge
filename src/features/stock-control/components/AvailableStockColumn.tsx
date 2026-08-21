@@ -1,6 +1,7 @@
-import { Boxes, PackagePlus, Eye, Zap } from 'lucide-react';
+import { Boxes, PackagePlus, Eye, Zap, CircleCheck, Bookmark, FileText } from 'lucide-react';
 import { PhaseColumn } from './PhaseColumn';
 import type { StockRow } from '../utils/phaseCalculations';
+import { cn } from '../../../lib/utils';
 
 export function AvailableStockColumn({
   stockRows,
@@ -51,12 +52,36 @@ export function AvailableStockColumn({
             </div>
           </div>
 
-          <div className="flex items-center gap-3 text-xs font-mono">
-            <span className="text-zinc-500">
-              Available: <strong className={row.available > 0 ? 'text-emerald-600' : 'text-red-600'}>{row.available}</strong>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span
+              title="On the floor and not reserved for anything"
+              className={cn(
+                'inline-flex items-center gap-1 pl-1.5 pr-2 py-0.5 rounded-full border text-xs font-mono font-bold',
+                row.available > 0
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                  : 'bg-red-50 border-red-200 text-red-700'
+              )}
+            >
+              <CircleCheck className="w-3.5 h-3.5" />
+              {row.available}
             </span>
-            {row.reservedQty > 0 && (
-              <span className="text-zinc-400">Reserved: <strong className="text-amber-600">{row.reservedQty}</strong></span>
+            {row.bookedQty > 0 && (
+              <span
+                title="Booked against school orders that aren't invoiced yet"
+                className="inline-flex items-center gap-1 pl-1.5 pr-2 py-0.5 rounded-full border border-amber-200 bg-amber-50 text-amber-700 text-xs font-mono font-bold"
+              >
+                <Bookmark className="w-3.5 h-3.5" />
+                {row.bookedQty}
+              </span>
+            )}
+            {row.invoicedQty > 0 && (
+              <span
+                title="Reserved by an open invoice"
+                className="inline-flex items-center gap-1 pl-1.5 pr-2 py-0.5 rounded-full border border-violet-200 bg-violet-50 text-violet-700 text-xs font-mono font-bold"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                {row.invoicedQty}
+              </span>
             )}
           </div>
 

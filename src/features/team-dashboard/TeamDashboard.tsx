@@ -3,7 +3,7 @@ import { toast } from 'sonner';
 import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import {
   Search, Calendar, CalendarDays, ChevronLeft, ChevronRight, LogOut, Loader2, Info, AlertTriangle, Truck, RefreshCw,
-  Package, ClipboardList, ChevronDown, X, Menu, ListTodo, FileText, MapPin, Filter, ArrowLeft, UserCircle, CalendarCheck
+  Package, ClipboardList, ChevronDown, X, Menu, ListTodo, FileText, MapPin, Filter, ArrowLeft, UserCircle, CalendarCheck, PackageX
 } from 'lucide-react';
 import { useTeamDashboard } from './useTeamDashboard';
 import { TeamAttendancePanel } from '../time-attendance/components/TeamAttendancePanel';
@@ -50,8 +50,17 @@ export function TeamDashboard() {
   // Stock counter catalog tab
   const [stockCatalogTab, setStockCatalogTab] = useState<'products' | 'knockdown' | 'consumables'>('products');
   const [definedCounts, setDefinedCounts] = useState<Record<string, number>>({});
+  const [definedDamagedCounts, setDefinedDamagedCounts] = useState<Record<string, number>>({});
   const [activeGroupToCount, setActiveGroupToCount] = useState<StockCountItem | null>(null);
   const [enteredQty, setEnteredQty] = useState<string>('');
+  const [enteredDamagedQty, setEnteredDamagedQty] = useState<string>('');
+  const [isDamageMode, setIsDamageMode] = useState(false);
+
+  // Damage mode is per-item — never carry it over to the next item opened, or
+  // leave it stuck on after the dialog closes.
+  useEffect(() => {
+    setIsDamageMode(false);
+  }, [activeGroupToCount]);
   const [isSubmittingStock, setIsSubmittingStock] = useState(false);
   const [expandedKnockdownGroups, setExpandedKnockdownGroups] = useState<Set<string>>(new Set());
 
@@ -211,15 +220,18 @@ export function TeamDashboard() {
   const renderStockRow = (item: StockCountItem) => {
     const itemKey = `${item.stockCode}_${item.description}`;
     const isLocalChanged = definedCounts[itemKey] !== undefined;
+    const isDamagedLocalChanged = definedDamagedCounts[itemKey] !== undefined;
 
     const matchingInventoryItem = (inventoryItems || []).find(
       inv => inv.stockCode.toLowerCase().trim() === item.stockCode.toLowerCase().trim()
     );
     const currentInventoryAmount = matchingInventoryItem ? (matchingInventoryItem.qty || 0) : 0;
     const currentVal = isLocalChanged ? definedCounts[itemKey] : currentInventoryAmount;
+    const currentDamagedAmount = matchingInventoryItem ? (matchingInventoryItem.damagedQty || 0) : 0;
+    const currentDamagedVal = isDamagedLocalChanged ? definedDamagedCounts[itemKey] : currentDamagedAmount;
 
     let bgClass = 'bg-white border-zinc-200 hover:border-zinc-350 hover:shadow-2xs';
-    if (isLocalChanged) bgClass = 'bg-orange-50/40 border-orange-400 shadow-2xs';
+    if (isLocalChanged || isDamagedLocalChanged) bgClass = 'bg-orange-50/40 border-orange-400 shadow-2xs';
 
     return (
       <div
@@ -227,6 +239,7 @@ export function TeamDashboard() {
         onClick={() => {
           setActiveGroupToCount(item);
           setEnteredQty(isLocalChanged ? currentVal.toString() : '');
+          setEnteredDamagedQty(isDamagedLocalChanged ? currentDamagedVal.toString() : '');
         }}
         className={`p-4 rounded-3xl border transition-all cursor-pointer flex items-center justify-between gap-3 select-none hover:scale-[1.005] ${bgClass}`}
       >
@@ -241,14 +254,25 @@ export function TeamDashboard() {
             <p className="text-[10px] text-zinc-400 mt-0.5 truncate">{item.description}</p>
           )}
         </div>
-        <div className="shrink-0 pl-2">
+        <div className="shrink-0 pl-2 flex items-center gap-1.5">
           {isLocalChanged ? (
-            <div className="flex items-center justify-center bg-orange-100 border border-orange-350 text-orange-950 px-4 py-2 rounded-2xl min-w-[54px] text-center font-sans font-black text-sm shadow-3xs">
+            <div title="Available stock" className="flex items-center justify-center bg-orange-100 border border-orange-350 text-orange-950 px-4 py-2 rounded-2xl min-w-[54px] text-center font-sans font-black text-sm shadow-3xs">
               {currentVal}
             </div>
           ) : (
-            <div className="flex items-center justify-center bg-emerald-50 border border-emerald-300 text-emerald-950 px-4 py-2 rounded-2xl min-w-[54px] text-center font-sans font-black text-sm shadow-3xs">
+            <div title="Available stock" className="flex items-center justify-center bg-emerald-50 border border-emerald-300 text-emerald-950 px-4 py-2 rounded-2xl min-w-[54px] text-center font-sans font-black text-sm shadow-3xs">
               {currentInventoryAmount}
+            </div>
+          )}
+          {(currentDamagedVal > 0 || isDamagedLocalChanged) && (
+            <div
+              title="Damaged stock"
+              className={`flex items-center justify-center gap-1 px-3 py-2 rounded-2xl min-w-[46px] text-center font-sans font-black text-sm shadow-3xs border ${
+                isDamagedLocalChanged ? 'bg-orange-200 border-orange-500 text-orange-950' : 'bg-orange-50 border-orange-300 text-orange-800'
+              }`}
+            >
+              <PackageX className="w-3.5 h-3.5 shrink-0" />
+              {currentDamagedVal}
             </div>
           )}
         </div>
@@ -258,7 +282,8 @@ export function TeamDashboard() {
 
   const handleSubmitStockTake = async () => {
     const records = Object.entries(definedCounts);
-    if (records.length === 0) {
+    const damagedRecords = Object.entries(definedDamagedCounts);
+    if (records.length === 0 && damagedRecords.length === 0) {
       toast.warning('Nothing Counted Yet', { description: 'Tap an item and enter its physical quantity before submitting.' });
       return;
     }
@@ -303,7 +328,26 @@ export function TeamDashboard() {
         };
       });
 
-      await Promise.all(itemsToSave.map(item => applyStockCount(ownerId, item)));
+      // Damaged counts go through the exact same immediate-write path, just
+      // targeting inventory.damagedQty instead of qty (see applyStockCount) —
+      // so logging damage here never touches the available count above.
+      const damagedItemsToSave = damagedRecords.map(([key, qty]) => {
+        const item = allCatalogItems.find(i => `${i.stockCode}_${i.description}` === key);
+        return {
+          stockCode: item?.stockCode || key.split('_')[0],
+          description: item?.description || '',
+          isPart: false,
+          parentItem: null,
+          countedQty: qty,
+          expectedQty: 0,
+          status: 'approved' as const
+        };
+      });
+
+      await Promise.all([
+        ...itemsToSave.map(item => applyStockCount(ownerId, item, 'qty')),
+        ...damagedItemsToSave.map(item => applyStockCount(ownerId, item, 'damagedQty'))
+      ]);
 
       const { setDoc, doc } = await import('firebase/firestore');
       const newTakeId = doc(collection(db, 'stock_takes')).id;
@@ -316,11 +360,13 @@ export function TeamDashboard() {
         userId: ownerId,
         submittedAt: new Date().toISOString(),
         status: 'completed',
-        items: itemsToSave
+        items: itemsToSave,
+        damagedItems: damagedItemsToSave
       });
 
       // Clear local state on success
       setDefinedCounts({});
+      setDefinedDamagedCounts({});
       toast.success('Stock Take Logged', { description: `Stock take #${nextCode} has updated inventory levels immediately.` });
     } catch (err) {
       console.error("Failed to submit stock take:", err);
@@ -1054,13 +1100,13 @@ export function TeamDashboard() {
                     <button
                       type="button"
                       onClick={handleSubmitStockTake}
-                      disabled={isSubmittingStock || Object.keys(definedCounts).length === 0}
+                      disabled={isSubmittingStock || (Object.keys(definedCounts).length === 0 && Object.keys(definedDamagedCounts).length === 0)}
                       className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-zinc-200 disabled:text-zinc-400 disabled:cursor-not-allowed text-white font-sans font-black text-xs uppercase tracking-widest rounded-2xl cursor-pointer transition-all flex items-center justify-center gap-2 shadow-md hover:scale-[1.01] active:scale-99"
                     >
                       {isSubmittingStock ? (
                         <><Loader2 className="w-4 h-4 animate-spin shrink-0" />Submitting Ledger...</>
                       ) : (
-                        <><ClipboardList className="w-4 h-4 shrink-0" />Submit Stock Take ({Object.keys(definedCounts).length} Items Counted)</>
+                        <><ClipboardList className="w-4 h-4 shrink-0" />Submit Stock Take ({Object.keys(definedCounts).length + Object.keys(definedDamagedCounts).length} Items Counted)</>
                       )}
                     </button>
                     <p className="text-[10px] text-zinc-450 text-center font-medium leading-normal">
@@ -1175,30 +1221,51 @@ export function TeamDashboard() {
                   Define Count
                 </h3>
               </div>
-              <button
-                title='setActiveGroupToCount'
-                type="button"
-                onClick={() => setActiveGroupToCount(null)}
-                className="p-1 hover:bg-zinc-100 text-zinc-400 rounded-xl transition-all cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  title={isDamageMode ? 'Switch back to available count' : 'Log damaged stock instead'}
+                  onClick={() => setIsDamageMode(prev => !prev)}
+                  className={`p-1.5 rounded-xl transition-all cursor-pointer border ${
+                    isDamageMode
+                      ? 'bg-orange-100 border-orange-300 text-orange-700'
+                      : 'bg-transparent border-transparent text-zinc-400 hover:bg-zinc-100 hover:border-zinc-200'
+                  }`}
+                >
+                  <PackageX className="w-4 h-4" />
+                </button>
+                <button
+                  title='setActiveGroupToCount'
+                  type="button"
+                  onClick={() => setActiveGroupToCount(null)}
+                  className="p-1 hover:bg-zinc-100 text-zinc-400 rounded-xl transition-all cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
             </div>
 
             <p className="text-[11px] font-medium text-zinc-500 leading-normal">
-              Enter the exact physical quantity counted on shelves for <strong className="text-zinc-850">{activeGroupToCount.description}</strong>:
+              {isDamageMode ? (
+                <>Enter the quantity of <strong className="text-zinc-850">{activeGroupToCount.description}</strong> found damaged — this is tracked separately and never affects available stock:</>
+              ) : (
+                <>Enter the exact physical quantity counted on shelves for <strong className="text-zinc-850">{activeGroupToCount.description}</strong>:</>
+              )}
             </p>
 
             <div className="space-y-1">
-              <label className="text-[10px] font-mono font-bold text-zinc-400 uppercase tracking-wider">Actual Quantity</label>
+              <label className="text-[10px] font-mono font-bold text-zinc-400 uppercase tracking-wider">
+                {isDamageMode ? 'Damaged Quantity' : 'Actual Quantity'}
+              </label>
               <input
                 type="number"
                 inputMode="numeric"
                 pattern="[0-9]*"
                 autoFocus
                 placeholder="e.g. 15"
-                value={enteredQty}
-                onChange={(e) => setEnteredQty(e.target.value)}
+                title={isDamageMode ? 'Damaged quantity' : 'Actual quantity'}
+                value={isDamageMode ? enteredDamagedQty : enteredQty}
+                onChange={(e) => (isDamageMode ? setEnteredDamagedQty(e.target.value) : setEnteredQty(e.target.value))}
                 className="w-full px-4 py-3 bg-zinc-50 border border-zinc-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 font-sans text-sm font-black text-zinc-800"
               />
             </div>
@@ -1208,7 +1275,7 @@ export function TeamDashboard() {
                 k => k.stockCode.toLowerCase().trim() === activeGroupToCount.stockCode.toLowerCase().trim() && k.type === 'knockdown'
               );
               if (!matchingKnockdown || !matchingKnockdown.parts || matchingKnockdown.parts.length === 0) return null;
-              const multiplier = parseInt(enteredQty, 10) || 0;
+              const multiplier = parseInt(isDamageMode ? enteredDamagedQty : enteredQty, 10) || 0;
               return (
                 <div className="bg-zinc-50 border border-zinc-200/60 rounded-2xl p-4 space-y-2.5">
                   <div className="flex items-center justify-between border-b border-zinc-200 pb-1.5">
@@ -1237,41 +1304,52 @@ export function TeamDashboard() {
               );
             })()}
 
-            <div className="flex items-center gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => {
-                  const qtyValue = parseInt(enteredQty, 10);
-                  if (isNaN(qtyValue) || qtyValue < 0) {
-                    toast.error('Invalid Quantity', { description: 'Please enter a valid number (0 or greater).' });
-                    return;
-                  }
-                  const itemKey = `${activeGroupToCount.stockCode}_${activeGroupToCount.description}`;
-                  setDefinedCounts(prev => ({
-                    ...prev,
-                    [itemKey]: qtyValue
-                  }));
-                  setActiveGroupToCount(null);
-                }}
-                className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-sans font-black text-xs uppercase tracking-wider rounded-xl transition-colors cursor-pointer shadow-xs"
-              >
-                Set Count
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const itemKey = `${activeGroupToCount.stockCode}_${activeGroupToCount.description}`;
-                  setDefinedCounts(prev => {
-                    const next = { ...prev };
-                    delete next[itemKey];
-                    return next;
-                  });
-                  setActiveGroupToCount(null);
-                }}
-                className="px-3 py-3 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-sans font-black text-xs uppercase tracking-wider rounded-xl transition-colors cursor-pointer"
-              >
-                Clear
-              </button>
+            <div className="space-y-2 pt-2">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  title={isDamageMode ? 'Set damage count' : 'Set count'}
+                  onClick={() => {
+                    const qtyValue = parseInt(isDamageMode ? enteredDamagedQty : enteredQty, 10);
+                    if (isNaN(qtyValue) || qtyValue < 0) {
+                      toast.error('Invalid Quantity', { description: 'Please enter a valid number (0 or greater).' });
+                      return;
+                    }
+                    const itemKey = `${activeGroupToCount.stockCode}_${activeGroupToCount.description}`;
+                    if (isDamageMode) {
+                      setDefinedDamagedCounts(prev => ({ ...prev, [itemKey]: qtyValue }));
+                    } else {
+                      setDefinedCounts(prev => ({ ...prev, [itemKey]: qtyValue }));
+                    }
+                    setActiveGroupToCount(null);
+                  }}
+                  className={`flex-1 py-3 text-white font-sans font-black text-xs uppercase tracking-wider rounded-xl transition-colors cursor-pointer shadow-xs ${
+                    isDamageMode ? 'bg-orange-600 hover:bg-orange-700' : 'bg-emerald-600 hover:bg-emerald-700'
+                  }`}
+                >
+                  {isDamageMode ? 'Set Damage Count' : 'Set Count'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const itemKey = `${activeGroupToCount.stockCode}_${activeGroupToCount.description}`;
+                    setDefinedCounts(prev => {
+                      const next = { ...prev };
+                      delete next[itemKey];
+                      return next;
+                    });
+                    setDefinedDamagedCounts(prev => {
+                      const next = { ...prev };
+                      delete next[itemKey];
+                      return next;
+                    });
+                    setActiveGroupToCount(null);
+                  }}
+                  className="px-3 py-3 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-sans font-black text-xs uppercase tracking-wider rounded-xl transition-colors cursor-pointer"
+                >
+                  Clear
+                </button>
+              </div>
             </div>
           </div>
         </div>

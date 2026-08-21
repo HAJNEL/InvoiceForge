@@ -391,13 +391,18 @@ export interface AutoBookCandidate {
 
 /**
  * Candidate pool for "Auto-Book" (Available Stock column's one-click reserve):
- * every still-open order with at least one SKU that's both short on reservation
- * and has some of that SKU currently available, sorted so the orders Auto-Book
- * can fully close out first. `coverableUnits`/`pct` are an upfront estimate only
- * (computed independently per order) — actual booking still runs each allocation
- * through the same live-inventory transaction a manual Allocate uses, so two
- * candidates competing for the same SKU never double-spend it; whichever is
- * processed second just books less than this estimate shows.
+ * every still-open, standalone Orders-collection row (source === 'order') with
+ * at least one SKU that's both short on reservation and has some of that SKU
+ * currently available, sorted so the orders Auto-Book can fully close out
+ * first. Invoice-sourced rows are excluded — same restriction the manual
+ * Allocate picker (AllocateStockModal) already applies — since allocating
+ * against them would reserve stock under an id that doesn't correspond to any
+ * record on the Orders screen, making it look like Auto-Book invented an
+ * order that "doesn't exist". `coverableUnits`/`pct` are an upfront estimate
+ * only (computed independently per order) — actual booking still runs each
+ * allocation through the same live-inventory transaction a manual Allocate
+ * uses, so two candidates competing for the same SKU never double-spend it;
+ * whichever is processed second just books less than this estimate shows.
  */
 export function computeAutoBookCandidates(orderRows: OrderRow[], stockRows: StockRow[]): AutoBookCandidate[] {
   const availableByCode = new Map<string, number>();
@@ -405,6 +410,7 @@ export function computeAutoBookCandidates(orderRows: OrderRow[], stockRows: Stoc
 
   const candidates: AutoBookCandidate[] = [];
   for (const order of orderRows) {
+    if (order.source !== 'order') continue;
     if (!isOrderRowOpen(order)) continue;
 
     const lines: AutoBookLine[] = order.lines
@@ -438,7 +444,19 @@ export interface StockRow {
   description: string;
   category: 'product' | 'consumable' | 'unknown';
   onHandQty: number;
+  // Total reserved units (bookedQty + invoicedQty) — what available is derived from.
   reservedQty: number;
+  // Summed qty for this stock code across every still-open invoice (any status
+  // other than INVOICE_TERMINAL_STATUSES), computed live from invoice line
+  // items — independent of whether that demand has ever been through the
+  // manual Allocate/Auto-Book flow. This is what makes an invoice reduce
+  // Available the moment it's created, not only once someone books it.
+  invoicedQty: number;
+  // Units reserved via the allocation ledger against a standalone school order
+  // that isn't (yet) backed by a real invoice document — invoice-linked
+  // allocations are excluded here since that demand is already counted in
+  // invoicedQty above, and double-subtracting it would undercount Available.
+  bookedQty: number;
   available: number;
 }
 
@@ -460,13 +478,43 @@ export interface StockRow {
  * same `getProductBuildableQty` calculation the Products catalog screen uses —
  * rather than the finished SKU's own (often stale/unrelated) inventory doc, so
  * the two screens always agree on what "available" means for that product.
+ *
+ * `invoicedQty` is recomputed live from every open invoice's own line items
+ * (same grouping `buildOrderRows` uses), not from the allocation ledger — an
+ * invoice reserves its stock the moment it exists in a non-terminal status
+ * (see INVOICE_TERMINAL_STATUSES), whether or not anyone ever ran Allocate or
+ * Auto-Book against it. `bookedQty` covers the other case the allocation
+ * ledger is still the only source of truth for: a standalone school order
+ * (Orders collection) reserved via Allocate/Auto-Book before it has a real
+ * invoice of its own — allocations already tied to a real invoice id are
+ * excluded from `bookedQty` so that demand isn't subtracted twice.
  */
 export function buildStockRows(
   inventoryItems: InventoryRow[],
   productsByCode: Map<string, Product>,
   knockdownByCode: Map<string, { description: string; displayName: string }>,
-  componentInventoryMap: Record<string, number>
+  componentInventoryMap: Record<string, number>,
+  allocations: StockAllocation[],
+  invoices: UIInvoice[]
 ): StockRow[] {
+  const invoiceIds = new Set(invoices.map(inv => inv.id));
+
+  const bookedByCode = new Map<string, number>();
+  for (const alloc of allocations) {
+    if (alloc.releasedAt) continue;
+    if (invoiceIds.has(alloc.invoiceId)) continue;
+    const codeKey = normalize(alloc.stockCode);
+    bookedByCode.set(codeKey, (bookedByCode.get(codeKey) || 0) + alloc.qty);
+  }
+
+  const invoicedByCode = new Map<string, number>();
+  for (const invoice of invoices) {
+    if (INVOICE_TERMINAL_STATUSES.has((invoice.status || '').toLowerCase())) continue;
+    for (const [codeKey, { qty }] of groupOrderedQty(invoice)) {
+      invoicedByCode.set(codeKey, (invoicedByCode.get(codeKey) || 0) + qty);
+    }
+  }
+
   return inventoryItems
     .filter(item => productsByCode.get(normalize(item.stockCode))?.category === 'product')
     .map(item => {
@@ -480,14 +528,18 @@ export function buildStockRows(
 
       const buildableQty = product ? getProductBuildableQty(product, componentInventoryMap) : null;
       const onHandQty = buildableQty ?? item.qty;
-      const available = Math.max(0, onHandQty - item.reservedQty);
+      const bookedQty = bookedByCode.get(codeKey) || 0;
+      const invoicedQty = invoicedByCode.get(codeKey) || 0;
+      const available = Math.max(0, onHandQty - bookedQty - invoicedQty);
 
       return {
         stockCode: item.stockCode,
         description,
         category: (product?.category === 'product' || product?.category === 'consumable') ? product.category : 'unknown',
         onHandQty,
-        reservedQty: item.reservedQty,
+        reservedQty: bookedQty + invoicedQty,
+        invoicedQty,
+        bookedQty,
         available
       } as StockRow;
     })

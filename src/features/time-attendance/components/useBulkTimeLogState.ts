@@ -55,6 +55,13 @@ export function useBulkTimeLogState(staff: StaffMember[], settings: TimeAttendan
     });
   }, [defaultRow]);
 
+  const setChecked = useCallback((staffId: string, checked: boolean) => {
+    setRows(prev => {
+      const existing = prev[staffId] || defaultRow();
+      return { ...prev, [staffId]: { ...existing, checked } };
+    });
+  }, [defaultRow]);
+
   const setRowTime = useCallback((staffId: string, field: 'clockIn' | 'clockOut', value: string) => {
     setRows(prev => {
       const existing = prev[staffId] || defaultRow();
@@ -215,7 +222,7 @@ export function useBulkTimeLogState(staff: StaffMember[], settings: TimeAttendan
     defaultLunchBreak, applyDefaultLunchBreak,
     defaultLunchBreakStart, applyDefaultLunchBreakStart,
     defaultLunchBreakEnd, applyDefaultLunchBreakEnd,
-    getRow, toggleChecked, setRowTime, setRowBreak, setRowBreakTime,
+    getRow, toggleChecked, setChecked, setRowTime, setRowBreak, setRowBreakTime,
     checkedCount, allChecked, toggleSelectAll, buildEntries,
   };
 }

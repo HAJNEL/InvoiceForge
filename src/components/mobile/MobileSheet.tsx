@@ -8,6 +8,7 @@ interface MobileSheetProps {
   title: string;
   subtitle?: string;
   headerLeft?: ReactNode;
+  headerRight?: ReactNode;
   footer?: ReactNode;
   children: ReactNode;
   fullHeight?: boolean;
@@ -24,6 +25,7 @@ export function MobileSheet({
   title,
   subtitle,
   headerLeft,
+  headerRight,
   footer,
   children,
   fullHeight = true,
@@ -56,14 +58,17 @@ export function MobileSheet({
               )}
             </div>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            title="Close"
-            className="p-2 hover:bg-zinc-100 rounded-xl text-zinc-400 transition-all border border-transparent hover:border-zinc-200 shrink-0 mobile-tap-target"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {headerRight}
+            <button
+              type="button"
+              onClick={onClose}
+              title="Close"
+              className="p-2 hover:bg-zinc-100 rounded-xl text-zinc-400 transition-all border border-transparent hover:border-zinc-200 shrink-0 mobile-tap-target"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto overflow-x-hidden p-4">{children}</div>

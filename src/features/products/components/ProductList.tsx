@@ -46,6 +46,7 @@ export function ProductList() {
   const {
     products,
     inventoryMap,
+    damagedMap,
     loading,
     error,
     saveProduct,
@@ -476,6 +477,7 @@ export function ProductList() {
                       {activeTab === 'products' && (
                         <th className="px-5 py-3.5 text-xs font-bold text-zinc-500 uppercase tracking-wider text-center w-[110px]">Components</th>
                       )}
+                      <th className="px-5 py-3.5 text-xs font-bold text-zinc-500 uppercase tracking-wider text-right w-[110px]">Damaged</th>
                       <th className="px-5 py-3.5 text-xs font-bold text-zinc-500 uppercase tracking-wider text-right w-[120px]">Available</th>
                       <th className="px-5 py-3.5 text-xs font-bold text-zinc-500 uppercase tracking-wider text-right w-[120px]">Units Ordered</th>
                       <th className="px-5 py-3.5 text-xs font-bold text-zinc-500 uppercase tracking-wider text-right w-[110px]">Actions</th>
@@ -487,6 +489,7 @@ export function ProductList() {
                       const buildableQty = getProductBuildableQty(p, inventoryMap);
                       const isComposite = buildableQty !== null;
                       const onFloor = isComposite ? buildableQty : (inventoryMap[codeKey] ?? 0);
+                      const damaged = damagedMap[codeKey] ?? 0;
                       const ordered = unitsOrderedMap[codeKey] ?? 0;
                       const compCount = (p.components ?? []).length;
                       return (
@@ -511,6 +514,18 @@ export function ProductList() {
                               )}
                             </td>
                           )}
+                          <td className="px-5 py-4 text-right whitespace-nowrap">
+                            <span
+                              title="Units logged as damaged"
+                              className={cn(
+                                "inline-block font-black text-sm tabular-nums px-2.5 py-0.5 rounded-lg",
+                                damaged > 0
+                                  ? "bg-orange-50 text-orange-700 border border-orange-200"
+                                  : "bg-zinc-100 text-zinc-400 border border-zinc-200"
+                              )}>
+                              {damaged}
+                            </span>
+                          </td>
                           <td className="px-5 py-4 text-right whitespace-nowrap">
                             <span
                               title={isComposite ? 'Buildable from current component stock' : 'Units on floor'}
@@ -610,6 +625,7 @@ export function ProductList() {
                       <th className="px-5 py-3.5 text-xs font-bold text-zinc-500 uppercase tracking-wider w-[160px]">Stock Code</th>
                       <th className="px-5 py-3.5 text-xs font-bold text-zinc-500 uppercase tracking-wider">Display Name</th>
                       <th className="px-5 py-3.5 text-xs font-bold text-zinc-500 uppercase tracking-wider w-[120px]">Type</th>
+                      <th className="px-5 py-3.5 text-xs font-bold text-zinc-500 uppercase tracking-wider text-right w-[110px]">Damaged</th>
                       <th className="px-5 py-3.5 text-xs font-bold text-zinc-500 uppercase tracking-wider text-right w-[120px]">Available</th>
                       <th className="px-5 py-3.5 text-xs font-bold text-zinc-500 uppercase tracking-wider text-right w-[120px]">Units Ordered</th>
                       <th className="px-5 py-3.5 text-xs font-bold text-zinc-500 uppercase tracking-wider text-right w-[100px]">Actions</th>
@@ -621,6 +637,7 @@ export function ProductList() {
                       const buildableQty = getKnockdownBuildableQty(k, inventoryMap);
                       const isComposite = buildableQty !== null;
                       const onFloor = isComposite ? buildableQty : (inventoryMap[codeKey] ?? 0);
+                      const damaged = damagedMap[codeKey] ?? 0;
                       const ordered = unitsOrderedMap[codeKey] ?? 0;
                       return (
                         <tr key={k.id} className="hover:bg-zinc-50/40 transition-colors">
@@ -640,6 +657,18 @@ export function ProductList() {
                           <td className="px-5 py-4 whitespace-nowrap">
                             <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded border bg-purple-50 text-purple-700 border-purple-200">
                               knockdown
+                            </span>
+                          </td>
+                          <td className="px-5 py-4 text-right whitespace-nowrap">
+                            <span
+                              title="Units logged as damaged"
+                              className={cn(
+                                "inline-block font-black text-sm tabular-nums px-2.5 py-0.5 rounded-lg",
+                                damaged > 0
+                                  ? "bg-orange-50 text-orange-700 border border-orange-200"
+                                  : "bg-zinc-100 text-zinc-400 border border-zinc-200"
+                              )}>
+                              {damaged}
                             </span>
                           </td>
                           <td className="px-5 py-4 text-right whitespace-nowrap">

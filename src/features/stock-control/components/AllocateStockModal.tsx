@@ -2,7 +2,7 @@ import { useMemo, useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { Search } from 'lucide-react';
 import { PhaseModal } from './PhaseModal';
-import type { StockRow } from '../utils/phaseCalculations';
+import type { OrderRow, StockRow } from '../utils/phaseCalculations';
 import { normalize } from '../utils/phaseCalculations';
 import type { StockAllocation } from '../hooks/useAllocations';
 import type { Order } from '../../orders/hooks/useOrders';
@@ -18,12 +18,17 @@ export function AllocateStockModal({
   row,
   orders,
   allocations,
+  orderById,
   onClose,
   onAllocate
 }: {
   row: StockRow | null;
   orders: Order[];
   allocations: StockAllocation[];
+  // Same derived OrderRow used by the Booked to Schools column — keyed by
+  // Orders-collection doc id — so the selected card can show the identical
+  // SKU/Ord/Res/Built/Rem breakdown without recomputing it here.
+  orderById: Map<string, OrderRow>;
   onClose: () => void;
   onAllocate: (params: { invoiceId: string; orderNumber: string; schoolName: string; stockCode: string; qty: number }) => Promise<{ success: boolean; error?: string }>;
 }) {
@@ -152,31 +157,64 @@ export function AllocateStockModal({
               />
             </div>
 
-            <div className="max-h-48 overflow-y-auto space-y-1.5">
+            <div className="max-h-72 overflow-y-auto space-y-1.5">
               {matchingOrders.length === 0 ? (
                 <p className="text-[11px] text-zinc-400 py-4 text-center">No active orders currently need this item.</p>
-              ) : matchingOrders.map(({ order, remaining }) => (
-                <button
-                  key={order.id}
-                  type="button"
-                  title={`Select ${order.schoolName}`}
-                  onClick={() => { setSelectedOrder(order); setQty(Math.min(remaining, row.available)); }}
-                  className={cn(
-                    'w-full text-left p-2.5 rounded-xl border transition-all cursor-pointer',
-                    selectedOrder?.id === order.id
-                      ? 'bg-brand-accent/10 border-brand-accent/30'
-                      : 'bg-white border-zinc-150 hover:border-zinc-250'
-                  )}
-                >
-                  <p className="text-xs font-bold text-brand-primary truncate">{order.schoolName}</p>
-                  <div className="flex items-center gap-2 text-[10px] font-mono text-zinc-500 mt-0.5">
-                    <span>{order.orderNumber || '—'}</span>
-                    <span>&middot;</span>
-                    <span>{order.area || 'Unassigned'}</span>
+              ) : matchingOrders.map(({ order, remaining }) => {
+                const isSelected = selectedOrder?.id === order.id;
+                const orderRow = orderById.get(order.id);
+                return (
+                  <div
+                    key={order.id}
+                    className={cn(
+                      'rounded-xl border transition-all overflow-hidden',
+                      isSelected ? 'bg-brand-accent/10 border-brand-accent/30' : 'bg-white border-zinc-150 hover:border-zinc-250'
+                    )}
+                  >
+                    <button
+                      type="button"
+                      title={`Select ${order.schoolName}`}
+                      onClick={() => { setSelectedOrder(order); setQty(Math.min(remaining, row.available)); }}
+                      className="w-full text-left p-2.5 cursor-pointer"
+                    >
+                      <p className="text-xs font-bold text-brand-primary truncate">{order.schoolName}</p>
+                      <div className="flex items-center gap-2 text-[10px] font-mono text-zinc-500 mt-0.5">
+                        <span>{order.orderNumber || '—'}</span>
+                        <span>&middot;</span>
+                        <span>{order.area || 'Unassigned'}</span>
+                      </div>
+                      <p className="text-[10px] font-mono text-amber-600 mt-0.5">Currently requires: {remaining} units</p>
+                    </button>
+
+                    {isSelected && orderRow && (
+                      <div className="border-t border-brand-accent/20 bg-white p-2.5 overflow-x-auto">
+                        <table className="w-full text-[11px]">
+                          <thead>
+                            <tr className="text-zinc-400 uppercase font-mono text-[9px] tracking-wide">
+                              <th className="text-left font-black pb-1.5">SKU</th>
+                              <th className="text-right font-black pb-1.5">Ord</th>
+                              <th className="text-right font-black pb-1.5">Res</th>
+                              <th className="text-right font-black pb-1.5">Built</th>
+                              <th className="text-right font-black pb-1.5">Rem</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {orderRow.lines.map(line => (
+                              <tr key={line.stockCode} className="border-t border-zinc-100">
+                                <td className="py-1.5 font-mono font-bold text-zinc-700 truncate max-w-[90px]" title={line.description}>{line.stockCode}</td>
+                                <td className="py-1.5 text-right font-mono">{line.ordered}</td>
+                                <td className={cn('py-1.5 text-right font-mono', line.isShort ? 'text-red-600 font-bold' : 'text-zinc-600')}>{line.reserved}</td>
+                                <td className="py-1.5 text-right font-mono text-emerald-600">{line.assembled}</td>
+                                <td className="py-1.5 text-right font-mono text-zinc-500">{line.remaining}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
                   </div>
-                  <p className="text-[10px] font-mono text-amber-600 mt-0.5">Currently requires: {remaining} units</p>
-                </button>
-              ))}
+                );
+              })}
             </div>
           </div>
 

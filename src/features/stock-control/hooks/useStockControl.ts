@@ -61,8 +61,8 @@ export function useStockControl() {
   );
 
   const stockRows = useMemo(
-    () => buildStockRows(inventoryItems, productsByCode, knockdownByCode, inventoryMap),
-    [inventoryItems, productsByCode, knockdownByCode, inventoryMap]
+    () => buildStockRows(inventoryItems, productsByCode, knockdownByCode, inventoryMap, allocations, invoices),
+    [inventoryItems, productsByCode, knockdownByCode, inventoryMap, allocations, invoices]
   );
 
   const kpis = useMemo(() => computeKpis(orderRows, stockRows), [orderRows, stockRows]);

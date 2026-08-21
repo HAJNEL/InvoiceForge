@@ -33,6 +33,7 @@ interface ProductsState {
 
 interface InventoryState {
   inventoryMap: Record<string, number>;
+  damagedMap: Record<string, number>;
 }
 
 // Module-level shared caches - see useTrips.ts for the rationale. useProducts()
@@ -43,7 +44,7 @@ let subscribedProductsUserId: string | null | undefined = undefined;
 let unsubscribeProducts: (() => void) | null = null;
 const productsListeners = new Set<() => void>();
 
-let inventoryState: InventoryState = { inventoryMap: {} };
+let inventoryState: InventoryState = { inventoryMap: {}, damagedMap: {} };
 let subscribedInventoryUserId: string | null | undefined = undefined;
 let unsubscribeInventory: (() => void) | null = null;
 const inventoryListeners = new Set<() => void>();
@@ -116,19 +117,23 @@ function ensureInventorySubscription(userId: string | null) {
   unsubscribeInventory = null;
 
   if (!userId) {
-    setInventoryState({ inventoryMap: {} });
+    setInventoryState({ inventoryMap: {}, damagedMap: {} });
     return;
   }
 
   const q = query(collection(db, 'inventory'), where('userId', '==', userId));
   unsubscribeInventory = onSnapshot(q, (snap) => {
     const map: Record<string, number> = {};
+    const damagedMap: Record<string, number> = {};
     snap.forEach(d => {
       const v = d.data();
       const code = (v.stockCode || '').toLowerCase().trim();
-      if (code) map[code] = Number(v.qty) || 0;
+      if (code) {
+        map[code] = Number(v.qty) || 0;
+        damagedMap[code] = Number(v.damagedQty) || 0;
+      }
     });
-    setInventoryState({ inventoryMap: map });
+    setInventoryState({ inventoryMap: map, damagedMap });
   }, (err) => {
     console.error("Firestore Subscribe Inventory Error:", err);
   });
@@ -301,6 +306,7 @@ export function useProducts() {
   return {
     products: products.products,
     inventoryMap: inventory.inventoryMap,
+    damagedMap: inventory.damagedMap,
     loading: products.loading,
     error: products.error,
     saveProduct,
