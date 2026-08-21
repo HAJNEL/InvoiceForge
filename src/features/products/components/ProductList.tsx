@@ -22,6 +22,8 @@ import {
 import { useProducts, Product, ProductComponent } from '../hooks/useProducts';
 import { useInvoices } from '../../invoices/hooks/useInvoices';
 import { useStock } from '../../stock/hooks/useStock';
+import { useAuth } from '../../../core/hooks/useAuth';
+import { applyStockCount } from '../../stock/utils/applyStockCount';
 import { getProductBuildableQty, getKnockdownBuildableQty } from '../utils/availability';
 import { KnockdownSetupDialog } from '../../stock/components/KnockdownSetupDialog';
 import { KnockdownSetupDialogMobile } from '../../stock/components/KnockdownSetupDialogMobile';
@@ -57,6 +59,7 @@ export function ProductList() {
 
   const { invoices } = useInvoices();
   const { stockItems, deleteStockItem, saveStockItem, loading: knockdownLoading } = useStock();
+  const { user } = useAuth();
   const knockdownItems = useMemo(() => stockItems.filter(i => i.type === 'knockdown'), [stockItems]);
 
   const [activeTab, setActiveTab] = useState<ActiveTab>('products');
@@ -81,7 +84,9 @@ export function ProductList() {
     stockCode: '',
     description: '',
     unitPrice: '',
-    category: 'product' as 'product' | 'consumable'
+    category: 'product' as 'product' | 'consumable',
+    availableQty: '',
+    damagedQty: ''
   });
 
   // Units ordered = sum of qty across active (non-delivered/invoiced) invoices per stockCode
@@ -102,11 +107,14 @@ export function ProductList() {
   const handleOpenModal = (product?: Product) => {
     if (product) {
       setEditingProduct(product);
+      const codeKey = product.stockCode.toLowerCase().trim();
       setFormData({
         stockCode: product.stockCode,
         description: product.description,
         unitPrice: product.unitPrice.toString(),
-        category: product.category || 'product'
+        category: product.category || 'product',
+        availableQty: String(inventoryMap[codeKey] ?? 0),
+        damagedQty: String(damagedMap[codeKey] ?? 0)
       });
     } else {
       setEditingProduct(null);
@@ -114,7 +122,9 @@ export function ProductList() {
         stockCode: '',
         description: '',
         unitPrice: '',
-        category: activeTab === 'consumables' ? 'consumable' : 'product'
+        category: activeTab === 'consumables' ? 'consumable' : 'product',
+        availableQty: '0',
+        damagedQty: '0'
       });
     }
     setIsModalOpen(true);
@@ -126,6 +136,9 @@ export function ProductList() {
 
     setIsSubmitting(true);
     const price = parseFloat(formData.unitPrice) || 0;
+    const stockCode = (editingProduct ? editingProduct.stockCode : formData.stockCode).trim();
+    const availableQty = Math.max(0, parseInt(formData.availableQty, 10) || 0);
+    const damagedQty = Math.max(0, parseInt(formData.damagedQty, 10) || 0);
 
     if (editingProduct) {
       await updateProduct(editingProduct.id, {
@@ -140,6 +153,17 @@ export function ProductList() {
         unitPrice: price,
         category: formData.category
       });
+    }
+
+    // Available/Damaged live on the shared `inventory` doc for this stock code,
+    // not on the product doc itself — same ledger Stock Control and the Team
+    // Dashboard stock take write to (see applyStockCount), kept in sync here too.
+    if (user && stockCode) {
+      const entry = { stockCode, description: formData.description.trim() };
+      await Promise.all([
+        applyStockCount(user.uid, { ...entry, countedQty: availableQty }, 'qty'),
+        applyStockCount(user.uid, { ...entry, countedQty: damagedQty }, 'damagedQty')
+      ]);
     }
 
     setIsSubmitting(false);
@@ -877,6 +901,38 @@ export function ProductList() {
                     />
                   </div>
                 </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-zinc-500 uppercase tracking-wide">Available Stock</label>
+                    <input
+                      type="number"
+                      min={0}
+                      step="1"
+                      placeholder="0"
+                      value={formData.availableQty}
+                      onChange={(e) => setFormData(prev => ({ ...prev, availableQty: e.target.value }))}
+                      className="w-full px-4 py-2.5 border border-zinc-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 bg-zinc-50/30"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-zinc-500 uppercase tracking-wide">Damaged Stock</label>
+                    <input
+                      type="number"
+                      min={0}
+                      step="1"
+                      placeholder="0"
+                      value={formData.damagedQty}
+                      onChange={(e) => setFormData(prev => ({ ...prev, damagedQty: e.target.value }))}
+                      className="w-full px-4 py-2.5 border border-zinc-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 bg-zinc-50/30"
+                    />
+                  </div>
+                </div>
+                {editingProduct && getProductBuildableQty(editingProduct, inventoryMap) !== null && (
+                  <p className="text-[10px] text-amber-600 leading-normal -mt-2">
+                    This product is built from linked components — the table's Available count is computed from component stock, not this field.
+                  </p>
+                )}
 
                 <div className="pt-2 flex items-center justify-end gap-3 border-t border-zinc-200 mt-6">
                   <button

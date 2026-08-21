@@ -14,6 +14,8 @@ import { CalendarSyncCard } from './components/CalendarSyncCard';
 import { RatesSectionMobile } from './components/RatesSectionMobile';
 import { cn } from '../../lib/utils';
 import { SETTINGS_TABS, SettingsTab } from './SettingsPage';
+import { TruckList } from '../trucks/TruckList';
+import { StaffList } from '../staff/StaffList';
 
 // Pushover user keys are typically 30 alphanumeric characters. Used for a soft
 // (non-blocking) format warning — Pushover's API remains the source of truth.
@@ -226,6 +228,10 @@ export function SettingsPageMobile({
         {activeTab === 'team' && <TeamMembersSection />}
 
         {activeTab === 'rates' && <RatesSectionMobile />}
+
+        {activeTab === 'trucks' && <TruckList />}
+
+        {activeTab === 'staff' && <StaffList />}
       </div>
     </APIProvider>
   );

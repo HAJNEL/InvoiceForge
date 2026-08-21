@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { toast } from 'sonner';
-import { MapPin, Save, Loader2, Warehouse, Navigation, Image as ImageIcon, Upload, Trash2, Check, AlertCircle, Bell, Send, Link2, Eye, EyeOff, PlugZap, Info, Copy, Layers, Users } from 'lucide-react';
+import { MapPin, Save, Loader2, Warehouse, Navigation, Image as ImageIcon, Upload, Trash2, Check, AlertCircle, Bell, Send, Link2, Eye, EyeOff, PlugZap, Info, Copy, Layers, Users, Truck, UserCog } from 'lucide-react';
 import { APIProvider, Map, AdvancedMarker, Pin, useMapsLibrary } from '@vis.gl/react-google-maps';
 import { useSettings } from './hooks/useSettings';
 import { useZohoCredentials } from './hooks/useZohoCredentials';
@@ -14,8 +14,10 @@ import { RatesSection } from './components/RatesSection';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { SettingsPageMobile } from './SettingsPageMobile';
 import { cn } from '../../lib/utils';
+import { TruckList } from '../trucks/TruckList';
+import { StaffList } from '../staff/StaffList';
 
-export type SettingsTab = 'location' | 'sidebar' | 'notifications' | 'integrations' | 'team' | 'rates';
+export type SettingsTab = 'location' | 'sidebar' | 'notifications' | 'integrations' | 'team' | 'rates' | 'trucks' | 'staff';
 
 export const SETTINGS_TABS: { key: SettingsTab; label: string; icon: React.ElementType }[] = [
   { key: 'location', label: 'Location', icon: Warehouse },
@@ -24,6 +26,8 @@ export const SETTINGS_TABS: { key: SettingsTab; label: string; icon: React.Eleme
   { key: 'integrations', label: 'Integrations', icon: Link2 },
   { key: 'team', label: 'Team Members', icon: Users },
   { key: 'rates', label: 'Rates', icon: Layers },
+  { key: 'trucks', label: 'Trucks', icon: Truck },
+  { key: 'staff', label: 'Staff Members', icon: UserCog },
 ];
 
 const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_PLATFORM_KEY || '';
@@ -250,6 +254,10 @@ export function SettingsPage() {
         {activeTab === 'team' && <TeamMembersSection />}
 
         {activeTab === 'rates' && <RatesSection />}
+
+        {activeTab === 'trucks' && <TruckList />}
+
+        {activeTab === 'staff' && <StaffList />}
       </div>
     </APIProvider>
   );

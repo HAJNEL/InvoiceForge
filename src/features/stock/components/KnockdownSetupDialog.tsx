@@ -3,6 +3,9 @@ import { Search, X, HelpCircle, Check, ImagePlus, Layers } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useInvoices } from '../../invoices/hooks/useInvoices';
 import { useStock, KnockdownItem } from '../hooks/useStock';
+import { useProducts } from '../../products/hooks/useProducts';
+import { useAuth } from '../../../core/hooks/useAuth';
+import { applyStockCount } from '../utils/applyStockCount';
 import { cn } from '../../../lib/utils';
 
 interface KnockdownSetupDialogProps {
@@ -38,6 +41,8 @@ async function compressImage(file: File): Promise<string> {
 export function KnockdownSetupDialog({ isOpen, onClose, onSaveSuccess, editItem }: KnockdownSetupDialogProps) {
   const { invoices } = useInvoices();
   const { saveStockItem } = useStock();
+  const { inventoryMap, damagedMap } = useProducts();
+  const { user } = useAuth();
 
   const isEditing = !!editItem;
 
@@ -45,6 +50,8 @@ export function KnockdownSetupDialog({ isOpen, onClose, onSaveSuccess, editItem 
   const [stockCode, setStockCode] = useState('');
   const [description, setDescription] = useState('');
   const [displayName, setDisplayName] = useState('');
+  const [availableQty, setAvailableQty] = useState('0');
+  const [damagedQty, setDamagedQty] = useState('0');
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearchResults, setShowSearchResults] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -56,10 +63,13 @@ export function KnockdownSetupDialog({ isOpen, onClose, onSaveSuccess, editItem 
   // Populate fields when opening for edit
   useEffect(() => {
     if (isOpen && editItem) {
+      const codeKey = editItem.stockCode.toLowerCase().trim();
       setStockCode(editItem.stockCode);
       setDisplayName(editItem.displayName);
       setDescription(editItem.description);
       setImageBase64(editItem.imageBase64 ?? null);
+      setAvailableQty(String(inventoryMap[codeKey] ?? 0));
+      setDamagedQty(String(damagedMap[codeKey] ?? 0));
       setMode('custom');
       setErrorMsg(null);
     } else if (isOpen && !editItem) {
@@ -67,9 +77,12 @@ export function KnockdownSetupDialog({ isOpen, onClose, onSaveSuccess, editItem 
       setDisplayName('');
       setDescription('');
       setImageBase64(null);
+      setAvailableQty('0');
+      setDamagedQty('0');
       setMode('invoice');
       setErrorMsg(null);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, editItem]);
 
   const uniqueInvoiceItems = useMemo(() => {
@@ -138,9 +151,10 @@ export function KnockdownSetupDialog({ isOpen, onClose, onSaveSuccess, editItem 
 
     setIsSaving(true);
     try {
+      const cleanStockCode = stockCode.trim().toUpperCase();
       const result = await saveStockItem({
         ...(editItem ? { id: editItem.id } : {}),
-        stockCode: stockCode.trim().toUpperCase(),
+        stockCode: cleanStockCode,
         description: description.trim(),
         qty: editItem?.qty ?? 1,
         displayName: displayName.trim(),
@@ -148,6 +162,18 @@ export function KnockdownSetupDialog({ isOpen, onClose, onSaveSuccess, editItem 
         parts: editItem?.parts ?? [],
         imageBase64: imageBase64 || undefined,
       });
+
+      // Available/Damaged live on the shared `inventory` doc for this stock
+      // code, not on the knockdown_items catalog doc itself (that doc's own
+      // `qty` above is a separate, largely vestigial field) — same ledger
+      // Stock Control and the Team Dashboard stock take write to.
+      if (result && user) {
+        const entry = { stockCode: cleanStockCode, description: description.trim() };
+        await Promise.all([
+          applyStockCount(user.uid, { ...entry, countedQty: Math.max(0, parseInt(availableQty, 10) || 0) }, 'qty'),
+          applyStockCount(user.uid, { ...entry, countedQty: Math.max(0, parseInt(damagedQty, 10) || 0) }, 'damagedQty')
+        ]);
+      }
 
       if (result) {
         onSaveSuccess();
@@ -300,6 +326,27 @@ export function KnockdownSetupDialog({ isOpen, onClose, onSaveSuccess, editItem 
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Optional notes or material details…"
               />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-mono uppercase text-zinc-400 font-bold block">Available Stock</label>
+                <input type="number" min={0} step="1"
+                  className="w-full px-3.5 py-2.5 border border-zinc-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400 bg-white"
+                  value={availableQty}
+                  onChange={(e) => setAvailableQty(e.target.value)}
+                  placeholder="0"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-mono uppercase text-zinc-400 font-bold block">Damaged Stock</label>
+                <input type="number" min={0} step="1"
+                  className="w-full px-3.5 py-2.5 border border-zinc-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-400 bg-white"
+                  value={damagedQty}
+                  onChange={(e) => setDamagedQty(e.target.value)}
+                  placeholder="0"
+                />
+              </div>
             </div>
 
             {/* Image upload */}
