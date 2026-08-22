@@ -68,8 +68,8 @@ interface ProductListMobileProps {
   onOpenKnockdownSetup: (item?: KnockdownItem) => void;
   onOpenLinkComponents: (product: Product) => void;
 
-  saveProduct: (data: { stockCode: string; description: string; unitPrice: number; category: 'product' | 'consumable' }) => Promise<unknown>;
-  updateProduct: (id: string, updates: Partial<Pick<Product, 'description' | 'unitPrice' | 'category' | 'components'>>) => Promise<boolean>;
+  saveProduct: (data: { stockCode: string; description: string; unitPrice: number; weightKg: number; category: 'product' | 'consumable' }) => Promise<unknown>;
+  updateProduct: (id: string, updates: Partial<Pick<Product, 'description' | 'unitPrice' | 'weightKg' | 'category' | 'components'>>) => Promise<boolean>;
 }
 
 /** One parameterized card used for all three tabs — column set matches desktop exactly. */
@@ -198,6 +198,7 @@ export function ProductListMobile({
     stockCode: '',
     description: '',
     unitPrice: '',
+    weightKg: '',
     category: 'product' as 'product' | 'consumable',
   });
 
@@ -214,6 +215,7 @@ export function ProductListMobile({
         stockCode: product.stockCode,
         description: product.description,
         unitPrice: product.unitPrice.toString(),
+        weightKg: (product.weightKg || 0).toString(),
         category: product.category || 'product',
       });
     } else {
@@ -222,6 +224,7 @@ export function ProductListMobile({
         stockCode: '',
         description: '',
         unitPrice: '',
+        weightKg: '',
         category: activeTab === 'consumables' ? 'consumable' : 'product',
       });
     }
@@ -234,11 +237,13 @@ export function ProductListMobile({
 
     setIsSubmitting(true);
     const price = parseFloat(formData.unitPrice) || 0;
+    const weightKg = Math.max(0, parseFloat(formData.weightKg) || 0);
 
     if (editingProduct) {
       await updateProduct(editingProduct.id, {
         description: formData.description.trim(),
         unitPrice: price,
+        weightKg,
         category: formData.category,
       });
     } else {
@@ -246,6 +251,7 @@ export function ProductListMobile({
         stockCode: formData.stockCode.trim(),
         description: formData.description.trim(),
         unitPrice: price,
+        weightKg,
         category: formData.category,
       });
     }
@@ -644,6 +650,23 @@ export function ProductListMobile({
                 onChange={(e) => setFormData((prev) => ({ ...prev, unitPrice: e.target.value }))}
                 className="w-full pl-8 pr-4 py-2.5 border border-zinc-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent bg-zinc-50/30"
               />
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-bold text-zinc-500 uppercase tracking-wide">Weight (kg)</label>
+            <div className="relative">
+              <input
+                type="number"
+                min={0}
+                step="0.01"
+                placeholder="0.00"
+                title="Weight in kilograms"
+                value={formData.weightKg}
+                onChange={(e) => setFormData((prev) => ({ ...prev, weightKg: e.target.value }))}
+                className="w-full pl-4 pr-10 py-2.5 border border-zinc-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent bg-zinc-50/30"
+              />
+              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm font-bold text-zinc-400">kg</span>
             </div>
           </div>
         </form>

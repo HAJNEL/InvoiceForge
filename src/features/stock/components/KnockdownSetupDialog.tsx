@@ -52,6 +52,7 @@ export function KnockdownSetupDialog({ isOpen, onClose, onSaveSuccess, editItem 
   const [displayName, setDisplayName] = useState('');
   const [availableQty, setAvailableQty] = useState('0');
   const [damagedQty, setDamagedQty] = useState('0');
+  const [weightKg, setWeightKg] = useState('0');
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearchResults, setShowSearchResults] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -70,6 +71,7 @@ export function KnockdownSetupDialog({ isOpen, onClose, onSaveSuccess, editItem 
       setImageBase64(editItem.imageBase64 ?? null);
       setAvailableQty(String(inventoryMap[codeKey] ?? 0));
       setDamagedQty(String(damagedMap[codeKey] ?? 0));
+      setWeightKg(String(editItem.weightKg || 0));
       setMode('custom');
       setErrorMsg(null);
     } else if (isOpen && !editItem) {
@@ -79,6 +81,7 @@ export function KnockdownSetupDialog({ isOpen, onClose, onSaveSuccess, editItem 
       setImageBase64(null);
       setAvailableQty('0');
       setDamagedQty('0');
+      setWeightKg('0');
       setMode('invoice');
       setErrorMsg(null);
     }
@@ -160,6 +163,7 @@ export function KnockdownSetupDialog({ isOpen, onClose, onSaveSuccess, editItem 
         displayName: displayName.trim(),
         type: 'knockdown',
         parts: editItem?.parts ?? [],
+        weightKg: Math.max(0, parseFloat(weightKg) || 0),
         imageBase64: imageBase64 || undefined,
       });
 
@@ -346,6 +350,20 @@ export function KnockdownSetupDialog({ isOpen, onClose, onSaveSuccess, editItem 
                   onChange={(e) => setDamagedQty(e.target.value)}
                   placeholder="0"
                 />
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-mono uppercase text-zinc-400 font-bold block">Weight (kg)</label>
+              <div className="relative">
+                <input type="number" min={0} step="0.01"
+                  title="Weight in kilograms"
+                  className="w-full px-3.5 pr-10 py-2.5 border border-zinc-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-purple-200 focus:border-purple-400 bg-white"
+                  value={weightKg}
+                  onChange={(e) => setWeightKg(e.target.value)}
+                  placeholder="0.00"
+                />
+                <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-zinc-400">kg</span>
               </div>
             </div>
 

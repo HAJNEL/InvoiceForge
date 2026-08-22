@@ -18,6 +18,7 @@ export interface Product {
   stockCode: string;
   description: string;
   unitPrice: number;
+  weightKg?: number;
   category?: 'product' | 'consumable';
   components?: ProductComponent[];
   userId: string;
@@ -91,6 +92,7 @@ function ensureProductsSubscription(userId: string | null) {
         stockCode: v.stockCode || '',
         description: v.description || '',
         unitPrice: typeof v.unitPrice === 'number' ? v.unitPrice : 0,
+        weightKg: typeof v.weightKg === 'number' ? v.weightKg : 0,
         category: (v.category || 'product') as 'product' | 'consumable',
         components: Array.isArray(v.components) ? v.components : undefined,
         userId: v.userId || '',
@@ -199,6 +201,7 @@ export function useProducts() {
       stockCode,
       description: productData.description || '',
       unitPrice: typeof productData.unitPrice === 'number' ? productData.unitPrice : 0,
+      weightKg: typeof productData.weightKg === 'number' ? productData.weightKg : 0,
       category: productData.category || 'product',
       userId: user.uid,
       createdAt: new Date().toISOString(),
@@ -215,7 +218,7 @@ export function useProducts() {
     }
   }, [user, getProductDocId]);
 
-  const updateProduct = useCallback(async (id: string, updates: Partial<Pick<Product, 'description' | 'unitPrice' | 'category' | 'components'>>) => {
+  const updateProduct = useCallback(async (id: string, updates: Partial<Pick<Product, 'description' | 'unitPrice' | 'weightKg' | 'category' | 'components'>>) => {
     const path = `products/${id}`;
     try {
       await updateDoc(doc(db, 'products', id), {

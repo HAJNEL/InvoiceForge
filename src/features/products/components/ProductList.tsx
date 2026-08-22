@@ -84,6 +84,7 @@ export function ProductList() {
     stockCode: '',
     description: '',
     unitPrice: '',
+    weightKg: '',
     category: 'product' as 'product' | 'consumable',
     availableQty: '',
     damagedQty: ''
@@ -112,6 +113,7 @@ export function ProductList() {
         stockCode: product.stockCode,
         description: product.description,
         unitPrice: product.unitPrice.toString(),
+        weightKg: (product.weightKg || 0).toString(),
         category: product.category || 'product',
         availableQty: String(inventoryMap[codeKey] ?? 0),
         damagedQty: String(damagedMap[codeKey] ?? 0)
@@ -122,6 +124,7 @@ export function ProductList() {
         stockCode: '',
         description: '',
         unitPrice: '',
+        weightKg: '',
         category: activeTab === 'consumables' ? 'consumable' : 'product',
         availableQty: '0',
         damagedQty: '0'
@@ -136,6 +139,7 @@ export function ProductList() {
 
     setIsSubmitting(true);
     const price = parseFloat(formData.unitPrice) || 0;
+    const weightKg = Math.max(0, parseFloat(formData.weightKg) || 0);
     const stockCode = (editingProduct ? editingProduct.stockCode : formData.stockCode).trim();
     const availableQty = Math.max(0, parseInt(formData.availableQty, 10) || 0);
     const damagedQty = Math.max(0, parseInt(formData.damagedQty, 10) || 0);
@@ -144,6 +148,7 @@ export function ProductList() {
       await updateProduct(editingProduct.id, {
         description: formData.description.trim(),
         unitPrice: price,
+        weightKg,
         category: formData.category
       });
     } else {
@@ -151,6 +156,7 @@ export function ProductList() {
         stockCode: formData.stockCode.trim(),
         description: formData.description.trim(),
         unitPrice: price,
+        weightKg,
         category: formData.category
       });
     }
@@ -899,6 +905,23 @@ export function ProductList() {
                       onChange={(e) => setFormData(prev => ({ ...prev, unitPrice: e.target.value }))}
                       className="w-full pl-8 pr-4 py-2.5 border border-zinc-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent bg-zinc-50/30"
                     />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-zinc-500 uppercase tracking-wide">Weight (kg)</label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      title="Weight in kilograms"
+                      placeholder="0.00"
+                      value={formData.weightKg}
+                      onChange={(e) => setFormData(prev => ({ ...prev, weightKg: e.target.value }))}
+                      className="w-full pl-4 pr-10 py-2.5 border border-zinc-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent bg-zinc-50/30"
+                    />
+                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm font-bold text-zinc-400">kg</span>
                   </div>
                 </div>
 

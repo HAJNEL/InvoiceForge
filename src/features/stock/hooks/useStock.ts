@@ -19,6 +19,7 @@ export interface KnockdownItem {
   displayName: string;
   type: 'knockdown' | 'assembled' | 'pre-assembled' | 'stock-take' | 'consumable';
   parts: StockPart[];
+  weightKg?: number;
   imageBase64?: string;
   createdAt: string;
   updatedAt?: string;
@@ -81,6 +82,7 @@ function ensureSubscription(userId: string | null) {
           description: p.description || '',
           qty: typeof p.qty === 'number' ? p.qty : 0
         })),
+        weightKg: typeof d.weightKg === 'number' ? d.weightKg : 0,
         createdAt: d.createdAt || ''
       };
     });
@@ -134,6 +136,7 @@ export function useStock() {
       displayName: item.displayName,
       type: item.type || 'knockdown',
       parts: item.parts || [],
+      weightKg: typeof item.weightKg === 'number' ? item.weightKg : 0,
       ...(item.imageBase64 ? { imageBase64: item.imageBase64 } : {}),
       createdAt: new Date().toISOString()
     };

@@ -95,6 +95,7 @@ async function fetchBomMaps(ownerId: string): Promise<{ productsByCode: Map<stri
       stockCode: v.stockCode || '',
       description: v.description || '',
       unitPrice: typeof v.unitPrice === 'number' ? v.unitPrice : 0,
+      weightKg: typeof v.weightKg === 'number' ? v.weightKg : 0,
       category: (v.category || 'product') as 'product' | 'consumable',
       components: Array.isArray(v.components) ? v.components : undefined,
       userId: v.userId || ''
@@ -115,6 +116,7 @@ async function fetchBomMaps(ownerId: string): Promise<{ productsByCode: Map<stri
       displayName: v.displayName || '',
       type: (v.type || 'knockdown') as KnockdownItem['type'],
       parts: Array.isArray(v.parts) ? v.parts : [],
+      weightKg: typeof v.weightKg === 'number' ? v.weightKg : 0,
       createdAt: v.createdAt || ''
     });
   });
