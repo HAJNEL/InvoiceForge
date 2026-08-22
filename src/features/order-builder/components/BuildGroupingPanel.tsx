@@ -2,8 +2,18 @@ import { useState, useMemo } from 'react';
 import { ChevronDown, ChevronUp, X, School } from 'lucide-react';
 import { cn } from '../../../lib/utils';
 import { schoolKeyFor } from '../../../lib/geocoding';
+import { useProducts } from '../../products/hooks/useProducts';
+import { useStock } from '../../stock/hooks/useStock';
 import type { Order } from '../../orders/hooks/useOrders';
 import { buildSchoolGroups } from '../utils';
+
+// Formats a kg amount for display, treating 0/unset as "no weight on file" rather
+// than a literal zero - weightKg defaults to 0 on Product/KnockdownItem docs that
+// have never had a weight entered, and showing "0.00" there would misleadingly
+// read as "confirmed to weigh nothing".
+function formatUnitWeight(kg: number): string {
+  return kg > 0 ? `${kg.toFixed(2)} kg` : '—';
+}
 
 // Renders the sorted/grouped/consolidated preview of the in-progress build, below
 // the map. Reads the exact same `orders`/`selectedOrderIds` state the map writes
@@ -21,6 +31,30 @@ export function BuildGroupingPanel({
 }) {
   const groups = useMemo(() => buildSchoolGroups(orders, selectedOrderIds), [orders, selectedOrderIds]);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const { products } = useProducts();
+  const { stockItems } = useStock();
+
+  // Per-unit weight by stock code, merged from the Products catalog and Knockdown
+  // items (both carry an independent weightKg field - see the weight-field
+  // feature). Keyed the same way stock-code lookups are keyed elsewhere in this
+  // app (lowercased, trimmed).
+  const weightByStockCode = useMemo(() => {
+    const map: Record<string, number> = {};
+    products.forEach(p => {
+      const key = p.stockCode.toLowerCase().trim();
+      if (key && typeof p.weightKg === 'number') map[key] = p.weightKg;
+    });
+    stockItems.forEach(k => {
+      const key = k.stockCode.toLowerCase().trim();
+      if (key && typeof k.weightKg === 'number') map[key] = k.weightKg;
+    });
+    return map;
+  }, [products, stockItems]);
+
+  const unitWeightFor = (stockCode: string) => weightByStockCode[stockCode.toLowerCase().trim()] ?? 0;
+  const lineWeight = (li: { stockCode: string; qty: number }) => unitWeightFor(li.stockCode) * li.qty;
+  const groupWeight = (lineItems: { stockCode: string; qty: number }[]) =>
+    lineItems.reduce((s, li) => s + lineWeight(li), 0);
 
   const toggleCollapsed = (key: string) => {
     setCollapsed(prev => {
@@ -32,6 +66,7 @@ export function BuildGroupingPanel({
 
   const totalOrders = groups.reduce((s, g) => s + g.orderIds.length, 0);
   const totalUnits = groups.reduce((s, g) => s + g.lineItems.reduce((s2, li) => s2 + li.qty, 0), 0);
+  const totalWeight = groups.reduce((s, g) => s + groupWeight(g.lineItems), 0);
 
   // Map each orderId back to its order number for the per-order remove row (the
   // group only stores id/number in parallel arrays).
@@ -56,6 +91,7 @@ export function BuildGroupingPanel({
           const key = schoolKeyFor(group.schoolName);
           const isCollapsed = collapsed.has(key);
           const groupUnits = group.lineItems.reduce((s, li) => s + li.qty, 0);
+          const thisGroupWeight = groupWeight(group.lineItems);
 
           return (
             <div key={key}>
@@ -75,7 +111,9 @@ export function BuildGroupingPanel({
                   </div>
                 </div>
                 <div className="flex items-center gap-3 shrink-0">
-                  <span className="text-xs font-mono font-bold text-zinc-600">{groupUnits} units</span>
+                  <span className="text-xs font-mono font-bold text-zinc-600">
+                    {groupUnits} units · {thisGroupWeight.toFixed(2)} kg total
+                  </span>
                   {isCollapsed ? <ChevronDown className="w-4 h-4 text-zinc-400" /> : <ChevronUp className="w-4 h-4 text-zinc-400" />}
                 </div>
               </button>
@@ -105,6 +143,7 @@ export function BuildGroupingPanel({
                     <thead>
                       <tr className="border-b border-zinc-100">
                         <th className="py-1.5 text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Stock Code</th>
+                        <th className="py-1.5 text-[10px] font-bold text-zinc-400 uppercase tracking-wider text-right">Weight</th>
                         <th className="py-1.5 text-[10px] font-bold text-zinc-400 uppercase tracking-wider text-right">Qty</th>
                       </tr>
                     </thead>
@@ -112,6 +151,7 @@ export function BuildGroupingPanel({
                       {group.lineItems.map(li => (
                         <tr key={li.stockCode}>
                           <td className="py-1.5 text-sm font-mono text-zinc-700">{li.stockCode}</td>
+                          <td className="py-1.5 text-sm font-mono text-zinc-500 text-right">{formatUnitWeight(unitWeightFor(li.stockCode))}</td>
                           <td className="py-1.5 text-sm font-mono font-semibold text-zinc-800 text-right">{li.qty}</td>
                         </tr>
                       ))}
@@ -128,6 +168,7 @@ export function BuildGroupingPanel({
         <span>{groups.length} school{groups.length === 1 ? '' : 's'}</span>
         <span>{totalOrders} order{totalOrders === 1 ? '' : 's'}</span>
         <span>{totalUnits} unit{totalUnits === 1 ? '' : 's'} total</span>
+        <span>{totalWeight.toFixed(2)} kg total</span>
       </div>
     </div>
   );
