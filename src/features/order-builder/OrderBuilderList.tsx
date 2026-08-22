@@ -1,11 +1,12 @@
 import { useState, useMemo } from 'react';
-import { PackagePlus, Search, Loader2, AlertCircle, Trash2, Check, X, School, Copy } from 'lucide-react';
+import { PackagePlus, Search, Loader2, AlertCircle, Trash2, Check, X, School, Copy, Settings } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { useOrderBuilds, deleteBuild } from './hooks/useOrderBuilds';
 import { formatBuildDate, formatBuildAsText } from './utils';
 import { OrderBuilderListMobile } from './OrderBuilderListMobile';
+import { OrderBuilderSettingsDialog } from './components/OrderBuilderSettingsDialog';
 import type { OrderBuild } from './types';
 
 export function OrderBuilderList() {
@@ -13,6 +14,7 @@ export function OrderBuilderList() {
   const [searchQuery, setSearchQuery] = useState('');
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const navigate = useNavigate();
   const isMobile = useIsMobile();
 
@@ -87,6 +89,14 @@ export function OrderBuilderList() {
         <div className="flex items-center gap-3">
           <button
             type="button"
+            onClick={() => setIsSettingsOpen(true)}
+            title="Order Builder settings"
+            className="p-2.5 rounded-xl border border-zinc-200 bg-white text-zinc-500 hover:text-zinc-700 hover:bg-zinc-50 transition-all shadow-2xs cursor-pointer"
+          >
+            <Settings className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
             onClick={() => navigate('/order-builder/build')}
             title="Start a new order build"
             className="flex items-center gap-2 px-5 py-2.5 bg-brand-accent text-white font-semibold text-sm rounded-xl hover:bg-brand-accent/95 active:scale-98 transition-all shadow-xs cursor-pointer"
@@ -96,6 +106,8 @@ export function OrderBuilderList() {
           </button>
         </div>
       </div>
+
+      <OrderBuilderSettingsDialog isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
 
       <div className="bg-white rounded-2xl border border-zinc-200 shadow-xs overflow-hidden">
         <div className="p-5 border-b border-zinc-200 bg-zinc-50/30 flex flex-col md:flex-row gap-4 items-center justify-between">
