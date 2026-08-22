@@ -17,13 +17,20 @@ export function useStockLookups() {
 
   const weightByStockCode = useMemo(() => {
     const map: Record<string, number> = {};
+    // Only ever write a POSITIVE weight into the map - weightKg defaults to 0 on
+    // any Product/KnockdownItem that's never had one set (see the weight-field
+    // feature), so a plain last-write-wins merge would let an unset knockdown
+    // entry silently zero out a real weight from a product sharing the same
+    // stock code (or vice versa) whenever both catalogs happen to use the same
+    // code. A 0/unset source is simply skipped rather than overwriting whatever
+    // positive value, if any, was already found for that code.
     products.forEach(p => {
       const key = stockCodeKey(p.stockCode);
-      if (key && typeof p.weightKg === 'number') map[key] = p.weightKg;
+      if (key && typeof p.weightKg === 'number' && p.weightKg > 0) map[key] = p.weightKg;
     });
     stockItems.forEach(k => {
       const key = stockCodeKey(k.stockCode);
-      if (key && typeof k.weightKg === 'number') map[key] = k.weightKg;
+      if (key && typeof k.weightKg === 'number' && k.weightKg > 0) map[key] = k.weightKg;
     });
     return map;
   }, [products, stockItems]);
