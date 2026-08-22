@@ -98,9 +98,10 @@ export function buildSchoolGroups(orders: Order[], selectedOrderIds: Set<string>
 // NOT call getNextBuildNumber() just to fill this in before a real save, since
 // that would burn a real sequence number for a copy action that might never be
 // saved.
-export function formatBuildAsText(build: Pick<OrderBuild, 'buildNumber' | 'deliveryDate' | 'schoolGroups'>): string {
+export function formatBuildAsText(build: Pick<OrderBuild, 'buildNumber' | 'deliveryDate' | 'schoolGroups' | 'truckName'>): string {
   const lines: string[] = [];
-  lines.push(`Build #${build.buildNumber} - Delivery: ${formatBuildDate(build.deliveryDate)}`);
+  const truckSuffix = build.truckName ? ` (${build.truckName})` : '';
+  lines.push(`Build #${build.buildNumber}${truckSuffix} - Delivery: ${formatBuildDate(build.deliveryDate)}`);
   lines.push('');
 
   let totalOrders = 0;

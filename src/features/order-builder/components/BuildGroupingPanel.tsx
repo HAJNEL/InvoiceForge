@@ -1,9 +1,8 @@
 import { useState, useMemo } from 'react';
-import { ChevronDown, ChevronUp, X, School } from 'lucide-react';
+import { ChevronDown, ChevronUp, X, School, Truck as TruckIcon } from 'lucide-react';
 import { cn } from '../../../lib/utils';
 import { schoolKeyFor } from '../../../lib/geocoding';
-import { useProducts } from '../../products/hooks/useProducts';
-import { useStock } from '../../stock/hooks/useStock';
+import { useStockLookups } from '../hooks/useStockLookups';
 import type { Order } from '../../orders/hooks/useOrders';
 import { buildSchoolGroups } from '../utils';
 
@@ -23,33 +22,20 @@ function formatUnitWeight(kg: number): string {
 export function BuildGroupingPanel({
   orders,
   selectedOrderIds,
-  onRemoveOrder
+  onRemoveOrder,
+  truckBySchoolKey
 }: {
   orders: Order[];
   selectedOrderIds: Set<string>;
   onRemoveOrder: (orderId: string) => void;
+  // Set while an Auto-Build option is applied (see AutoBuildFlow.tsx) - renders a
+  // truck-name section header above each truck's schools. Undefined for the
+  // normal manual-build case, which renders exactly as before this prop existed.
+  truckBySchoolKey?: Record<string, { truckId: string; truckName: string; color: string }>;
 }) {
   const groups = useMemo(() => buildSchoolGroups(orders, selectedOrderIds), [orders, selectedOrderIds]);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
-  const { products } = useProducts();
-  const { stockItems } = useStock();
-
-  // Per-unit weight by stock code, merged from the Products catalog and Knockdown
-  // items (both carry an independent weightKg field - see the weight-field
-  // feature). Keyed the same way stock-code lookups are keyed elsewhere in this
-  // app (lowercased, trimmed).
-  const weightByStockCode = useMemo(() => {
-    const map: Record<string, number> = {};
-    products.forEach(p => {
-      const key = p.stockCode.toLowerCase().trim();
-      if (key && typeof p.weightKg === 'number') map[key] = p.weightKg;
-    });
-    stockItems.forEach(k => {
-      const key = k.stockCode.toLowerCase().trim();
-      if (key && typeof k.weightKg === 'number') map[key] = k.weightKg;
-    });
-    return map;
-  }, [products, stockItems]);
+  const { weightByStockCode } = useStockLookups();
 
   const unitWeightFor = (stockCode: string) => weightByStockCode[stockCode.toLowerCase().trim()] ?? 0;
   const lineWeight = (li: { stockCode: string; qty: number }) => unitWeightFor(li.stockCode) * li.qty;
@@ -84,6 +70,8 @@ export function BuildGroupingPanel({
     );
   }
 
+  let lastTruckId: string | null = null;
+
   return (
     <div className="mt-6 bg-white rounded-2xl border border-zinc-200 shadow-xs overflow-hidden">
       <div className="divide-y divide-zinc-100">
@@ -92,9 +80,21 @@ export function BuildGroupingPanel({
           const isCollapsed = collapsed.has(key);
           const groupUnits = group.lineItems.reduce((s, li) => s + li.qty, 0);
           const thisGroupWeight = groupWeight(group.lineItems);
+          const truck = truckBySchoolKey?.[key];
+          const showTruckHeader = truck && truck.truckId !== lastTruckId;
+          lastTruckId = truck?.truckId ?? null;
 
           return (
             <div key={key}>
+              {showTruckHeader && (
+                <div
+                  className="flex items-center gap-2 px-5 py-2 bg-zinc-50 border-b border-zinc-100 text-[10px] font-black uppercase tracking-wider"
+                  style={{ color: truck!.color }}
+                >
+                  <TruckIcon className="w-3 h-3" />
+                  {truck!.truckName}
+                </div>
+              )}
               <button
                 type="button"
                 title={isCollapsed ? `Expand ${group.schoolName}` : `Collapse ${group.schoolName}`}

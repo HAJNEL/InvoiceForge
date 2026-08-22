@@ -152,7 +152,12 @@ async function checkOrderConflicts(orderIds: string[], allowedBuildId: string | 
 // exists to prevent. Throws on any failure (conflict or Firestore error) - the
 // caller (the build screen's Save handler) is responsible for catching and
 // surfacing err.message.
-export async function createBuild(userId: string, deliveryDate: string, schoolGroups: OrderBuildSchoolGroup[]): Promise<{ id: string; buildNumber: string }> {
+export async function createBuild(
+  userId: string,
+  deliveryDate: string,
+  schoolGroups: OrderBuildSchoolGroup[],
+  truck?: { id: string; name: string }
+): Promise<{ id: string; buildNumber: string }> {
   const orderIds = schoolGroups.flatMap(g => g.orderIds);
 
   const conflict = await checkOrderConflicts(orderIds, null);
@@ -161,7 +166,13 @@ export async function createBuild(userId: string, deliveryDate: string, schoolGr
   const { buildNumber, year } = await getNextBuildNumber(userId);
   const now = new Date().toISOString();
   const buildRef = doc(collection(db, 'orderBuilds'));
-  const buildData: Omit<OrderBuild, 'id'> = { userId, buildNumber, year, deliveryDate, schoolGroups, createdAt: now, updatedAt: now };
+  const buildData: Omit<OrderBuild, 'id'> = {
+    userId, buildNumber, year, deliveryDate, schoolGroups, createdAt: now, updatedAt: now,
+    // Set when this build came from Auto-Build (see the Auto-Build feature series) -
+    // omit the keys entirely rather than writing `undefined` (Firestore rejects
+    // undefined field values by default).
+    ...(truck ? { truckId: truck.id, truckName: truck.name } : {})
+  };
 
   try {
     let i = 0;

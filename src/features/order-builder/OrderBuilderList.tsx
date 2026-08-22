@@ -182,7 +182,10 @@ export function OrderBuilderList() {
                       onClick={() => navigate(`/order-builder/build/${b.id}`)}
                       className="hover:bg-zinc-50/40 transition-colors cursor-pointer"
                     >
-                      <td className="px-5 py-4 text-sm font-mono font-semibold text-zinc-850">Build #{b.buildNumber}</td>
+                      <td className="px-5 py-4 text-sm font-mono font-semibold text-zinc-850">
+                        Build #{b.buildNumber}
+                        {b.truckName && <p className="text-[10px] font-sans font-normal text-zinc-400 mt-0.5">{b.truckName}</p>}
+                      </td>
                       <td className="px-5 py-4 text-sm text-zinc-600">{formatBuildDate(b.deliveryDate)}</td>
                       <td className="px-5 py-4 text-sm text-zinc-600 text-right font-mono">{schools}</td>
                       <td className="px-5 py-4 text-sm text-zinc-600 text-right font-mono">{orders}</td>

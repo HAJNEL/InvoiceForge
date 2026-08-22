@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, PackagePlus, AlertCircle, Loader2, Check, Copy } from 'lucide-react';
+import { ArrowLeft, PackagePlus, AlertCircle, Loader2, Check, Copy, Zap } from 'lucide-react';
 import { APIProvider } from '@vis.gl/react-google-maps';
 import { toast } from 'sonner';
 import { useAuth } from '../../core/hooks/useAuth';
@@ -11,11 +11,18 @@ import { useSettings } from '../settings/hooks/useSettings';
 import { schoolKeyFor } from '../../lib/geocoding';
 import { OrderBuilderMap } from './components/OrderBuilderMap';
 import { BuildGroupingPanel } from './components/BuildGroupingPanel';
+import { AutoBuildFlow } from './components/AutoBuildFlow';
 import { OrderBuilderScreenMobile } from './OrderBuilderScreenMobile';
 import { buildSchoolGroups, formatBuildAsText } from './utils';
+import { orderIdsInOption, truckIdByOrderId, type AutoBuildOption } from './lib/autoBuild';
 
 const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_PLATFORM_KEY || '';
 const hasValidKey = Boolean(GOOGLE_MAPS_API_KEY);
+
+// Fixed palette for truck-grouping badges/headers when an Auto-Build option is
+// applied - cycles if a chosen option somehow used more trucks than colors,
+// which in practice won't happen given realistic truck-selection counts.
+const TRUCK_COLORS = ['#2563eb', '#16a34a', '#d97706', '#dc2626', '#7c3aed', '#0891b2'];
 
 // Full-screen build view: map (per-school pins) + delivery date + Save, with the
 // order-grouping/consolidation panel slotting in below the map.
@@ -33,6 +40,8 @@ export function OrderBuilderScreen() {
   const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(new Set());
   const [deliveryDate, setDeliveryDate] = useState('');
   const [saving, setSaving] = useState(false);
+  const [isAutoBuildOpen, setIsAutoBuildOpen] = useState(false);
+  const [appliedAutoBuild, setAppliedAutoBuild] = useState<AutoBuildOption | null>(null);
   const initializedRef = useRef(false);
 
   const editingBuild = id ? builds.find(b => b.id === id) : undefined;
@@ -56,7 +65,11 @@ export function OrderBuilderScreen() {
     });
   }, [orders, id]);
 
+  // A manual edit after applying an Auto-Build option clears the truck
+  // assignment rather than trying to keep it consistent under arbitrary
+  // hand-edits - Save then falls back to the normal single-build path.
   const toggleOrder = (orderId: string) => {
+    setAppliedAutoBuild(null);
     setSelectedOrderIds(prev => {
       const next = new Set(prev);
       if (next.has(orderId)) next.delete(orderId); else next.add(orderId);
@@ -65,6 +78,7 @@ export function OrderBuilderScreen() {
   };
 
   const setOrdersForSchool = (orderIdsForSchool: string[], tickedIds: string[]) => {
+    setAppliedAutoBuild(null);
     setSelectedOrderIds(prev => {
       const next = new Set(prev);
       orderIdsForSchool.forEach(oid => next.delete(oid));
@@ -72,6 +86,34 @@ export function OrderBuilderScreen() {
       return next;
     });
   };
+
+  // Applies a chosen Auto-Build option "as if built manually" - sets the same
+  // selectedOrderIds state the map/panel already react to, and remembers the
+  // option so the truck-grouping layer and batch save (below) can use it.
+  const handleApplyAutoBuild = (option: AutoBuildOption) => {
+    setSelectedOrderIds(orderIdsInOption(option));
+    setAppliedAutoBuild(option);
+  };
+
+  // Per-school truck badge/header lookup for the map and grouping panel, built
+  // from the applied option's per-order truck assignments plus a fixed color
+  // per truck. Undefined (no truck-grouping layer) when no option is applied.
+  const truckBySchoolKey = useMemo(() => {
+    if (!appliedAutoBuild) return undefined;
+    const byOrderId = truckIdByOrderId(appliedAutoBuild);
+    const colorByTruckId: Record<string, string> = {};
+    appliedAutoBuild.truckAssignments.forEach((ta, i) => {
+      colorByTruckId[ta.truckId] = TRUCK_COLORS[i % TRUCK_COLORS.length];
+    });
+    const result: Record<string, { truckId: string; truckName: string; color: string }> = {};
+    eligibleOrders.forEach(o => {
+      const assignment = byOrderId[o.id];
+      if (assignment) {
+        result[schoolKeyFor(o.schoolName)] = { ...assignment, color: colorByTruckId[assignment.truckId] };
+      }
+    });
+    return result;
+  }, [appliedAutoBuild, eligibleOrders]);
 
   const handleBack = () => {
     if (selectedOrderIds.size > 0 && !window.confirm('Discard this in-progress build? Any orders you selected will be lost.')) {
@@ -91,6 +133,48 @@ export function OrderBuilderScreen() {
       toast.error('Set a delivery date before saving.');
       return;
     }
+
+    // Applied Auto-Build option, still intact (no manual edit since): batch-save
+    // one build per truck, all sharing this one delivery date, each recording
+    // which truck it was planned for.
+    if (appliedAutoBuild) {
+      setSaving(true);
+      const results = await Promise.all(
+        appliedAutoBuild.truckAssignments.map(async (ta) => {
+          try {
+            const created = await createBuild(user.uid, deliveryDate, ta.schoolGroups, { id: ta.truckId, name: ta.truckName });
+            return { truckName: ta.truckName, success: true as const, buildNumber: created.buildNumber };
+          } catch (err) {
+            return { truckName: ta.truckName, success: false as const, error: err instanceof Error ? err.message : String(err) };
+          }
+        })
+      );
+      setSaving(false);
+
+      const succeeded = results.filter(r => r.success);
+      const failed = results.filter(r => !r.success);
+
+      if (failed.length === 0) {
+        toast.success(`Saved ${succeeded.length} build${succeeded.length === 1 ? '' : 's'}`, {
+          description: succeeded.map(r => `${r.truckName}: Build #${r.success ? r.buildNumber : ''}`).join(', ')
+        });
+        navigate('/order-builder');
+      } else if (succeeded.length > 0) {
+        // Partial success: the succeeded builds are already real Firestore docs -
+        // don't hide that. Surface exactly what failed so the user can retry that
+        // truck manually (e.g. via the normal single-build flow).
+        toast.error(`${succeeded.length} of ${results.length} builds saved - ${failed.length} failed`, {
+          description: failed.map(r => `${r.truckName}: ${r.success ? '' : r.error}`).join('; ')
+        });
+        navigate('/order-builder');
+      } else {
+        toast.error('Failed to save any builds', {
+          description: failed.map(r => (r.success ? '' : `${r.truckName}: ${r.error}`)).join('; ')
+        });
+      }
+      return;
+    }
+
     const groups = buildSchoolGroups(eligibleOrders, selectedOrderIds);
     if (groups.length === 0) {
       toast.error('Add at least one order before saving.');
@@ -191,6 +275,16 @@ export function OrderBuilderScreen() {
           </div>
           <button
             type="button"
+            onClick={() => setIsAutoBuildOpen(true)}
+            disabled={!hasValidKey}
+            title={hasValidKey ? 'Auto-build from available orders' : 'Requires the Google Maps API key (see below)'}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50 font-semibold text-sm transition-all shadow-2xs cursor-pointer self-end disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Zap className="w-4 h-4 text-zinc-500" />
+            Auto-Build
+          </button>
+          <button
+            type="button"
             onClick={handleCopy}
             title="Copy build details"
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50 font-semibold text-sm transition-all shadow-2xs cursor-pointer self-end"
@@ -208,6 +302,11 @@ export function OrderBuilderScreen() {
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
             Save Build
           </button>
+          {appliedAutoBuild && (
+            <p className="w-full text-[10px] text-amber-600 font-semibold basis-full text-right">
+              Editing orders after Auto-Build clears the truck assignment — this will save as one build instead of per-truck.
+            </p>
+          )}
         </div>
       </div>
 
@@ -230,8 +329,18 @@ export function OrderBuilderScreen() {
               onToggleOrder={toggleOrder}
               onSetOrdersForSchool={setOrdersForSchool}
               warehouse={settings}
+              truckBySchoolKey={truckBySchoolKey}
             />
           </div>
+
+          {/* Rendered inside APIProvider so it can resolve useMapsLibrary('routes') */}
+          <AutoBuildFlow
+            isOpen={isAutoBuildOpen}
+            onClose={() => setIsAutoBuildOpen(false)}
+            eligibleOrders={eligibleOrders}
+            warehouse={settings?.warehouseLat && settings?.warehouseLng ? { lat: settings.warehouseLat, lng: settings.warehouseLng } : null}
+            onApply={handleApplyAutoBuild}
+          />
         </APIProvider>
       )}
 
@@ -239,6 +348,7 @@ export function OrderBuilderScreen() {
         orders={eligibleOrders}
         selectedOrderIds={selectedOrderIds}
         onRemoveOrder={toggleOrder}
+        truckBySchoolKey={truckBySchoolKey}
       />
     </div>
   );

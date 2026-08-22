@@ -29,12 +29,14 @@ function SchoolPinMarker({
   group,
   position,
   selectedCount,
-  onClick
+  onClick,
+  truckBadge
 }: {
   group: SchoolPinGroup;
   position: { lat: number; lng: number };
   selectedCount: number;
   onClick: () => void;
+  truckBadge?: { truckName: string; color: string };
 }) {
   const total = group.orders.length;
   const state = selectedCount === 0 ? 'none' : selectedCount === total ? 'full' : 'partial';
@@ -49,15 +51,21 @@ function SchoolPinMarker({
           'cursor-pointer group relative transition-transform duration-300',
           state !== 'none' ? 'scale-110 z-20' : 'hover:scale-110 z-10'
         )}
-        title={`${group.schoolName} (${selectedCount}/${total} order${total === 1 ? '' : 's'} selected — click to ${total > 1 ? 'choose orders' : 'toggle'})`}
+        title={`${group.schoolName} (${selectedCount}/${total} order${total === 1 ? '' : 's'} selected — click to ${total > 1 ? 'choose orders' : 'toggle'})${truckBadge ? ` — ${truckBadge.truckName}` : ''}`}
       >
         <Pin background={background} glyphColor="#fff" borderColor={borderColor} scale={state === 'none' ? 1.1 : 1.3}>
           <span className="text-[10px] font-black leading-none text-white font-mono shrink-0">
             {total > 1 ? `${selectedCount}/${total}` : (state === 'full' ? '✓' : '')}
           </span>
         </Pin>
+        {truckBadge && (
+          <span
+            className="absolute -top-1 -right-1 w-3 h-3 rounded-full border-2 border-white shadow-sm z-30"
+            style={{ backgroundColor: truckBadge.color }}
+          />
+        )}
         <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 hidden group-hover:block bg-zinc-900 text-white text-[10px] font-bold px-2 py-1 rounded shadow-md whitespace-nowrap z-50">
-          {group.schoolName} ({selectedCount}/{total})
+          {group.schoolName} ({selectedCount}/{total}){truckBadge ? ` · ${truckBadge.truckName}` : ''}
         </div>
       </div>
     </AdvancedMarker>
@@ -69,13 +77,18 @@ export function OrderBuilderMap({
   selectedOrderIds,
   onToggleOrder,
   onSetOrdersForSchool,
-  warehouse
+  warehouse,
+  truckBySchoolKey
 }: {
   orders: Order[];
   selectedOrderIds: Set<string>;
   onToggleOrder: (orderId: string) => void;
   onSetOrdersForSchool: (orderIdsForSchool: string[], tickedIds: string[]) => void;
   warehouse: Settings | null;
+  // Set while an Auto-Build option is applied (see AutoBuildFlow.tsx) - badges
+  // each pin with the truck its school was assigned to. Undefined for the normal
+  // manual-build case, which renders exactly as before this prop existed.
+  truckBySchoolKey?: Record<string, { truckName: string; color: string }>;
 }) {
   const map = useMap();
   const geocodingLib = useMapsLibrary('geocoding');
@@ -233,6 +246,7 @@ export function OrderBuilderMap({
               position={pin.position}
               selectedCount={selectedCountFor(group)}
               onClick={() => handlePinClick(group)}
+              truckBadge={truckBySchoolKey?.[group.schoolKey]}
             />
           );
         })}

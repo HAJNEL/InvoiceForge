@@ -406,3 +406,23 @@ export async function generateAutoBuildOptions(input: AutoBuildInput): Promise<A
 
   return options.sort((a, b) => b.totalSchools - a.totalSchools);
 }
+
+// The union of every order id across every truck assignment in a chosen option -
+// what OrderBuilderScreen sets selectedOrderIds to when "applying" an option.
+export function orderIdsInOption(option: AutoBuildOption): Set<string> {
+  return new Set(option.truckAssignments.flatMap(ta => ta.schoolGroups.flatMap(g => g.orderIds)));
+}
+
+// Which truck each order ended up in, for the truck-grouping layer on the map
+// and grouping panel.
+export function truckIdByOrderId(option: AutoBuildOption): Record<string, { truckId: string; truckName: string }> {
+  const map: Record<string, { truckId: string; truckName: string }> = {};
+  option.truckAssignments.forEach(ta => {
+    ta.schoolGroups.forEach(g => {
+      g.orderIds.forEach(oid => {
+        map[oid] = { truckId: ta.truckId, truckName: ta.truckName };
+      });
+    });
+  });
+  return map;
+}
