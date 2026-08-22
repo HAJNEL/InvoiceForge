@@ -234,7 +234,6 @@ export function OrderBuilderScreen() {
         onSave={handleSave}
         onCopy={handleCopy}
         onBack={handleBack}
-        appliedAutoBuild={appliedAutoBuild}
         truckBySchoolKey={truckBySchoolKey}
         onApplyAutoBuild={handleApplyAutoBuild}
       />
@@ -281,18 +280,18 @@ export function OrderBuilderScreen() {
             onClick={() => setIsAutoBuildOpen(true)}
             disabled={!hasValidKey}
             title={hasValidKey ? 'Auto-build from available orders' : 'Requires the Google Maps API key (see below)'}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50 font-semibold text-sm transition-all shadow-2xs cursor-pointer self-end disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50 font-semibold text-sm whitespace-nowrap transition-all shadow-2xs cursor-pointer self-end disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <Zap className="w-4 h-4 text-zinc-500" />
+            <Zap className="w-4 h-4 text-zinc-500 shrink-0" />
             Auto-Build
           </button>
           <button
             type="button"
             onClick={handleCopy}
             title="Copy build details"
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50 font-semibold text-sm transition-all shadow-2xs cursor-pointer self-end"
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50 font-semibold text-sm whitespace-nowrap transition-all shadow-2xs cursor-pointer self-end"
           >
-            <Copy className="w-4 h-4 text-zinc-500" />
+            <Copy className="w-4 h-4 text-zinc-500 shrink-0" />
             Copy
           </button>
           <button
@@ -300,16 +299,11 @@ export function OrderBuilderScreen() {
             onClick={handleSave}
             disabled={saving}
             title="Save build"
-            className="flex items-center gap-2 px-5 py-2.5 bg-brand-accent text-white font-semibold text-sm rounded-xl hover:bg-brand-accent/95 active:scale-98 transition-all shadow-xs disabled:opacity-60 cursor-pointer self-end"
+            className="flex items-center gap-2 px-5 py-2.5 bg-brand-accent text-white font-semibold text-sm whitespace-nowrap rounded-xl hover:bg-brand-accent/95 active:scale-98 transition-all shadow-xs disabled:opacity-60 cursor-pointer self-end"
           >
-            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+            {saving ? <Loader2 className="w-4 h-4 animate-spin shrink-0" /> : <Check className="w-4 h-4 shrink-0" />}
             Save Build
           </button>
-          {appliedAutoBuild && (
-            <p className="w-full text-[10px] text-amber-600 font-semibold basis-full text-right">
-              Editing orders after Auto-Build clears the truck assignment — this will save as one build instead of per-truck.
-            </p>
-          )}
         </div>
       </div>
 
