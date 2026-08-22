@@ -1,10 +1,13 @@
-import { ArrowLeft, PackagePlus, AlertCircle, Loader2, Check, Copy } from 'lucide-react';
+import { useState } from 'react';
+import { ArrowLeft, PackagePlus, AlertCircle, Loader2, Check, Copy, Zap } from 'lucide-react';
 import { APIProvider } from '@vis.gl/react-google-maps';
 import { Settings } from '../../types';
 import type { Order } from '../orders/hooks/useOrders';
 import type { OrderBuild } from './types';
+import type { AutoBuildOption } from './lib/autoBuild';
 import { OrderBuilderMap } from './components/OrderBuilderMap';
 import { BuildGroupingPanel } from './components/BuildGroupingPanel';
+import { AutoBuildFlowMobile } from './components/AutoBuildFlowMobile';
 
 const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_PLATFORM_KEY || '';
 const hasValidKey = Boolean(GOOGLE_MAPS_API_KEY);
@@ -25,7 +28,10 @@ export function OrderBuilderScreenMobile({
   schoolCount,
   onSave,
   onCopy,
-  onBack
+  onBack,
+  appliedAutoBuild,
+  truckBySchoolKey,
+  onApplyAutoBuild
 }: {
   editingBuild: OrderBuild | undefined;
   eligibleOrders: Order[];
@@ -40,7 +46,14 @@ export function OrderBuilderScreenMobile({
   onSave: () => void;
   onCopy: () => void;
   onBack: () => void;
+  appliedAutoBuild: AutoBuildOption | null;
+  truckBySchoolKey?: Record<string, { truckId: string; truckName: string; color: string }>;
+  onApplyAutoBuild: (option: AutoBuildOption) => void;
 }) {
+  const [isAutoBuildOpen, setIsAutoBuildOpen] = useState(false);
+  const warehousePosition = warehouse?.warehouseLat && warehouse?.warehouseLng
+    ? { lat: warehouse.warehouseLat, lng: warehouse.warehouseLng }
+    : null;
   return (
     <div className="flex flex-col h-full pb-6 space-y-3">
       <button
@@ -80,6 +93,16 @@ export function OrderBuilderScreenMobile({
       <div className="flex items-center gap-2">
         <button
           type="button"
+          onClick={() => setIsAutoBuildOpen(true)}
+          disabled={!hasValidKey}
+          title={hasValidKey ? 'Auto-build from available orders' : 'Requires the Google Maps API key (see below)'}
+          className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl border border-zinc-200 bg-white text-zinc-700 font-semibold text-xs transition-all shadow-2xs disabled:opacity-50 mobile-tap-target"
+        >
+          <Zap className="w-3.5 h-3.5 text-zinc-500" />
+          Auto-Build
+        </button>
+        <button
+          type="button"
           onClick={onCopy}
           title="Copy build details"
           className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl border border-zinc-200 bg-white text-zinc-700 font-semibold text-xs transition-all shadow-2xs mobile-tap-target"
@@ -99,6 +122,12 @@ export function OrderBuilderScreenMobile({
         </button>
       </div>
 
+      {appliedAutoBuild && (
+        <p className="text-[10px] text-amber-600 font-semibold">
+          Editing orders after Auto-Build clears the truck assignment — this will save as one build instead of per-truck.
+        </p>
+      )}
+
       {!hasValidKey ? (
         <div className="p-8 text-center border border-dashed border-zinc-300 rounded-2xl bg-zinc-50">
           <AlertCircle className="w-10 h-10 text-zinc-400 mx-auto mb-3" />
@@ -116,8 +145,17 @@ export function OrderBuilderScreenMobile({
               onToggleOrder={toggleOrder}
               onSetOrdersForSchool={setOrdersForSchool}
               warehouse={warehouse}
+              truckBySchoolKey={truckBySchoolKey}
             />
           </div>
+
+          <AutoBuildFlowMobile
+            isOpen={isAutoBuildOpen}
+            onClose={() => setIsAutoBuildOpen(false)}
+            eligibleOrders={eligibleOrders}
+            warehouse={warehousePosition}
+            onApply={onApplyAutoBuild}
+          />
         </APIProvider>
       )}
 
@@ -125,6 +163,7 @@ export function OrderBuilderScreenMobile({
         orders={eligibleOrders}
         selectedOrderIds={selectedOrderIds}
         onRemoveOrder={toggleOrder}
+        truckBySchoolKey={truckBySchoolKey}
       />
     </div>
   );

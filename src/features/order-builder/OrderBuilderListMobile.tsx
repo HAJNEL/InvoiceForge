@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { PackagePlus, Search, Loader2, AlertCircle, Trash2, Copy, School } from 'lucide-react';
+import { PackagePlus, Search, Loader2, AlertCircle, Trash2, Copy, School, Settings } from 'lucide-react';
 import { MobileCard, MobileCardActionsMenu } from '../../components/mobile/MobileCard';
 import { formatBuildDate } from './utils';
+import { OrderBuilderSettingsDialogMobile } from './components/OrderBuilderSettingsDialogMobile';
 import type { OrderBuild } from './types';
 
 export function OrderBuilderListMobile({
@@ -18,6 +19,7 @@ export function OrderBuilderListMobile({
   onDelete: (build: OrderBuild) => Promise<void>;
 }) {
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   const handleDelete = async (build: OrderBuild) => {
     if (window.confirm(`Delete Build #${build.buildNumber}? Its orders will be available to bundle again.`)) {
@@ -36,14 +38,24 @@ export function OrderBuilderListMobile({
 
   return (
     <div className="space-y-4 pb-6">
-      <div className="space-y-1">
-        <h1 className="text-xl font-bold tracking-tight text-zinc-900 flex items-center gap-2">
-          <PackagePlus className="w-6 h-6 text-brand-accent shrink-0" />
-          Order Builder
-        </h1>
-        <p className="text-xs text-zinc-500">
-          Bundle orders from the same school into a single delivery-ready build.
-        </p>
+      <div className="flex items-start justify-between gap-2">
+        <div className="space-y-1">
+          <h1 className="text-xl font-bold tracking-tight text-zinc-900 flex items-center gap-2">
+            <PackagePlus className="w-6 h-6 text-brand-accent shrink-0" />
+            Order Builder
+          </h1>
+          <p className="text-xs text-zinc-500">
+            Bundle orders from the same school into a single delivery-ready build.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setIsSettingsOpen(true)}
+          title="Order Builder settings"
+          className="p-2.5 rounded-xl border border-zinc-200 bg-white text-zinc-500 shrink-0 mobile-tap-target"
+        >
+          <Settings className="w-4 h-4" />
+        </button>
       </div>
 
       <button
@@ -55,6 +67,8 @@ export function OrderBuilderListMobile({
         <PackagePlus className="w-3.5 h-3.5" />
         Build
       </button>
+
+      <OrderBuilderSettingsDialogMobile isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
 
       <div className="relative">
         <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
@@ -97,7 +111,9 @@ export function OrderBuilderListMobile({
                 <MobileCard.Primary>
                   <div className="min-w-0">
                     <p className="text-sm font-mono font-semibold text-zinc-900 truncate">Build #{b.buildNumber}</p>
-                    <p className="text-[10px] text-zinc-400 mt-0.5">{formatBuildDate(b.deliveryDate)}</p>
+                    <p className="text-[10px] text-zinc-400 mt-0.5">
+                      {formatBuildDate(b.deliveryDate)}{b.truckName ? ` · ${b.truckName}` : ''}
+                    </p>
                   </div>
                   <MobileCardActionsMenu
                     actions={[

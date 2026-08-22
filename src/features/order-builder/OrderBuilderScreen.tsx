@@ -234,6 +234,9 @@ export function OrderBuilderScreen() {
         onSave={handleSave}
         onCopy={handleCopy}
         onBack={handleBack}
+        appliedAutoBuild={appliedAutoBuild}
+        truckBySchoolKey={truckBySchoolKey}
+        onApplyAutoBuild={handleApplyAutoBuild}
       />
     );
   }
