@@ -26,4 +26,9 @@ export interface OrderBuild {
   schoolGroups: OrderBuildSchoolGroup[];
   createdAt: string;
   updatedAt: string;
+  // Set when this build was created via Auto-Build (see the auto-build feature
+  // series) - which client truck it was planned for. Undefined for builds made
+  // via manual pin-clicking, which never involve a truck.
+  truckId?: string;
+  truckName?: string; // denormalized, for display/export without a join
 }

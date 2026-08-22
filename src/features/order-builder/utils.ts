@@ -4,7 +4,14 @@
 
 import { schoolKeyFor } from '../../lib/geocoding';
 import type { Order } from '../orders/hooks/useOrders';
+import type { Truck } from '../trucks/hooks/useTrucks';
 import type { OrderBuild, OrderBuildSchoolGroup } from './types';
+
+// Only client (delivery) trucks are usable in Order Builder's Auto-Build -
+// personal trucks are reserved for a separate, future invoices-related use.
+export function clientTrucks(trucks: Truck[]): Truck[] {
+  return trucks.filter(t => t.ownership === 'client');
+}
 
 // Human-readable delivery date, matching this app's existing en-ZA date-formatting
 // convention (see src/features/trips/utils/printTripManifest.ts).

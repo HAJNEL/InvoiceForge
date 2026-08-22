@@ -44,6 +44,7 @@ type TruckFormData = {
   fuelType: string;
   status: string;
   maxValue: string;
+  ownership: string;
 };
 
 interface TruckListMobileProps {
@@ -315,6 +316,20 @@ export function TruckListMobile({
                 <option value="Maintenance">Under Maintenance</option>
                 <option value="Inactive">Decommissioned / Inactive</option>
               </select>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500 ml-1">Ownership</label>
+              <select
+                aria-label="Ownership"
+                title="Ownership"
+                value={formData.ownership}
+                onChange={(e) => setFormData({ ...formData, ownership: e.target.value })}
+                className="modal-input-truck-mobile appearance-none font-bold"
+              >
+                <option value="client">Client (delivery fleet)</option>
+                <option value="personal">Personal</option>
+              </select>
+              <p className="text-[9px] text-zinc-400 leading-normal ml-1">Only client trucks are usable in Order Builder&apos;s Auto-Build.</p>
             </div>
           </section>
 

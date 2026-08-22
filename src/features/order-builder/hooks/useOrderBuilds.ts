@@ -56,7 +56,9 @@ function toOrderBuild(id: string, v: Record<string, unknown>): OrderBuild {
     deliveryDate: (v.deliveryDate as string) || '',
     schoolGroups: Array.isArray(v.schoolGroups) ? (v.schoolGroups as OrderBuildSchoolGroup[]) : [],
     createdAt: (v.createdAt as string) || '',
-    updatedAt: (v.updatedAt as string) || ''
+    updatedAt: (v.updatedAt as string) || '',
+    truckId: (v.truckId as string) || undefined,
+    truckName: (v.truckName as string) || undefined
   };
 }
 

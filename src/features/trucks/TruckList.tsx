@@ -57,9 +57,10 @@ export function TruckList() {
     currentKm: '',
     fuelType: 'Diesel',
     status: 'Active',
-    maxValue: ''
+    maxValue: '',
+    ownership: 'client'
   });
-  
+
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleOpenModal = (truck?: Truck) => {
@@ -84,7 +85,8 @@ export function TruckList() {
         currentKm: truck.currentKm?.toString() || '',
         fuelType: truck.fuelType || 'Diesel',
         status: truck.status || 'Active',
-        maxValue: truck.maxValue?.toString() || ''
+        maxValue: truck.maxValue?.toString() || '',
+        ownership: truck.ownership || 'client'
       });
     } else {
       setEditingTruck(null);
@@ -107,7 +109,8 @@ export function TruckList() {
         currentKm: '',
         fuelType: 'Diesel',
         status: 'Active',
-        maxValue: ''
+        maxValue: '',
+        ownership: 'client'
       });
     }
     setIsModalOpen(true);
@@ -126,7 +129,8 @@ export function TruckList() {
       currentKm: formData.currentKm ? parseFloat(formData.currentKm) : undefined,
       maxValue: formData.maxValue ? parseFloat(formData.maxValue) : undefined,
       fuelType: formData.fuelType as 'Diesel' | 'Petrol' | 'Gas',
-      status: formData.status as 'Active' | 'Maintenance' | 'Inactive'
+      status: formData.status as 'Active' | 'Maintenance' | 'Inactive',
+      ownership: formData.ownership as 'personal' | 'client'
     }));
 
     if (editingTruck) {
@@ -460,7 +464,7 @@ export function TruckList() {
                     <Settings className="w-3.5 h-3.5" />
                     Vehicle Identity & Status
                   </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                     <div className="space-y-1.5">
                       <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500 ml-1">Internal Name</label>
                       <input 
@@ -494,6 +498,18 @@ export function TruckList() {
                         <option value="Maintenance">Under Maintenance</option>
                         <option value="Inactive">Decommissioned / Inactive</option>
                       </select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500 ml-1">Ownership</label>
+                      <select aria-label="Ownership" title="Ownership"
+                        value={formData.ownership}
+                        onChange={(e) => setFormData({ ...formData, ownership: e.target.value })}
+                        className="w-full px-4 py-3 bg-zinc-50 border border-zinc-200 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-brand-accent/20 transition-all shadow-sm appearance-none"
+                      >
+                        <option value="client">Client (delivery fleet)</option>
+                        <option value="personal">Personal</option>
+                      </select>
+                      <p className="text-[9px] text-zinc-400 leading-normal ml-1">Only client trucks are usable in Order Builder&apos;s Auto-Build.</p>
                     </div>
                   </div>
                 </section>

@@ -25,6 +25,12 @@ export interface Truck {
   fuelType?: 'Diesel' | 'Petrol' | 'Gas';
   status?: 'Active' | 'Maintenance' | 'Inactive';
   maxValue?: number;
+  // Client trucks are used for deliveries and are the only ones Order Builder's
+  // Auto-Build considers; personal trucks are reserved for a future, separate
+  // invoices-related use. Defaults to 'client' for docs written before this field
+  // existed (see the snapshot mapping below) since every truck in this system so
+  // far has been a real delivery truck.
+  ownership: 'personal' | 'client';
   userId: string;
   createdAt: unknown;
 }
@@ -69,10 +75,14 @@ function ensureSubscription(userId: string | null) {
   const q = query(collection(db, path), where('userId', '==', userId));
 
   unsubscribeFirestore = onSnapshot(q, (snapshot) => {
-    const data = snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    })) as Truck[];
+    const data = snapshot.docs.map(doc => {
+      const v = doc.data();
+      return {
+        id: doc.id,
+        ...v,
+        ownership: v.ownership === 'personal' ? 'personal' : 'client'
+      };
+    }) as Truck[];
 
     setState({ trucks: data, loading: false, error: null });
   }, (err) => {
