@@ -46,5 +46,20 @@ export function useStockLookups() {
     return map;
   }, [products]);
 
-  return { weightByStockCode, unitPriceByStockCode };
+  // Same skip-if-blank merge rule as weight above, so an unset description on
+  // one catalog can't blank out a real one from the other sharing a code.
+  const descriptionByStockCode = useMemo(() => {
+    const map: Record<string, string> = {};
+    products.forEach(p => {
+      const key = stockCodeKey(p.stockCode);
+      if (key && p.description) map[key] = p.description;
+    });
+    stockItems.forEach(k => {
+      const key = stockCodeKey(k.stockCode);
+      if (key && k.description) map[key] = k.description;
+    });
+    return map;
+  }, [products, stockItems]);
+
+  return { weightByStockCode, unitPriceByStockCode, descriptionByStockCode };
 }

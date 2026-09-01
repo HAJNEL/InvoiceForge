@@ -26,7 +26,6 @@ import { Register } from './features/auth/Register';
 import { useAuth } from './core/hooks/useAuth';
 import { ProductList } from './features/products/components/ProductList';
 import { StockControlPage } from './features/stock-control/StockControlPage';
-import { OrdersList } from './features/orders/OrdersList';
 import { OrderBuilderList } from './features/order-builder/OrderBuilderList';
 import { OrderBuilderScreen } from './features/order-builder/OrderBuilderScreen';
 import { TeamRegister } from './features/auth/TeamRegister';
@@ -151,7 +150,7 @@ export default function App() {
           <Route path="/products" element={<ProductList />} />
           <Route path="/stock" element={<StockScreen />} />
           <Route path="/stock-control" element={<StockControlPage />} />
-          <Route path="/orders" element={<OrdersList />} />
+          <Route path="/orders" element={<Navigate to="/order-builder" replace />} />
           <Route path="/invoices/new" element={<InvoiceForm />} />
           <Route path="/invoices/import" element={<BulkImport />} />
           <Route path="/tools/pdf-extractor" element={<PdfExtractorTool />} />

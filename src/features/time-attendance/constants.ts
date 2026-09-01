@@ -13,6 +13,7 @@ export const DEFAULT_TIME_ATTENDANCE_SETTINGS: TimeAttendanceSettings = {
   weekEndDay: 5,   // Friday
   payInterval: 'monthly',
   overtimeThresholdHours: 45,
+  workingDays: [1, 2, 3, 4, 5], // Monday-Friday
 };
 
 export const WEEKDAY_OPTIONS = [
@@ -27,6 +28,7 @@ export const WEEKDAY_OPTIONS = [
 
 export const PAY_INTERVAL_OPTIONS: { value: TimeAttendanceSettings['payInterval']; label: string }[] = [
   { value: 'daily', label: 'Daily' },
+  { value: 'weekly', label: 'Weekly' },
   { value: 'fortnightly', label: 'Fortnightly' },
   { value: 'monthly', label: 'Monthly' },
 ];
@@ -34,6 +36,7 @@ export const PAY_INTERVAL_OPTIONS: { value: TimeAttendanceSettings['payInterval'
 // Unit shown next to the overtime threshold input/label, matching the selected pay interval.
 export const OVERTIME_UNIT_LABEL: Record<TimeAttendanceSettings['payInterval'], string> = {
   daily: 'hrs/day',
+  weekly: 'hrs/week',
   fortnightly: 'hrs/fortnight',
   monthly: 'hrs/month',
 };

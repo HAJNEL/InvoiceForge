@@ -52,10 +52,11 @@ function getMonthKey(date: string): string {
 }
 
 // Groups a date into the bucket its overtime threshold resets on, matching the configured
-// pay interval: each day for 'daily', a paired two-week window for 'fortnightly', or the
-// calendar month for 'monthly'.
+// pay interval: each day for 'daily', each weekStartDay-aligned week for 'weekly', a paired
+// two-week window for 'fortnightly', or the calendar month for 'monthly'.
 export function getBucketKey(date: string, payInterval: TimeAttendanceSettings['payInterval'], weekStartDay: number): string {
   if (payInterval === 'daily') return date;
+  if (payInterval === 'weekly') return getWeekKey(date, weekStartDay);
   if (payInterval === 'monthly') return getMonthKey(date);
   return getFortnightKey(date, weekStartDay);
 }
@@ -99,4 +100,128 @@ export function splitOvertimeByDay(
   }
 
   return result;
+}
+
+const WEEKDAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+// "Mon" for a "YYYY-MM-DD" date key.
+export function getWeekdayShort(dateKey: string): string {
+  const d = new Date(`${dateKey}T00:00:00`);
+  return WEEKDAY_SHORT[d.getDay()];
+}
+
+// "Mon, 2026-08-24" — the weekday name alongside a "YYYY-MM-DD" date key, for timecard
+// breakdown rows where the raw date alone doesn't say which day of the week it was.
+export function formatDateWithWeekday(dateKey: string): string {
+  return `${getWeekdayShort(dateKey)}, ${dateKey}`;
+}
+
+// Every date (inclusive) between start and end, as "YYYY-MM-DD" local date keys.
+export function getDatesInRange(start: string, end: string): string[] {
+  const dates: string[] = [];
+  const cursor = new Date(`${start}T00:00:00`);
+  const endDate = new Date(`${end}T00:00:00`);
+  while (cursor <= endDate) {
+    dates.push(toDateKey(cursor));
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return dates;
+}
+
+function toDateKey(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function addDays(dateKey: string, days: number): string {
+  const d = new Date(`${dateKey}T00:00:00`);
+  d.setDate(d.getDate() + days);
+  return toDateKey(d);
+}
+
+function addMonths(dateKey: string, months: number): string {
+  const d = new Date(`${dateKey}T00:00:00`);
+  d.setMonth(d.getMonth() + months);
+  return toDateKey(d);
+}
+
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function formatShort(dateKey: string): string {
+  const d = new Date(`${dateKey}T00:00:00`);
+  return `${d.getDate()} ${MONTH_NAMES[d.getMonth()]}`;
+}
+
+function formatWithYear(dateKey: string): string {
+  const d = new Date(`${dateKey}T00:00:00`);
+  return `${d.getDate()} ${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+// Standard ISO 8601 week number (weeks start Monday; week 1 contains the year's first
+// Thursday) for the week containing `dateKey`. Used only for display ("Week 35"),
+// independent of the account's configured weekStartDay.
+export function getIsoWeekNumber(dateKey: string): number {
+  const d = new Date(`${dateKey}T00:00:00`);
+  const dayNum = (d.getDay() + 6) % 7; // Mon=0 .. Sun=6
+  d.setDate(d.getDate() - dayNum + 3); // Thursday of this ISO week
+  const firstThursday = new Date(d.getFullYear(), 0, 4);
+  const firstDayNum = (firstThursday.getDay() + 6) % 7;
+  firstThursday.setDate(firstThursday.getDate() - firstDayNum + 3);
+  return 1 + Math.round((d.getTime() - firstThursday.getTime()) / (7 * MS_PER_DAY));
+}
+
+export interface PeriodRange {
+  start: string;
+  end: string;
+  periodKey: string;
+  label: string;
+  // Set for weekly periods only — the ISO week number, for a "WAGES FOR THE WEEK 35"
+  // style title on the printed payroll report.
+  weekNumber?: number;
+}
+
+// Computes the inclusive [start,end] date range for the pay period `offset` steps away from
+// the one containing `anchor` (0 = current period, -1 = previous, +1 = next), plus a stable
+// periodKey matching getBucketKey's bucketing (so a saved PayrollAdjustment survives
+// navigating away and back) and a human-readable label for the period stepper.
+export function getPeriodRange(
+  payInterval: TimeAttendanceSettings['payInterval'],
+  weekStartDay: number,
+  anchor: Date,
+  offset: number
+): PeriodRange {
+  const anchorKey = toDateKey(anchor);
+
+  if (payInterval === 'daily') {
+    const day = addDays(anchorKey, offset);
+    return { start: day, end: day, periodKey: day, label: formatWithYear(day) };
+  }
+
+  if (payInterval === 'monthly') {
+    const monthAnchor = addMonths(anchorKey, offset);
+    const d = new Date(`${monthAnchor}T00:00:00`);
+    const start = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+    const end = toDateKey(new Date(d.getFullYear(), d.getMonth() + 1, 0));
+    return { start, end, periodKey: getMonthKey(start), label: `${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}` };
+  }
+
+  if (payInterval === 'fortnightly') {
+    const ws = weekStartDate(anchorKey, weekStartDay);
+    const epoch = new Date('1970-01-01T00:00:00Z');
+    const daysSinceEpoch = Math.floor((ws.getTime() - epoch.getTime()) / MS_PER_DAY);
+    const fortnightIndex = Math.floor(daysSinceEpoch / 14) + offset;
+    const start = toDateKey(new Date(epoch.getTime() + fortnightIndex * 14 * MS_PER_DAY));
+    const end = addDays(start, 13);
+    return { start, end, periodKey: `fn-${fortnightIndex}`, label: `${formatShort(start)} – ${formatWithYear(end)}` };
+  }
+
+  // weekly
+  const start = addDays(toDateKey(weekStartDate(anchorKey, weekStartDay)), offset * 7);
+  const end = addDays(start, 6);
+  const weekNumber = getIsoWeekNumber(start);
+  return {
+    start, end,
+    periodKey: getWeekKey(start, weekStartDay),
+    label: `Week ${weekNumber} · ${formatShort(start)} – ${formatWithYear(end)}`,
+    weekNumber,
+  };
 }

@@ -64,15 +64,20 @@ export interface AutoBuildOption {
 // not a business rule. Tunable.
 const CANDIDATE_PREFILTER_RADIUS_METERS = 50_000;
 
-function stockCodeKey(code: string): string {
+export function stockCodeKey(code: string): string {
   return code.toLowerCase().trim();
 }
 
-function orderWeightKg(order: Order, weightByStockCode: Record<string, number>): number {
+// Exported for OrderBuilderRouteDialog's truck-fullness progress bar - same
+// reasoning as orderValueRand below re: single-sourcing.
+export function orderWeightKg(order: Order, weightByStockCode: Record<string, number>): number {
   return order.lineItems.reduce((sum, li) => sum + li.qty * (weightByStockCode[stockCodeKey(li.stockCode)] ?? 0), 0);
 }
 
-function orderValueRand(order: Order, unitPriceByStockCode: Record<string, number>): number {
+// Exported for OrderBuilderRouteDialog's per-order Rand-value line items - same
+// merged Products+Knockdown lookup (useStockLookups) and normalization as the
+// weight calc above, single-sourced here rather than reimplemented per caller.
+export function orderValueRand(order: Order, unitPriceByStockCode: Record<string, number>): number {
   return order.lineItems.reduce((sum, li) => sum + li.qty * (unitPriceByStockCode[stockCodeKey(li.stockCode)] ?? 0), 0);
 }
 

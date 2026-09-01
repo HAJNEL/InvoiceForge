@@ -1,13 +1,16 @@
 import { useState } from 'react';
-import { ArrowLeft, PackagePlus, AlertCircle, Loader2, Check, Copy, Zap } from 'lucide-react';
+import { ArrowLeft, PackagePlus, AlertCircle, Loader2, Check, Copy, Zap, Navigation, ClipboardList, Package } from 'lucide-react';
 import { APIProvider } from '@vis.gl/react-google-maps';
+import { cn } from '../../lib/utils';
 import { Settings } from '../../types';
 import type { Order } from '../orders/hooks/useOrders';
 import type { OrderBuild } from './types';
 import type { AutoBuildOption } from './lib/autoBuild';
 import { OrderBuilderMap } from './components/OrderBuilderMap';
 import { BuildGroupingPanel } from './components/BuildGroupingPanel';
+import { ActiveOrdersPanel } from './components/ActiveOrdersPanel';
 import { AutoBuildFlowMobile } from './components/AutoBuildFlowMobile';
+import { OrderBuilderRouteDialog } from './components/OrderBuilderRouteDialog';
 
 const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_PLATFORM_KEY || '';
 const hasValidKey = Boolean(GOOGLE_MAPS_API_KEY);
@@ -19,6 +22,8 @@ export function OrderBuilderScreenMobile({
   editingBuild,
   eligibleOrders,
   selectedOrderIds,
+  buildTab,
+  setBuildTab,
   deliveryDate,
   setDeliveryDate,
   toggleOrder,
@@ -35,6 +40,8 @@ export function OrderBuilderScreenMobile({
   editingBuild: OrderBuild | undefined;
   eligibleOrders: Order[];
   selectedOrderIds: Set<string>;
+  buildTab: 'active' | 'bundle';
+  setBuildTab: (t: 'active' | 'bundle') => void;
   deliveryDate: string;
   setDeliveryDate: (v: string) => void;
   toggleOrder: (orderId: string) => void;
@@ -49,6 +56,7 @@ export function OrderBuilderScreenMobile({
   onApplyAutoBuild: (option: AutoBuildOption) => void;
 }) {
   const [isAutoBuildOpen, setIsAutoBuildOpen] = useState(false);
+  const [isRouteOpen, setIsRouteOpen] = useState(false);
   const warehousePosition = warehouse?.warehouseLat && warehouse?.warehouseLng
     ? { lat: warehouse.warehouseLat, lng: warehouse.warehouseLng }
     : null;
@@ -101,6 +109,15 @@ export function OrderBuilderScreenMobile({
         </button>
         <button
           type="button"
+          onClick={() => setIsRouteOpen(true)}
+          disabled={!hasValidKey || selectedOrderIds.size === 0}
+          title={hasValidKey ? 'Show the driving route to selected orders' : 'Requires the Google Maps API key (see below)'}
+          className="p-2.5 rounded-xl border border-zinc-200 bg-white text-zinc-500 transition-all shadow-2xs disabled:opacity-50 mobile-tap-target shrink-0"
+        >
+          <Navigation className="w-3.5 h-3.5" />
+        </button>
+        <button
+          type="button"
           onClick={onCopy}
           title="Copy build details"
           className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl border border-zinc-200 bg-white text-zinc-700 font-semibold text-xs whitespace-nowrap transition-all shadow-2xs mobile-tap-target"
@@ -148,15 +165,55 @@ export function OrderBuilderScreenMobile({
             warehouse={warehousePosition}
             onApply={onApplyAutoBuild}
           />
+          <OrderBuilderRouteDialog
+            isOpen={isRouteOpen}
+            onClose={() => setIsRouteOpen(false)}
+            orders={eligibleOrders}
+            selectedOrderIds={selectedOrderIds}
+            warehouse={warehousePosition}
+            onToggleOrder={toggleOrder}
+            onSetOrdersForSchool={setOrdersForSchool}
+          />
         </APIProvider>
       )}
 
-      <BuildGroupingPanel
-        orders={eligibleOrders}
-        selectedOrderIds={selectedOrderIds}
-        onRemoveOrder={toggleOrder}
-        truckBySchoolKey={truckBySchoolKey}
-      />
+      <div className="flex items-center gap-1 border-b border-zinc-200">
+        <button
+          type="button"
+          title="Show active orders"
+          onClick={() => setBuildTab('active')}
+          className={cn(
+            'flex items-center gap-1.5 px-3 py-2.5 text-xs font-semibold border-b-2 -mb-px transition-colors mobile-tap-target',
+            buildTab === 'active' ? 'border-brand-accent text-brand-primary' : 'border-transparent text-zinc-500'
+          )}
+        >
+          <ClipboardList className="w-3.5 h-3.5" />
+          Active Orders
+        </button>
+        <button
+          type="button"
+          title="Show current bundle"
+          onClick={() => setBuildTab('bundle')}
+          className={cn(
+            'flex items-center gap-1.5 px-3 py-2.5 text-xs font-semibold border-b-2 -mb-px transition-colors mobile-tap-target',
+            buildTab === 'bundle' ? 'border-brand-accent text-brand-primary' : 'border-transparent text-zinc-500'
+          )}
+        >
+          <Package className="w-3.5 h-3.5" />
+          Current Bundle
+        </button>
+      </div>
+
+      {buildTab === 'active' ? (
+        <ActiveOrdersPanel orders={eligibleOrders} selectedOrderIds={selectedOrderIds} onToggleOrder={toggleOrder} />
+      ) : (
+        <BuildGroupingPanel
+          orders={eligibleOrders}
+          selectedOrderIds={selectedOrderIds}
+          onRemoveOrder={toggleOrder}
+          truckBySchoolKey={truckBySchoolKey}
+        />
+      )}
     </div>
   );
 }

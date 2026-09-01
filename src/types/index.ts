@@ -144,6 +144,10 @@ export interface Settings {
   calendarSyncEnabled?: boolean;
   timeAttendance?: TimeAttendanceSettings;
   rateSettings?: RateSettings;
+  // Orders screen's Location Issues KPI: how far (km) a school's geocoded pin may
+  // sit from its order's stated area before it's flagged. See geocoding.ts's
+  // describeLocationIssue/DEFAULT_LOCATION_ISSUE_DISTANCE_KM.
+  orderLocationIssueMaxDistanceKm?: number;
   updatedAt: string;
 }
 
@@ -158,8 +162,11 @@ export interface TimeAttendanceSettings {
   lunchBreakEnabledByDefault: boolean;
   weekStartDay: number; // 0=Sunday .. 6=Saturday
   weekEndDay: number;   // 0=Sunday .. 6=Saturday
-  payInterval: 'daily' | 'fortnightly' | 'monthly';
+  payInterval: 'daily' | 'weekly' | 'fortnightly' | 'monthly';
   overtimeThresholdHours: number;
+  // Weekdays (0=Sunday..6=Saturday) staff are expected to work — drives which days
+  // show as "missing" entries in the per-employee timecard breakdown.
+  workingDays: number[];
 }
 
 // Lives in its own `zoho_credentials/{uid}` collection (owner-only Firestore
@@ -356,5 +363,20 @@ export interface RateGroup {
 export interface RateSettings {
   holidayMultiplier: number;
   overtimeMultiplier: number;
+}
+
+// A manual per-employee, per-pay-period adjustment on top of the computed salary
+// (e.g. a stop-order deduction, or a correction for a prior short payment).
+// One doc per staff+period, keyed by id `${staffId}_${periodKey}` for simple upserts.
+export interface PayrollAdjustment {
+  id: string;
+  userId: string;
+  staffId: string;
+  periodKey: string;
+  deductions: number;
+  shortPayment: number;
+  note?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 

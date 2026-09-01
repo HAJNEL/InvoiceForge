@@ -6,18 +6,22 @@ import { cn } from '../../../lib/utils';
 import { TimeLogEntry, computeHours } from '../hooks/useTimeLogs';
 import { getMinutesBetween } from '../utils';
 
-export function TimeLogModal({ staff, settings, editingLog, onSave, onClose }: {
+export function TimeLogModal({ staff, settings, editingLog, defaultStaffId, defaultDate, onSave, onClose }: {
   staff: StaffMember[];
   settings: TimeAttendanceSettings;
   editingLog?: TimeLog | null;
+  // Pre-fill for "add an entry for this staff member/day" flows (e.g. from the payroll
+  // table's per-employee timecard breakdown) where there's no existing log to edit yet.
+  defaultStaffId?: string;
+  defaultDate?: string;
   onSave: (entry: TimeLogEntry) => Promise<unknown>;
   onClose: () => void;
 }) {
   const activeStaff = useMemo(() => staff.filter(s => s.status === 'active'), [staff]);
 
-  const [staffId, setStaffId] = useState(editingLog?.staffId || '');
+  const [staffId, setStaffId] = useState(editingLog?.staffId || defaultStaffId || '');
   const [staffSearch, setStaffSearch] = useState('');
-  const [date, setDate] = useState(editingLog?.date || new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(editingLog?.date || defaultDate || new Date().toISOString().slice(0, 10));
   const [clockIn, setClockIn] = useState(editingLog?.clockIn || settings.checkInTime);
   const [clockOut, setClockOut] = useState(editingLog?.clockOut || settings.checkOutTime);
   const [teaBreak, setTeaBreak] = useState(editingLog?.teaBreak ?? settings.teaBreakEnabledByDefault);

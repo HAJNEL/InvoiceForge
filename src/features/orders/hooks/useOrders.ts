@@ -22,6 +22,18 @@ export interface Order {
   orderNumber: string;
   status: OrderStatus;
   lineItems: OrderLineItem[];
+  // Explicit delivery address, set via the Edit Order modal's autocomplete
+  // Address field. When present, it - not the school name - is what School
+  // Finder and the shared school-pin geocode (see geocoding.ts's
+  // buildSchoolPinSearchAddress) resolve the school's location from.
+  address?: string;
+  // The school's confirmed map location, set via the Edit Order modal's School
+  // Finder (picking a specific Google Maps result rather than trusting whatever
+  // the school-name/address geocode happens to resolve to). Distinct from the
+  // `geocoded_order_schools` localStorage cache (see lib/geocoding.ts) - that
+  // cache is keyed by school name and shared/derived automatically, while this
+  // is a deliberate per-order override persisted to Firestore.
+  location?: { lat: number; lng: number };
   createdAt: string;
   updatedAt: string;
   // Set once this order is consumed into an Order Builder build (see
@@ -84,11 +96,15 @@ function ensureSubscription(userId: string | null) {
         area: v.area || '',
         schoolType: v.schoolType || '',
         orderNumber: v.orderNumber || '',
+        address: v.address || undefined,
         status: v.status === 'Complete' ? 'Complete' : 'Active',
         lineItems: (Array.isArray(v.lineItems) ? v.lineItems : []).map((l: { stockCode?: string; qty?: number }) => ({
           stockCode: l.stockCode || '',
           qty: typeof l.qty === 'number' ? l.qty : 0
         })),
+        location: v.location && typeof v.location.lat === 'number' && typeof v.location.lng === 'number'
+          ? { lat: v.location.lat, lng: v.location.lng }
+          : undefined,
         createdAt: v.createdAt || '',
         updatedAt: v.updatedAt || '',
         buildId: v.buildId || undefined,

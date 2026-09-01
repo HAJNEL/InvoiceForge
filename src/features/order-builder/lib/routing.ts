@@ -63,6 +63,73 @@ export async function computeRoute(
   }
 }
 
+export interface RouteAlternative {
+  distanceMeters: number;
+  durationSeconds: number;
+  overviewPath: { lat: number; lng: number }[];
+  // Visiting order for `stops` (see computeOptimizedRoute) - always ends with
+  // stops.length - 1, the fixed destination; the entries before that are
+  // whichever order Google's optimizer found best for the waypoints in between.
+  stopOrder: number[];
+}
+
+export interface OptimizedRoute {
+  // The raw API response, kept around because google.maps.DirectionsRenderer
+  // (used to actually draw a route on the map) needs this exact object + a
+  // routeIndex, not the parsed summaries below.
+  directionsResult: google.maps.DirectionsResult;
+  alternatives: RouteAlternative[];
+}
+
+// The single-best-route counterpart to computeRoute above, but for "show me the
+// shortest way to visit ALL of these stops" (Show Route) rather than checking one
+// caller-fixed order (Auto-Build). Reorders every stop except the last (fixed as
+// the destination - the Directions API has no "open-ended" TSP mode, only
+// optimizeWaypoints between a fixed origin and destination) via
+// optimizeWaypoints, and requests every alternative Google offers for that
+// origin/destination/waypoint set. Note: Google only returns more than one route
+// when there's a single stop (no waypoints) - once waypoints are present it
+// reliably returns just the one optimized route, so multi-stop builds naturally
+// end up with exactly one "alternative" (itself) here; that's not treated as an
+// error, callers should just render whatever comes back. Returns null if `stops`
+// is empty (nothing to route to).
+export async function computeOptimizedRoute(
+  directionsService: google.maps.DirectionsService,
+  origin: { lat: number; lng: number },
+  stops: RouteStop[]
+): Promise<OptimizedRoute | null> {
+  if (stops.length === 0) return null;
+
+  const destination = stops[stops.length - 1].position;
+  const waypointStops = stops.slice(0, -1);
+  const waypoints: google.maps.DirectionsWaypoint[] = waypointStops.map(s => ({
+    location: s.position,
+    stopover: true
+  }));
+
+  const directionsResult = await directionsService.route({
+    origin,
+    destination,
+    waypoints,
+    optimizeWaypoints: waypoints.length > 0,
+    provideRouteAlternatives: true,
+    travelMode: google.maps.TravelMode.DRIVING,
+    region: 'za'
+  });
+
+  const alternatives = directionsResult.routes.map(route => {
+    const distanceMeters = route.legs.reduce((s, l) => s + (l.distance?.value || 0), 0);
+    const durationSeconds = route.legs.reduce((s, l) => s + (l.duration?.value || 0), 0);
+    const overviewPath = route.overview_path.map(p => ({ lat: p.lat(), lng: p.lng() }));
+    const waypointOrder = route.waypoint_order && route.waypoint_order.length === waypointStops.length
+      ? route.waypoint_order
+      : waypointStops.map((_, i) => i);
+    return { distanceMeters, durationSeconds, overviewPath, stopOrder: [...waypointOrder, waypointStops.length] };
+  });
+
+  return { directionsResult, alternatives };
+}
+
 export interface DetourCheckResult {
   onTheWay: boolean;
   detourRatio: number; // (detourDistance / directDistance) - 1; e.g. 0.2 = 20% extra distance

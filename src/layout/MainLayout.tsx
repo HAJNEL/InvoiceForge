@@ -20,7 +20,6 @@ import {
   CalendarCheck,
   Gauge,
   Workflow,
-  ClipboardList,
   ChevronDown,
   PackagePlus
 } from 'lucide-react';
@@ -56,7 +55,6 @@ const navigationGroups = [
     label: 'Operations',
     items: [
       { name: 'Invoices', href: '/invoices', icon: FileText },
-      { name: 'Orders', href: '/orders', icon: ClipboardList },
       { name: 'Stock', href: '/stock', icon: Boxes },
       { name: 'Stock Control', href: '/stock-control', icon: Workflow },
       { name: 'Products', href: '/products', icon: Package },

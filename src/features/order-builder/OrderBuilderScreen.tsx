@@ -1,8 +1,9 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, PackagePlus, AlertCircle, Loader2, Check, Copy, Zap } from 'lucide-react';
+import { ArrowLeft, PackagePlus, AlertCircle, Loader2, Check, Copy, Zap, Navigation, ClipboardList, Package } from 'lucide-react';
 import { APIProvider } from '@vis.gl/react-google-maps';
 import { toast } from 'sonner';
+import { cn } from '../../lib/utils';
 import { useAuth } from '../../core/hooks/useAuth';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { useOrders } from '../orders/hooks/useOrders';
@@ -11,7 +12,9 @@ import { useSettings } from '../settings/hooks/useSettings';
 import { schoolKeyFor } from '../../lib/geocoding';
 import { OrderBuilderMap } from './components/OrderBuilderMap';
 import { BuildGroupingPanel } from './components/BuildGroupingPanel';
+import { ActiveOrdersPanel } from './components/ActiveOrdersPanel';
 import { AutoBuildFlow } from './components/AutoBuildFlow';
+import { OrderBuilderRouteDialog } from './components/OrderBuilderRouteDialog';
 import { OrderBuilderScreenMobile } from './OrderBuilderScreenMobile';
 import { buildSchoolGroups, formatBuildAsText } from './utils';
 import { orderIdsInOption, truckIdByOrderId, type AutoBuildOption } from './lib/autoBuild';
@@ -38,9 +41,11 @@ export function OrderBuilderScreen() {
   const isMobile = useIsMobile();
 
   const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(new Set());
+  const [buildTab, setBuildTab] = useState<'active' | 'bundle'>('active');
   const [deliveryDate, setDeliveryDate] = useState('');
   const [saving, setSaving] = useState(false);
   const [isAutoBuildOpen, setIsAutoBuildOpen] = useState(false);
+  const [isRouteOpen, setIsRouteOpen] = useState(false);
   const [appliedAutoBuild, setAppliedAutoBuild] = useState<AutoBuildOption | null>(null);
   const initializedRef = useRef(false);
 
@@ -224,6 +229,8 @@ export function OrderBuilderScreen() {
         editingBuild={editingBuild}
         eligibleOrders={eligibleOrders}
         selectedOrderIds={selectedOrderIds}
+        buildTab={buildTab}
+        setBuildTab={setBuildTab}
         deliveryDate={deliveryDate}
         setDeliveryDate={setDeliveryDate}
         toggleOrder={toggleOrder}
@@ -287,6 +294,16 @@ export function OrderBuilderScreen() {
           </button>
           <button
             type="button"
+            onClick={() => setIsRouteOpen(true)}
+            disabled={!hasValidKey || selectedOrderIds.size === 0}
+            title={hasValidKey ? 'Show the driving route to selected orders' : 'Requires the Google Maps API key (see below)'}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50 font-semibold text-sm whitespace-nowrap transition-all shadow-2xs cursor-pointer self-end disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Navigation className="w-4 h-4 text-zinc-500 shrink-0" />
+            Show Route
+          </button>
+          <button
+            type="button"
             onClick={handleCopy}
             title="Copy build details"
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50 font-semibold text-sm whitespace-nowrap transition-all shadow-2xs cursor-pointer self-end"
@@ -338,15 +355,55 @@ export function OrderBuilderScreen() {
             warehouse={settings?.warehouseLat && settings?.warehouseLng ? { lat: settings.warehouseLat, lng: settings.warehouseLng } : null}
             onApply={handleApplyAutoBuild}
           />
+          <OrderBuilderRouteDialog
+            isOpen={isRouteOpen}
+            onClose={() => setIsRouteOpen(false)}
+            orders={eligibleOrders}
+            selectedOrderIds={selectedOrderIds}
+            warehouse={settings?.warehouseLat && settings?.warehouseLng ? { lat: settings.warehouseLat, lng: settings.warehouseLng } : null}
+            onToggleOrder={toggleOrder}
+            onSetOrdersForSchool={setOrdersForSchool}
+          />
         </APIProvider>
       )}
 
-      <BuildGroupingPanel
-        orders={eligibleOrders}
-        selectedOrderIds={selectedOrderIds}
-        onRemoveOrder={toggleOrder}
-        truckBySchoolKey={truckBySchoolKey}
-      />
+      <div className="flex items-center gap-1 border-b border-zinc-200 mt-6">
+        <button
+          type="button"
+          title="Show active orders"
+          onClick={() => setBuildTab('active')}
+          className={cn(
+            'flex items-center gap-2 px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors cursor-pointer',
+            buildTab === 'active' ? 'border-brand-accent text-brand-primary' : 'border-transparent text-zinc-500 hover:text-zinc-700'
+          )}
+        >
+          <ClipboardList className="w-4 h-4" />
+          Active Orders
+        </button>
+        <button
+          type="button"
+          title="Show current bundle"
+          onClick={() => setBuildTab('bundle')}
+          className={cn(
+            'flex items-center gap-2 px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors cursor-pointer',
+            buildTab === 'bundle' ? 'border-brand-accent text-brand-primary' : 'border-transparent text-zinc-500 hover:text-zinc-700'
+          )}
+        >
+          <Package className="w-4 h-4" />
+          Current Bundle
+        </button>
+      </div>
+
+      {buildTab === 'active' ? (
+        <ActiveOrdersPanel orders={eligibleOrders} selectedOrderIds={selectedOrderIds} onToggleOrder={toggleOrder} />
+      ) : (
+        <BuildGroupingPanel
+          orders={eligibleOrders}
+          selectedOrderIds={selectedOrderIds}
+          onRemoveOrder={toggleOrder}
+          truckBySchoolKey={truckBySchoolKey}
+        />
+      )}
     </div>
   );
 }

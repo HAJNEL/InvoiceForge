@@ -7,18 +7,24 @@ import { Settings } from '../../../types';
 import { useIsMobile } from '../../../hooks/useIsMobile';
 import type { Order } from '../../orders/hooks/useOrders';
 import {
-  buildOrderSearchAddress,
+  buildSchoolPinSearchAddress,
   schoolKeyFor,
   loadCachedSchoolPins,
   upsertCachedSchoolPin,
+  extractAdminAreas,
   type CachedSchoolPin
 } from '../../../lib/geocoding';
 import { SchoolOrdersSelectModal } from './SchoolOrdersSelectModal';
 import { SchoolOrdersSelectModalMobile } from './SchoolOrdersSelectModalMobile';
+import { ORDER_PIN_STATUS_COLORS } from './orderPinColors';
 
 interface SchoolPinGroup {
   schoolKey: string;
   schoolName: string;
+  // The first non-blank Order.address among this group's orders, if any - an
+  // explicit address on any order for a school overrides the school-name search
+  // for the whole shared pin (see buildSchoolPinSearchAddress).
+  address?: string;
   orders: Order[];
 }
 
@@ -30,32 +36,73 @@ function SchoolPinMarker({
   position,
   selectedCount,
   onClick,
-  truckBadge
+  truckBadge,
+  readOnly,
+  colorMode = 'selection',
+  locationIssueOrderIds
 }: {
   group: SchoolPinGroup;
   position: { lat: number; lng: number };
   selectedCount: number;
   onClick: () => void;
   truckBadge?: { truckName: string; color: string };
+  readOnly?: boolean;
+  // 'selection' (default): today's none/partial/full coloring driven by how many
+  // of this school's orders are ticked into the in-progress build. 'status': the
+  // Order Builder overview map's read-only mode, coloring by order status instead
+  // (see below) since selectedCount is always 0 there and would be meaningless.
+  colorMode?: 'selection' | 'status';
+  locationIssueOrderIds?: Set<string>;
 }) {
   const total = group.orders.length;
-  const state = selectedCount === 0 ? 'none' : selectedCount === total ? 'full' : 'partial';
 
-  const background = state === 'full' ? '#16a34a' : state === 'partial' ? '#f59e0b' : '#3f3f46';
-  const borderColor = state === 'full' ? '#166534' : state === 'partial' ? '#b45309' : '#18181b';
+  let background: string;
+  let borderColor: string;
+  let glyph: string;
+  let tooltip: string;
+
+  if (colorMode === 'status') {
+    const flaggedCount = group.orders.filter(o => locationIssueOrderIds?.has(o.id)).length;
+    const activeCount = group.orders.filter(o => o.status === 'Active').length;
+    const completeCount = total - activeCount;
+    // One dominant color per pin (a school can have mixed-status orders):
+    // a location issue on any order wins, then any Active order, else all-Complete.
+    const dominant = flaggedCount > 0 ? 'locationIssue' : activeCount > 0 ? 'active' : 'complete';
+    const colors = ORDER_PIN_STATUS_COLORS[dominant];
+    background = colors.bg;
+    borderColor = colors.border;
+    glyph = String(total);
+    const breakdown = [
+      activeCount > 0 && `${activeCount} Active`,
+      completeCount > 0 && `${completeCount} Complete`,
+      flaggedCount > 0 && `${flaggedCount} Location Issue${flaggedCount === 1 ? '' : 's'}`
+    ].filter(Boolean).join(', ');
+    tooltip = `${group.schoolName} (${total} order${total === 1 ? '' : 's'} — ${breakdown})`;
+  } else {
+    const state = selectedCount === 0 ? 'none' : selectedCount === total ? 'full' : 'partial';
+    background = state === 'full' ? '#16a34a' : state === 'partial' ? '#f59e0b' : '#3f3f46';
+    borderColor = state === 'full' ? '#166534' : state === 'partial' ? '#b45309' : '#18181b';
+    glyph = total > 1 ? `${selectedCount}/${total}` : (state === 'full' ? '✓' : '');
+    tooltip = readOnly
+      ? `${group.schoolName} (${total} order${total === 1 ? '' : 's'})`
+      : `${group.schoolName} (${selectedCount}/${total} order${total === 1 ? '' : 's'} selected — click to ${total > 1 ? 'choose orders' : 'toggle'})${truckBadge ? ` — ${truckBadge.truckName}` : ''}`;
+  }
+
+  const scaledUp = colorMode === 'status' ? false : selectedCount > 0;
 
   return (
     <AdvancedMarker position={position} onClick={onClick}>
       <div
         className={cn(
-          'cursor-pointer group relative transition-transform duration-300',
-          state !== 'none' ? 'scale-110 z-20' : 'hover:scale-110 z-10'
+          'group relative transition-transform duration-300',
+          readOnly && colorMode === 'selection' ? 'cursor-default' : 'cursor-pointer',
+          scaledUp ? 'scale-110 z-20' : 'hover:scale-110 z-10'
         )}
-        title={`${group.schoolName} (${selectedCount}/${total} order${total === 1 ? '' : 's'} selected — click to ${total > 1 ? 'choose orders' : 'toggle'})${truckBadge ? ` — ${truckBadge.truckName}` : ''}`}
+        title={tooltip}
       >
-        <Pin background={background} glyphColor="#fff" borderColor={borderColor} scale={state === 'none' ? 1.1 : 1.3}>
+        <Pin background={background} glyphColor="#fff" borderColor={borderColor} scale={scaledUp ? 1.3 : 1.1}>
           <span className="text-[10px] font-black leading-none text-white font-mono shrink-0">
-            {total > 1 ? `${selectedCount}/${total}` : (state === 'full' ? '✓' : '')}
+            {glyph}
           </span>
         </Pin>
         {truckBadge && (
@@ -65,7 +112,9 @@ function SchoolPinMarker({
           />
         )}
         <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 hidden group-hover:block bg-zinc-900 text-white text-[10px] font-bold px-2 py-1 rounded shadow-md whitespace-nowrap z-50">
-          {group.schoolName} ({selectedCount}/{total}){truckBadge ? ` · ${truckBadge.truckName}` : ''}
+          {colorMode === 'status'
+            ? tooltip
+            : `${group.schoolName} (${selectedCount}/${total})${truckBadge ? ` · ${truckBadge.truckName}` : ''}`}
         </div>
       </div>
     </AdvancedMarker>
@@ -78,7 +127,11 @@ export function OrderBuilderMap({
   onToggleOrder,
   onSetOrdersForSchool,
   warehouse,
-  truckBySchoolKey
+  truckBySchoolKey,
+  readOnly = false,
+  colorMode = 'selection',
+  locationIssueOrderIds,
+  onPinClick
 }: {
   orders: Order[];
   selectedOrderIds: Set<string>;
@@ -89,6 +142,21 @@ export function OrderBuilderMap({
   // each pin with the truck its school was assigned to. Undefined for the normal
   // manual-build case, which renders exactly as before this prop existed.
   truckBySchoolKey?: Record<string, { truckName: string; color: string }>;
+  // Overview-only mode (Order Builder's landing list) - pins render but aren't
+  // clickable, since there's no in-progress build for a click to select orders
+  // into. Defaults to false so the build-in-progress screen's map is unaffected.
+  readOnly?: boolean;
+  // 'selection' (default, untouched): none/partial/full coloring from
+  // selectedOrderIds, used by the build-in-progress screens. 'status': the
+  // overview map's read-only status-colored pins (see SchoolPinMarker).
+  colorMode?: 'selection' | 'status';
+  // Order ids with a flagged school/area mismatch (see useOrderLocationIssues) -
+  // only consulted when colorMode === 'status'.
+  locationIssueOrderIds?: Set<string>;
+  // Fires on pin click while readOnly - the overview map's "show me this
+  // school's orders" interaction, since readOnly otherwise means "no click
+  // handling at all" for the build-in-progress screens' sake.
+  onPinClick?: (group: { schoolKey: string; schoolName: string; orders: Order[] }) => void;
 }) {
   const map = useMap();
   const geocodingLib = useMapsLibrary('geocoding');
@@ -109,8 +177,9 @@ export function OrderBuilderMap({
       const existing = groups[key];
       if (existing) {
         existing.orders.push(order);
+        if (!existing.address && order.address?.trim()) existing.address = order.address.trim();
       } else {
-        groups[key] = { schoolKey: key, schoolName: order.schoolName, orders: [order] };
+        groups[key] = { schoolKey: key, schoolName: order.schoolName, address: order.address?.trim() || undefined, orders: [order] };
       }
     }
     return Object.values(groups);
@@ -122,7 +191,7 @@ export function OrderBuilderMap({
     if (!geocodingLib) return;
 
     const toGeocode = schoolGroups.filter(g => {
-      const expected = buildOrderSearchAddress(g.schoolName);
+      const expected = buildSchoolPinSearchAddress(g.schoolName, g.address);
       if (!expected) return false;
       const cacheKey = `${g.schoolKey}_${expected}`;
       if (processingKeys.current.has(cacheKey)) return false;
@@ -133,13 +202,13 @@ export function OrderBuilderMap({
     if (toGeocode.length === 0) return;
 
     toGeocode.forEach(g => {
-      const expected = buildOrderSearchAddress(g.schoolName);
+      const expected = buildSchoolPinSearchAddress(g.schoolName, g.address);
       if (expected) processingKeys.current.add(`${g.schoolKey}_${expected}`);
     });
 
     const run = async () => {
       for (const g of toGeocode) {
-        const expected = buildOrderSearchAddress(g.schoolName);
+        const expected = buildSchoolPinSearchAddress(g.schoolName, g.address);
         if (!expected) continue;
         try {
           const { results } = await new geocodingLib.Geocoder().geocode({ address: expected });
@@ -152,7 +221,8 @@ export function OrderBuilderMap({
               position: {
                 lat: results[0].geometry.location.lat(),
                 lng: results[0].geometry.location.lng()
-              }
+              },
+              adminAreas: extractAdminAreas(results[0].address_components)
             };
             upsertCachedSchoolPin(pin);
             setSchoolPins(prev => [...prev.filter(p => p.schoolKey !== g.schoolKey), pin]);
@@ -219,6 +289,10 @@ export function OrderBuilderMap({
   const selectedCountFor = (group: SchoolPinGroup) => group.orders.filter(o => selectedOrderIds.has(o.id)).length;
 
   const handlePinClick = (group: SchoolPinGroup) => {
+    if (readOnly) {
+      onPinClick?.({ schoolKey: group.schoolKey, schoolName: group.schoolName, orders: group.orders });
+      return;
+    }
     if (group.orders.length === 1) {
       onToggleOrder(group.orders[0].id);
       return;
@@ -247,6 +321,9 @@ export function OrderBuilderMap({
               selectedCount={selectedCountFor(group)}
               onClick={() => handlePinClick(group)}
               truckBadge={truckBySchoolKey?.[group.schoolKey]}
+              readOnly={readOnly}
+              colorMode={colorMode}
+              locationIssueOrderIds={locationIssueOrderIds}
             />
           );
         })}

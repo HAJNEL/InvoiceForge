@@ -1,6 +1,13 @@
 import { useState, useEffect } from 'react';
-import { X, Plus, Trash2 } from 'lucide-react';
+import { X, Plus, Trash2, MapPin, XCircle } from 'lucide-react';
+import { APIProvider } from '@vis.gl/react-google-maps';
 import type { Order, OrderLineItem, OrderStatus } from '../hooks/useOrders';
+import { useOrders } from '../hooks/useOrders';
+import { GOOGLE_MAPS_API_KEY, hasMapsKey } from '../hooks/useOrderLocationIssues';
+import { useSettings } from '../../settings/hooks/useSettings';
+import { schoolKeyFor, upsertCachedSchoolPin, buildSchoolPinSearchAddress, findSchoolsSharingAddress } from '../../../lib/geocoding';
+import { SchoolFinderPanel, type SchoolFinderResult } from './SchoolFinderPanel';
+import { GoogleMapsAutocomplete } from '../../../components/GoogleMapsAutocomplete';
 
 interface DraftLine {
   id: string;
@@ -25,38 +32,80 @@ interface Props {
 }
 
 export function OrderFormModal({ isOpen, onClose, order, onSave }: Props) {
+  const { settings } = useSettings();
+  const { orders } = useOrders();
   const [schoolId, setSchoolId] = useState('');
   const [clientNumber, setClientNumber] = useState('');
   const [schoolName, setSchoolName] = useState('');
+  const [address, setAddress] = useState('');
   const [area, setArea] = useState('');
   const [schoolType, setSchoolType] = useState('');
   const [orderNumber, setOrderNumber] = useState('');
   const [status, setStatus] = useState<OrderStatus>('Active');
   const [lines, setLines] = useState<DraftLine[]>([emptyLine()]);
   const [saving, setSaving] = useState(false);
+  const [finderOpen, setFinderOpen] = useState(false);
+  // The school's confirmed location, chosen via School Finder - persisted to the
+  // Order doc (Order.location) and the shared school-pin cache on save. Starts
+  // at whatever the order already had so re-opening an already-pinned order
+  // doesn't silently drop its location.
+  const [selectedResult, setSelectedResult] = useState<SchoolFinderResult | null>(null);
+  // Distinguishes "explicitly cleared" from "nothing picked yet" - the latter
+  // falls back to the order's already-saved location, the former must not.
+  const [locationCleared, setLocationCleared] = useState(false);
+  // Other schools sharing the typed address, surfaced as a confirm-before-save
+  // prompt (see findSchoolsSharingAddress) - null when there's nothing to warn
+  // about or the warning hasn't been checked yet for the current address.
+  const [duplicateSchools, setDuplicateSchools] = useState<string[] | null>(null);
+
+  const warehousePosition = settings?.warehouseLat != null && settings?.warehouseLng != null
+    ? { lat: settings.warehouseLat, lng: settings.warehouseLng }
+    : null;
+  const pendingLocation = locationCleared ? undefined : (selectedResult?.position ?? order?.location);
 
   useEffect(() => {
     if (order) {
       setSchoolId(order.schoolId);
       setClientNumber(order.clientNumber);
       setSchoolName(order.schoolName);
+      setAddress(order.address || '');
       setArea(order.area);
       setSchoolType(order.schoolType);
       setOrderNumber(order.orderNumber);
       setStatus(order.status);
       setLines(toDraftLines(order.lineItems));
     } else {
-      setSchoolId(''); setClientNumber(''); setSchoolName(''); setArea('');
+      setSchoolId(''); setClientNumber(''); setSchoolName(''); setAddress(''); setArea('');
       setSchoolType(''); setOrderNumber(''); setStatus('Active'); setLines([emptyLine()]);
     }
+    setSelectedResult(null);
+    setLocationCleared(false);
+    setFinderOpen(false);
+    setDuplicateSchools(null);
   }, [order, isOpen]);
 
   const updateLine = (id: string, patch: Partial<DraftLine>) => {
     setLines(prev => prev.map(l => (l.id === id ? { ...l, ...patch } : l)));
   };
 
-  const handleSave = async () => {
+  // Gate the actual save behind a confirm-before-save prompt when the typed
+  // address matches another school's order - two different schools sharing one
+  // delivery address is usually a copy-paste mistake, so this asks first rather
+  // than silently saving it. `force` skips the check when the user has already
+  // confirmed via that dialog.
+  const handleSaveClick = (force = false) => {
     if (!schoolName.trim()) return;
+    if (!force && address.trim()) {
+      const duplicates = findSchoolsSharingAddress(orders, order?.id, schoolName, address);
+      if (duplicates.length > 0) {
+        setDuplicateSchools(duplicates);
+        return;
+      }
+    }
+    performSave();
+  };
+
+  const performSave = async () => {
     // Blank/zero-quantity SKU rows never become order lines.
     const lineItems: OrderLineItem[] = lines
       .filter(l => l.stockCode.trim() && l.qty > 0)
@@ -67,19 +116,38 @@ export function OrderFormModal({ isOpen, onClose, order, onSave }: Props) {
       schoolId: schoolId.trim(),
       clientNumber: clientNumber.trim(),
       schoolName: schoolName.trim(),
+      address: address.trim(),
       area: area.trim(),
       schoolType: schoolType.trim(),
       orderNumber: orderNumber.trim(),
       status,
-      lineItems
+      lineItems,
+      ...(pendingLocation ? { location: pendingLocation } : {})
     });
     setSaving(false);
-    if (result) onClose();
+    if (result) {
+      // Keep the school-pin cache (used by Order Builder's map and the Location
+      // Issues check) in sync with the location just confirmed here, so other
+      // screens reflect it immediately instead of waiting on their own re-geocode.
+      // searchAddress must match what OrderBuilderMap/OrderLocationGeocoder will
+      // compute as "expected" for this school (buildSchoolPinSearchAddress), or
+      // they'll treat this pin as stale and immediately re-geocode over it.
+      if (selectedResult) {
+        upsertCachedSchoolPin({
+          schoolKey: schoolKeyFor(schoolName),
+          schoolName: schoolName.trim(),
+          searchAddress: buildSchoolPinSearchAddress(schoolName, address) || selectedResult.name,
+          address: selectedResult.address,
+          position: selectedResult.position
+        });
+      }
+      onClose();
+    }
   };
 
   if (!isOpen) return null;
 
-  return (
+  const content = (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-[9999] text-zinc-900 animate-fade-in font-sans">
       <div className="bg-white rounded-3xl w-full max-w-lg overflow-hidden border border-zinc-200 shadow-2xl flex flex-col max-h-[90vh]">
         <div className="p-5 border-b border-zinc-100 flex justify-between items-center bg-zinc-50/50 shrink-0">
@@ -96,8 +164,93 @@ export function OrderFormModal({ isOpen, onClose, order, onSave }: Props) {
 
         <div className="p-5 overflow-y-auto space-y-4">
           <div className="grid grid-cols-2 gap-2.5">
-            <input title="School" placeholder="School" value={schoolName} onChange={(e) => setSchoolName(e.target.value)}
+            <input
+              title="School"
+              placeholder="School"
+              value={schoolName}
+              // Typing a new name manually invalidates whatever location was
+              // picked/carried over for the old one - Google Maps results for
+              // "F.D. Conradie" don't apply once the field says something else.
+              // Selecting a School Finder result sets schoolName itself (below),
+              // so that path never runs through here.
+              onChange={(e) => { setSchoolName(e.target.value); setSelectedResult(null); setDuplicateSchools(null); }}
               className="col-span-2 px-3 py-2 bg-zinc-50/50 border border-zinc-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent" />
+
+            <div className="col-span-2">
+              {hasMapsKey ? (
+                <GoogleMapsAutocomplete
+                  value={address}
+                  onChange={(val) => { setAddress(val); setSelectedResult(null); setDuplicateSchools(null); }}
+                  placeholder="Address (optional — overrides School Finder's search)"
+                  className="w-full px-3 py-2 bg-zinc-50/50 border border-zinc-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent"
+                />
+              ) : (
+                <input
+                  title="Address"
+                  placeholder="Address (optional)"
+                  value={address}
+                  onChange={(e) => { setAddress(e.target.value); setSelectedResult(null); setDuplicateSchools(null); }}
+                  className="w-full px-3 py-2 bg-zinc-50/50 border border-zinc-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent"
+                />
+              )}
+            </div>
+
+            {hasMapsKey && (
+              <div className="col-span-2 space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    title="Find this school on Google Maps"
+                    onClick={() => setFinderOpen(v => !v)}
+                    disabled={!schoolName.trim() && !address.trim()}
+                    className="flex items-center gap-1 text-[10px] font-black uppercase text-brand-accent hover:bg-brand-accent/5 px-2.5 py-1.5 rounded-lg transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <MapPin className="w-3 h-3" /> School Finder
+                  </button>
+                  {pendingLocation && (
+                    <span className="flex items-center gap-1 text-[10px] text-zinc-500">
+                      <MapPin className="w-3 h-3 text-brand-accent shrink-0" />
+                      Location set
+                      {selectedResult?.distanceKm != null && ` · ${selectedResult.distanceKm.toFixed(1)} km from warehouse`}
+                      <button
+                        type="button"
+                        title="Clear selected location"
+                        onClick={() => { setSelectedResult(null); setLocationCleared(true); }}
+                        className="p-0.5 text-zinc-400 hover:text-red-600 rounded transition-colors cursor-pointer"
+                      >
+                        <XCircle className="w-3 h-3" />
+                      </button>
+                    </span>
+                  )}
+                </div>
+                {finderOpen && (
+                  <SchoolFinderPanel
+                    schoolName={schoolName}
+                    address={address}
+                    warehousePosition={warehousePosition}
+                    selectedPosition={pendingLocation}
+                    onSelect={(result) => {
+                      // The search was address-driven (address overrides school
+                      // name as the query - see SchoolFinderPanel/
+                      // buildSchoolPinSearchAddress), so the picked result refines
+                      // the Address field, not the school name - setting
+                      // schoolName here would clobber it with a street address.
+                      // Only when there's no address does the result describe the
+                      // school itself, so schoolName is what gets updated then.
+                      if (address.trim()) {
+                        setAddress(result.address);
+                      } else {
+                        setSchoolName(result.name);
+                      }
+                      setSelectedResult(result);
+                      setLocationCleared(false);
+                      setFinderOpen(false);
+                    }}
+                  />
+                )}
+              </div>
+            )}
+
             <input title="Order number" placeholder="Order No." value={orderNumber} onChange={(e) => setOrderNumber(e.target.value)}
               className="px-3 py-2 bg-zinc-50/50 border border-zinc-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent" />
             <input title="School ID" placeholder="School ID" value={schoolId} onChange={(e) => setSchoolId(e.target.value)}
@@ -156,7 +309,7 @@ export function OrderFormModal({ isOpen, onClose, order, onSave }: Props) {
           <button
             type="button"
             title="Save order"
-            onClick={handleSave}
+            onClick={() => handleSaveClick()}
             disabled={saving || !schoolName.trim()}
             className="px-4 py-2 bg-brand-primary hover:bg-zinc-800 disabled:opacity-50 text-white text-[10px] font-black uppercase rounded-xl transition-all cursor-pointer"
           >
@@ -164,6 +317,51 @@ export function OrderFormModal({ isOpen, onClose, order, onSave }: Props) {
           </button>
         </div>
       </div>
+
+      {duplicateSchools && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-[10000] text-zinc-900 animate-fade-in font-sans">
+          <div className="bg-white rounded-2xl w-full max-w-sm overflow-hidden border border-zinc-200 shadow-2xl">
+            <div className="p-5 space-y-3">
+              <h4 className="font-sans font-black text-xs uppercase tracking-wider text-brand-primary flex items-center gap-1.5">
+                <MapPin className="w-3.5 h-3.5" /> Address Already In Use
+              </h4>
+              <p className="text-xs text-zinc-600">
+                This address is also used by {duplicateSchools.length === 1 ? 'another school' : `${duplicateSchools.length} other schools`}:
+              </p>
+              <ul className="text-xs font-semibold text-zinc-800 bg-zinc-50 border border-zinc-200 rounded-xl divide-y divide-zinc-100 max-h-32 overflow-y-auto">
+                {duplicateSchools.map(name => (
+                  <li key={name} className="px-3 py-1.5">{name}</li>
+                ))}
+              </ul>
+              <p className="text-[11px] text-zinc-400">Save anyway if this is correct (e.g. a shared campus), or go back and check the address.</p>
+            </div>
+            <div className="p-4 border-t border-zinc-100 bg-zinc-50/30 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                title="Go back and edit"
+                onClick={() => setDuplicateSchools(null)}
+                className="px-4 py-2 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 text-[10px] font-black uppercase rounded-xl transition-all cursor-pointer"
+              >
+                Go Back
+              </button>
+              <button
+                type="button"
+                title="Save order anyway"
+                onClick={() => { setDuplicateSchools(null); handleSaveClick(true); }}
+                className="px-4 py-2 bg-brand-primary hover:bg-zinc-800 text-white text-[10px] font-black uppercase rounded-xl transition-all cursor-pointer"
+              >
+                Save Anyway
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
+
+  return hasMapsKey ? (
+    <APIProvider apiKey={GOOGLE_MAPS_API_KEY} version="weekly">
+      {content}
+    </APIProvider>
+  ) : content;
 }

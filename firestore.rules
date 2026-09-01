@@ -60,6 +60,7 @@ service cloud.firestore {
     function isValidStaff(data) { return true; }
     function isValidTimeLog(data) { return true; }
     function isValidRateGroup(data) { return true; }
+    function isValidPayrollAdjustment(data) { return true; }
     function isValidStockAllocation(data) { return true; }
     function isValidAssemblyLog(data) { return true; }
     function isValidOrder(data) { return true; }
@@ -78,7 +79,7 @@ service cloud.firestore {
         && isValidInvoice(incoming())
         && incoming().userId == existing().userId; // Immutable owner
       
-      allow delete: if isOwner(existing()) || isTeamMemberOfOwner(existing().userId);
+      allow delete: if resource == null || isOwner(existing()) || isTeamMemberOfOwner(existing().userId);
     }
 
     match /clients/{clientId} {
@@ -94,7 +95,7 @@ service cloud.firestore {
         && isValidClient(incoming())
         && incoming().userId == existing().userId;
       
-      allow delete: if isOwner(existing()) || isTeamMemberOfOwner(existing().userId);
+      allow delete: if resource == null || isOwner(existing()) || isTeamMemberOfOwner(existing().userId);
     }
 
     match /trucks/{truckId} {
@@ -110,7 +111,7 @@ service cloud.firestore {
         && isValidTruck(incoming())
         && incoming().userId == existing().userId;
       
-      allow delete: if isOwner(existing()) || isTeamMemberOfOwner(existing().userId);
+      allow delete: if resource == null || isOwner(existing()) || isTeamMemberOfOwner(existing().userId);
 
       match /serviceHistory/{recordId} {
         allow read, write: if isSignedIn() && (get(/databases/$(database)/documents/trucks/$(truckId)).data.userId == request.auth.uid || isTeamMemberOfOwner(get(/databases/$(database)/documents/trucks/$(truckId)).data.userId));
@@ -130,7 +131,7 @@ service cloud.firestore {
         && isValidSchedule(incoming())
         && incoming().userId == existing().userId;
       
-      allow delete: if isOwner(existing()) || isTeamMemberOfOwner(existing().userId);
+      allow delete: if resource == null || isOwner(existing()) || isTeamMemberOfOwner(existing().userId);
     }
 
     match /trips/{tripId} {
@@ -144,7 +145,7 @@ service cloud.firestore {
       allow update: if (isOwner(existing()) && isValidTrip(incoming()) && incoming().userId == existing().userId)
         || (existing() != null && incoming().userId == existing().userId && incoming().name == existing().name && incoming().date == existing().date && incoming().truckId == existing().truckId && (request.auth.uid == existing().userId || isTeamMemberOfOwner(existing().userId)));
       
-      allow delete: if isOwner(existing()) || isTeamMemberOfOwner(existing().userId);
+      allow delete: if resource == null || isOwner(existing()) || isTeamMemberOfOwner(existing().userId);
     }
 
     match /settings/{settingsId} {
@@ -158,7 +159,7 @@ service cloud.firestore {
         && isValidSettings(incoming())
         && incoming().userId == existing().userId;
       
-      allow delete: if isOwner(existing());
+      allow delete: if resource == null || isOwner(existing());
 
       // Owner's own Google Calendar sync records (tripId -> {eventId, scheduledDate}),
       // mirrors team_members/{memberId}/calendar_events below.
@@ -180,7 +181,7 @@ service cloud.firestore {
         && isValidKpiTemplates(incoming())
         && incoming().userId == existing().userId;
 
-      allow delete: if isOwner(existing());
+      allow delete: if resource == null || isOwner(existing());
     }
 
     // KPI production readings — one doc per reading session
@@ -195,7 +196,7 @@ service cloud.firestore {
         && isValidKpiReading(incoming())
         && incoming().userId == existing().userId;
 
-      allow delete: if isOwner(existing());
+      allow delete: if resource == null || isOwner(existing());
     }
 
     // KPI truck max-capacity grid — single doc per owner, keyed by uid
@@ -211,7 +212,7 @@ service cloud.firestore {
         && isValidKpiTruckCapacity(incoming())
         && incoming().userId == existing().userId;
 
-      allow delete: if isOwner(existing());
+      allow delete: if resource == null || isOwner(existing());
     }
 
     match /team_members/{memberId} {
@@ -233,7 +234,7 @@ service cloud.firestore {
                  .hasOnly(['firstName', 'lastName', 'phone', 'photoBase64', 'pushoverUserKey', 'calendarSyncEnabled', 'updatedAt']));
         
       allow delete: if isSignedIn()
-        && (existing().ownerId == request.auth.uid || existing().status == 'pending' || existing().userId == request.auth.uid);
+        && (resource == null || existing().ownerId == request.auth.uid || existing().status == 'pending' || existing().userId == request.auth.uid);
 
       // Per-member Google Calendar sync records (tripId -> {eventId, scheduledDate}).
       // A member may only read/write their own sync bookkeeping.
@@ -256,7 +257,7 @@ service cloud.firestore {
         && (existing().userId == request.auth.uid || isTeamMemberOfOwner(existing().userId));
       
       allow delete: if isSignedIn()
-        && (existing().userId == request.auth.uid || isTeamMemberOfOwner(existing().userId));
+        && (resource == null || existing().userId == request.auth.uid || isTeamMemberOfOwner(existing().userId));
     }
 
     match /stock/{document=**} {
@@ -278,7 +279,7 @@ service cloud.firestore {
         && incoming().userId == existing().userId;
       
       allow delete: if isSignedIn()
-        && (existing().userId == request.auth.uid || isTeamMemberOfOwner(existing().userId));
+        && (resource == null || existing().userId == request.auth.uid || isTeamMemberOfOwner(existing().userId));
     }
 
     match /inventory/{itemId} {
@@ -296,7 +297,7 @@ service cloud.firestore {
         && incoming().userId == existing().userId;
       
       allow delete: if isSignedIn()
-        && (existing().userId == request.auth.uid || isTeamMemberOfOwner(existing().userId));
+        && (resource == null || existing().userId == request.auth.uid || isTeamMemberOfOwner(existing().userId));
     }
 
     match /tasks/{taskId} {
@@ -317,7 +318,7 @@ service cloud.firestore {
             && incoming().userId == existing().userId
             && incoming().assigneeEmail == existing().assigneeEmail);
 
-      allow delete: if isOwner(existing());
+      allow delete: if resource == null || isOwner(existing());
     }
 
     match /self_invoices/{selfInvoiceId} {
@@ -333,7 +334,7 @@ service cloud.firestore {
         && isValidSelfInvoice(incoming())
         && incoming().userId == existing().userId;
 
-      allow delete: if isOwner(existing()) || isTeamMemberOfOwner(existing().userId);
+      allow delete: if resource == null || isOwner(existing()) || isTeamMemberOfOwner(existing().userId);
     }
 
     // Per-user Zoho Books OAuth credentials (client id/secret/refresh token).
@@ -371,7 +372,7 @@ service cloud.firestore {
         && isValidClientDistance(incoming())
         && incoming().userId == existing().userId;
 
-      allow delete: if isOwner(existing()) || isTeamMemberOfOwner(existing().userId);
+      allow delete: if resource == null || isOwner(existing()) || isTeamMemberOfOwner(existing().userId);
     }
 
     match /day_planners/{plannerId} {
@@ -387,7 +388,7 @@ service cloud.firestore {
         && isValidDayPlanner(incoming())
         && incoming().userId == existing().userId;
 
-      allow delete: if isOwner(existing()) || isTeamMemberOfOwner(existing().userId);
+      allow delete: if resource == null || isOwner(existing()) || isTeamMemberOfOwner(existing().userId);
     }
 
     match /fuel_logs/{fuelLogId} {
@@ -403,7 +404,7 @@ service cloud.firestore {
         && isValidFuelLog(incoming())
         && incoming().userId == existing().userId;
 
-      allow delete: if isOwner(existing()) || isTeamMemberOfOwner(existing().userId);
+      allow delete: if resource == null || isOwner(existing()) || isTeamMemberOfOwner(existing().userId);
     }
 
     match /products/{productId} {
@@ -421,7 +422,7 @@ service cloud.firestore {
         && incoming().userId == existing().userId;
       
       allow delete: if isSignedIn()
-        && (existing().userId == request.auth.uid || isTeamMemberOfOwner(existing().userId));
+        && (resource == null || existing().userId == request.auth.uid || isTeamMemberOfOwner(existing().userId));
     }
 
     match /staff/{staffId} {
@@ -437,7 +438,7 @@ service cloud.firestore {
         && isValidStaff(incoming())
         && incoming().userId == existing().userId;
 
-      allow delete: if isOwner(existing()) || isTeamMemberOfOwner(existing().userId);
+      allow delete: if resource == null || isOwner(existing()) || isTeamMemberOfOwner(existing().userId);
     }
 
     match /time_logs/{timeLogId} {
@@ -453,7 +454,7 @@ service cloud.firestore {
         && isValidTimeLog(incoming())
         && incoming().userId == existing().userId;
 
-      allow delete: if isOwner(existing()) || isTeamMemberOfOwner(existing().userId);
+      allow delete: if resource == null || isOwner(existing()) || isTeamMemberOfOwner(existing().userId);
     }
 
     match /rate_groups/{rateGroupId} {
@@ -469,7 +470,23 @@ service cloud.firestore {
         && isValidRateGroup(incoming())
         && incoming().userId == existing().userId;
 
-      allow delete: if isOwner(existing()) || isTeamMemberOfOwner(existing().userId);
+      allow delete: if resource == null || isOwner(existing()) || isTeamMemberOfOwner(existing().userId);
+    }
+
+    match /payroll_adjustments/{adjustmentId} {
+      allow get: if isSignedIn() && (resource == null || isOwner(resource.data) || isTeamMemberOfOwner(resource.data.userId));
+      allow list: if isSignedIn() && (resource == null || resource.data.userId == request.auth.uid || isTeamMember());
+
+      allow create: if isSignedIn()
+        && isValidId(adjustmentId)
+        && isValidPayrollAdjustment(incoming())
+        && (incoming().userId == request.auth.uid || isTeamMemberOfOwner(incoming().userId));
+
+      allow update: if (isOwner(existing()) || isTeamMemberOfOwner(existing().userId))
+        && isValidPayrollAdjustment(incoming())
+        && incoming().userId == existing().userId;
+
+      allow delete: if resource == null || isOwner(existing()) || isTeamMemberOfOwner(existing().userId);
     }
 
     // Stock Control: immutable allocation ledger (Knockdown -> Booked reservations).
@@ -489,7 +506,7 @@ service cloud.firestore {
         && incoming().userId == existing().userId;
 
       allow delete: if isSignedIn()
-        && (existing().userId == request.auth.uid || isTeamMemberOfOwner(existing().userId));
+        && (resource == null || existing().userId == request.auth.uid || isTeamMemberOfOwner(existing().userId));
     }
 
     // Stock Control: immutable assembly-progress ledger (In Assembly build increments).
@@ -508,7 +525,7 @@ service cloud.firestore {
         && incoming().userId == existing().userId;
 
       allow delete: if isSignedIn()
-        && (existing().userId == request.auth.uid || isTeamMemberOfOwner(existing().userId));
+        && (resource == null || existing().userId == request.auth.uid || isTeamMemberOfOwner(existing().userId));
     }
 
     // School furniture orders (Orders screen) — raw school/SKU/quantity rows imported
@@ -528,7 +545,7 @@ service cloud.firestore {
         && incoming().userId == existing().userId;
 
       allow delete: if isSignedIn()
-        && (existing().userId == request.auth.uid || isTeamMemberOfOwner(existing().userId));
+        && (resource == null || existing().userId == request.auth.uid || isTeamMemberOfOwner(existing().userId));
     }
 
     // Order Builder: bundles of `orders` docs grouped by school into one delivery-
@@ -548,7 +565,7 @@ service cloud.firestore {
         && incoming().userId == existing().userId;
 
       allow delete: if isSignedIn()
-        && (existing().userId == request.auth.uid || isTeamMemberOfOwner(existing().userId));
+        && (resource == null || existing().userId == request.auth.uid || isTeamMemberOfOwner(existing().userId));
     }
 
     // Order Builder: per-(user, year) atomic sequence counter for build numbers.

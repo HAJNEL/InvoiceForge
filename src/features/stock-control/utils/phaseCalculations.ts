@@ -404,9 +404,43 @@ export interface AutoBookCandidate {
  * uses, so two candidates competing for the same SKU never double-spend it;
  * whichever is processed second just books less than this estimate shows.
  */
-export function computeAutoBookCandidates(orderRows: OrderRow[], stockRows: StockRow[]): AutoBookCandidate[] {
+export function buildAvailableByCode(stockRows: StockRow[]): Map<string, number> {
   const availableByCode = new Map<string, number>();
   stockRows.forEach(r => availableByCode.set(normalize(r.stockCode), r.available));
+  return availableByCode;
+}
+
+export interface OrderStockCoverage {
+  neededUnits: number;
+  coverableUnits: number;
+  pct: number;
+}
+
+/**
+ * Same coverage math Auto-Book uses to rank/estimate a candidate (neededUnits =
+ * total still-short-of-reservation units across an order's lines, coverableUnits
+ * = however much of that shortfall current stock could cover), but for every
+ * order row rather than only ones with an open shortfall - used to render a
+ * per-order stock-coverage progress bar (see OrderBuilderList.tsx's Orders tab).
+ * An order with nothing outstanding to reserve (neededUnits === 0, whether fully
+ * reserved already or simply has no line items) reads as fully covered (100%).
+ */
+export function computeOrderStockCoverage(order: OrderRow, availableByCode: Map<string, number>): OrderStockCoverage {
+  let neededUnits = 0, coverableUnits = 0;
+  for (const line of order.lines) {
+    if (line.shortBy <= 0) continue;
+    neededUnits += line.shortBy;
+    coverableUnits += Math.min(line.shortBy, availableByCode.get(normalize(line.stockCode)) || 0);
+  }
+  return {
+    neededUnits,
+    coverableUnits,
+    pct: neededUnits === 0 ? 100 : Math.round((coverableUnits / neededUnits) * 100)
+  };
+}
+
+export function computeAutoBookCandidates(orderRows: OrderRow[], stockRows: StockRow[]): AutoBookCandidate[] {
+  const availableByCode = buildAvailableByCode(stockRows);
 
   const candidates: AutoBookCandidate[] = [];
   for (const order of orderRows) {

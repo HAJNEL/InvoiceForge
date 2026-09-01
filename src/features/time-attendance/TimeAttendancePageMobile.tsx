@@ -1,14 +1,20 @@
 import { useState, useMemo } from 'react';
 import { ResponsiveContainer, BarChart, Bar, LineChart as RLineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
-import { Clock, Plus, Users, Loader2, AlertCircle, Inbox, Edit2, Trash2, Settings as SettingsIcon, BarChart3, LineChart as LineChartIcon, Search, X } from 'lucide-react';
-import { StaffMember, TimeLog, TimeAttendanceSettings } from '../../types';
+import { Clock, Plus, Users, Loader2, AlertCircle, Settings as SettingsIcon, BarChart3, LineChart as LineChartIcon, Search, ChevronLeft, ChevronRight, Download, Table2, Eye } from 'lucide-react';
+import { StaffMember, TimeLog, TimeAttendanceSettings, RateGroup, RateSettings, RateTier, PayrollAdjustment } from '../../types';
 import { TimeLogEntry } from './hooks/useTimeLogs';
+import { PayrollAdjustmentEntry } from './hooks/usePayrollAdjustments';
 import { TimeLogModalMobile } from './components/TimeLogModalMobile';
 import { BulkTimeLogDialogMobile } from './components/BulkTimeLogDialogMobile';
 import { TimeAttendanceSettingsModalMobile } from './components/TimeAttendanceSettingsModalMobile';
-import { MobileCard, MobileCardActionsMenu } from '../../components/mobile/MobileCard';
-import { buildChartData, withAverageLine } from './TimeAttendancePage';
-import { formatTimeRange } from './utils';
+import { StaffPayrollListMobile } from './components/StaffPayrollListMobile';
+import { AttendanceRegisterTable } from './components/AttendanceRegisterTable';
+import { buildChartData, withAverageLine } from './chartData';
+import { getPeriodRange } from './utils';
+import { buildPayrollRows } from './payroll';
+import { printPayrollReport, printAttendanceRegisterReport, buildPayrollReportHtml, buildAttendanceRegisterReportHtml } from './printPayrollReport';
+import { ExportOptionsDialog, PayrollExportType } from './components/ExportOptionsDialog';
+import { ReportPreviewDialogMobile } from './components/ReportPreviewDialogMobile';
 import { cn } from '../../lib/utils';
 
 const WINDOWS = [
@@ -17,26 +23,42 @@ const WINDOWS = [
   { key: '90', label: '90D', days: 90 },
 ] as const;
 
-export function TimeAttendancePageMobile({ staff, timeLogs, loading, error, attendanceSettings, onSaveSettings, addTimeLog, addTimeLogsBulk, updateTimeLog, deleteTimeLog }: {
+export function TimeAttendancePageMobile({
+  staff, timeLogs, loading, error, attendanceSettings, onSaveSettings,
+  rateSettings, onSaveRateSettings, rateGroups, rateGroupsLoading, addRateGroup, updateRateGroup, deleteRateGroup,
+  adjustments, onSetAdjustment,
+  addTimeLog, addTimeLogsBulk, updateTimeLog, deleteTimeLog,
+}: {
   staff: StaffMember[];
   timeLogs: TimeLog[];
   loading: boolean;
   error: string | null;
   attendanceSettings: TimeAttendanceSettings;
   onSaveSettings: (settings: TimeAttendanceSettings) => Promise<boolean>;
+  rateSettings: RateSettings;
+  onSaveRateSettings: (settings: RateSettings) => Promise<boolean>;
+  rateGroups: RateGroup[];
+  rateGroupsLoading: boolean;
+  addRateGroup: (name: string, tiers: RateTier[]) => Promise<string | null>;
+  updateRateGroup: (id: string, data: Partial<Pick<RateGroup, 'name' | 'tiers'>>) => Promise<boolean>;
+  deleteRateGroup: (id: string) => Promise<boolean>;
+  adjustments: PayrollAdjustment[];
+  onSetAdjustment: (staffId: string, periodKey: string, entry: PayrollAdjustmentEntry) => Promise<boolean>;
   addTimeLog: (entry: TimeLogEntry) => Promise<unknown>;
   addTimeLogsBulk: (entries: TimeLogEntry[]) => Promise<boolean>;
   updateTimeLog: (id: string, entry: Partial<TimeLogEntry>) => Promise<boolean>;
   deleteTimeLog: (id: string) => Promise<boolean>;
 }) {
   const [windowKey, setWindowKey] = useState<typeof WINDOWS[number]['key']>('7');
-  const [chartView, setChartView] = useState<'bar' | 'line'>('bar');
+  const [chartView, setChartView] = useState<'register' | 'bar' | 'line'>('bar');
   const [isLogOpen, setIsLogOpen] = useState(false);
   const [isBulkOpen, setIsBulkOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [editingLog, setEditingLog] = useState<TimeLog | null>(null);
-  const [logSearch, setLogSearch] = useState('');
-  const [logDateFilter, setLogDateFilter] = useState('');
+  const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
+  const [isPreviewChooserOpen, setIsPreviewChooserOpen] = useState(false);
+  const [previewReport, setPreviewReport] = useState<{ title: string; html: string } | null>(null);
+  const [periodOffset, setPeriodOffset] = useState(0);
+  const [staffSearch, setStaffSearch] = useState('');
 
   const activeWindow = WINDOWS.find(w => w.key === windowKey) || WINDOWS[0];
   const chartData = useMemo(
@@ -45,32 +67,37 @@ export function TimeAttendancePageMobile({ staff, timeLogs, loading, error, atte
   );
   const lineChartData = useMemo(() => withAverageLine(chartData), [chartData]);
 
-  const staffNameById = useMemo(() => {
-    const map = new Map<string, string>();
-    staff.forEach(s => map.set(s.id, `${s.firstName} ${s.lastName}`));
-    return map;
-  }, [staff]);
+  const period = useMemo(
+    () => getPeriodRange(attendanceSettings.payInterval, attendanceSettings.weekStartDay, new Date(), periodOffset),
+    [attendanceSettings.payInterval, attendanceSettings.weekStartDay, periodOffset]
+  );
 
-  const filteredLogs = useMemo(() => {
-    const query = logSearch.trim().toLowerCase();
-    return timeLogs.filter(log => {
-      if (logDateFilter && log.date !== logDateFilter) return false;
-      if (query && !(staffNameById.get(log.staffId) || '').toLowerCase().includes(query)) return false;
-      return true;
-    });
-  }, [timeLogs, logSearch, logDateFilter, staffNameById]);
+  const activeStaff = useMemo(() => staff.filter(s => s.status === 'active'), [staff]);
 
-  const hasLogFilters = logSearch.trim() !== '' || logDateFilter !== '';
+  const filteredStaff = useMemo(() => {
+    const query = staffSearch.trim().toLowerCase();
+    if (!query) return activeStaff;
+    return activeStaff.filter(s => `${s.firstName} ${s.lastName}`.toLowerCase().includes(query));
+  }, [activeStaff, staffSearch]);
 
-  const handleSaveLog = async (entry: TimeLogEntry) => {
-    if (editingLog) return await updateTimeLog(editingLog.id, entry);
-    return await addTimeLog(entry);
+  const handleExportSelect = (type: PayrollExportType) => {
+    const rows = buildPayrollRows(activeStaff, timeLogs, rateGroups, rateSettings, attendanceSettings, adjustments, period);
+    if (type === 'detailed') {
+      printPayrollReport(rows, period, attendanceSettings.payInterval);
+    } else {
+      printAttendanceRegisterReport(rows, period, attendanceSettings.payInterval, attendanceSettings.workingDays);
+    }
+    setIsExportDialogOpen(false);
   };
 
-  const handleDelete = async (id: string) => {
-    if (window.confirm('Are you sure you want to delete this time log?')) {
-      await deleteTimeLog(id);
+  const handlePreviewSelect = (type: PayrollExportType) => {
+    const rows = buildPayrollRows(activeStaff, timeLogs, rateGroups, rateSettings, attendanceSettings, adjustments, period);
+    if (type === 'detailed') {
+      setPreviewReport({ title: 'Wages Report', html: buildPayrollReportHtml(rows, period, attendanceSettings.payInterval) });
+    } else {
+      setPreviewReport({ title: 'Attendance Register', html: buildAttendanceRegisterReportHtml(rows, period, attendanceSettings.payInterval, attendanceSettings.workingDays) });
     }
+    setIsPreviewChooserOpen(false);
   };
 
   return (
@@ -100,7 +127,7 @@ export function TimeAttendancePageMobile({ staff, timeLogs, loading, error, atte
           Bulk Log
         </button>
         <button
-          onClick={() => { setEditingLog(null); setIsLogOpen(true); }}
+          onClick={() => setIsLogOpen(true)}
           title="Log Attendance"
           className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 bg-brand-accent text-white font-semibold text-xs rounded-xl active:scale-98 transition-all shadow-xs mobile-tap-target"
         >
@@ -110,10 +137,23 @@ export function TimeAttendancePageMobile({ staff, timeLogs, loading, error, atte
       </div>
 
       <div className="bg-white rounded-2xl border border-zinc-200 shadow-xs p-4">
-        <div className="flex items-center justify-between mb-3">
-          <p className="text-xs font-black text-brand-primary uppercase tracking-tight">Hours Logged</p>
-          <div className="flex items-center gap-1.5">
-            <div className="flex gap-1 bg-zinc-100 rounded-lg p-1">
+        <div className="flex items-center justify-between mb-3 gap-2">
+          <p className="text-xs font-black text-brand-primary uppercase tracking-tight shrink-0">
+            {chartView === 'register' ? 'Register' : 'Hours Logged'}
+          </p>
+          <div className="flex items-center gap-1.5 min-w-0">
+            <div className="flex gap-1 bg-zinc-100 rounded-lg p-1 shrink-0">
+              <button
+                type="button"
+                title="Attendance register"
+                onClick={() => setChartView('register')}
+                className={cn(
+                  "p-1 rounded-md transition-all mobile-tap-target",
+                  chartView === 'register' ? "bg-white text-brand-primary shadow-xs" : "text-zinc-500"
+                )}
+              >
+                <Table2 className="w-3.5 h-3.5" />
+              </button>
               <button
                 type="button"
                 title="Bar chart"
@@ -137,28 +177,44 @@ export function TimeAttendancePageMobile({ staff, timeLogs, loading, error, atte
                 <LineChartIcon className="w-3.5 h-3.5" />
               </button>
             </div>
-            <div className="flex gap-1 bg-zinc-100 rounded-lg p-1">
-              {WINDOWS.map(w => (
-                <button
-                  key={w.key}
-                  type="button"
-                  title={w.label}
-                  onClick={() => setWindowKey(w.key)}
-                  className={cn(
-                    "px-2.5 py-1 text-[10px] font-bold rounded-md transition-all mobile-tap-target",
-                    windowKey === w.key ? "bg-white text-brand-primary shadow-xs" : "text-zinc-500"
-                  )}
-                >
-                  {w.label}
-                </button>
-              ))}
-            </div>
+            {chartView === 'register' ? (
+              <PeriodStepperMobile
+                payInterval={attendanceSettings.payInterval}
+                weekStartDay={attendanceSettings.weekStartDay}
+                offset={periodOffset}
+                onOffsetChange={setPeriodOffset}
+              />
+            ) : (
+              <div className="flex gap-1 bg-zinc-100 rounded-lg p-1 shrink-0">
+                {WINDOWS.map(w => (
+                  <button
+                    key={w.key}
+                    type="button"
+                    title={w.label}
+                    onClick={() => setWindowKey(w.key)}
+                    className={cn(
+                      "px-2.5 py-1 text-[10px] font-bold rounded-md transition-all mobile-tap-target",
+                      windowKey === w.key ? "bg-white text-brand-primary shadow-xs" : "text-zinc-500"
+                    )}
+                  >
+                    {w.label}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
         {loading ? (
           <div className="h-[180px] flex items-center justify-center">
             <Loader2 className="w-6 h-6 text-brand-accent animate-spin" />
           </div>
+        ) : chartView === 'register' ? (
+          <AttendanceRegisterTable
+            staff={activeStaff}
+            timeLogs={timeLogs}
+            attendanceSettings={attendanceSettings}
+            period={period}
+          />
         ) : (
           <div className="h-[180px] w-full">
             <ResponsiveContainer width="100%" height="100%">
@@ -199,37 +255,42 @@ export function TimeAttendancePageMobile({ staff, timeLogs, loading, error, atte
 
       <div className="space-y-2">
         <div className="flex items-center justify-between gap-2 px-1">
-          <p className="text-[10px] font-black uppercase tracking-widest text-zinc-400 shrink-0">Recent Logs</p>
-          {hasLogFilters && (
-            <button
-              type="button"
-              onClick={() => { setLogSearch(''); setLogDateFilter(''); }}
-              title="Clear filters"
-              className="p-1 text-zinc-400 mobile-tap-target"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          )}
+          <p className="text-[10px] font-black uppercase tracking-widest text-zinc-400 shrink-0">Payroll</p>
+          <PeriodStepperMobile
+            payInterval={attendanceSettings.payInterval}
+            weekStartDay={attendanceSettings.weekStartDay}
+            offset={periodOffset}
+            onOffsetChange={setPeriodOffset}
+          />
         </div>
         <div className="flex items-center gap-2 px-1">
           <div className="relative flex-1 min-w-0">
-            <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input
               type="text"
-              value={logSearch}
-              onChange={(e) => setLogSearch(e.target.value)}
+              value={staffSearch}
+              onChange={(e) => setStaffSearch(e.target.value)}
               placeholder="Search staff member"
-              title="Search logs by staff member"
+              title="Search staff member"
               className="w-full pl-7 pr-2 py-2 text-xs rounded-xl border border-zinc-200 bg-white text-zinc-700 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-brand-accent/30 mobile-tap-target"
             />
           </div>
-          <input
-            type="date"
-            value={logDateFilter}
-            onChange={(e) => setLogDateFilter(e.target.value)}
-            title="Filter logs by date"
-            className="px-2 py-2 text-xs rounded-xl border border-zinc-200 bg-white text-zinc-700 focus:outline-none focus:ring-2 focus:ring-brand-accent/30 mobile-tap-target"
-          />
+          <button
+            type="button"
+            title="Preview this period's report before printing"
+            onClick={() => setIsPreviewChooserOpen(true)}
+            className="p-2 rounded-xl border border-zinc-200 bg-white text-zinc-500 shrink-0 shadow-2xs mobile-tap-target"
+          >
+            <Eye className="w-3.5 h-3.5" />
+          </button>
+          <button
+            type="button"
+            title="Export this period's report for printing"
+            onClick={() => setIsExportDialogOpen(true)}
+            className="p-2 rounded-xl border border-zinc-200 bg-white text-zinc-500 shrink-0 shadow-2xs mobile-tap-target"
+          >
+            <Download className="w-3.5 h-3.5" />
+          </button>
         </div>
         {loading ? (
           <div className="p-8 flex justify-center">
@@ -240,45 +301,20 @@ export function TimeAttendancePageMobile({ staff, timeLogs, loading, error, atte
             <AlertCircle className="w-8 h-8 text-red-500 mx-auto" />
             <p className="text-xs text-zinc-500 mt-2">{error}</p>
           </div>
-        ) : timeLogs.length === 0 ? (
-          <div className="p-8 text-center">
-            <Inbox className="w-8 h-8 text-zinc-200 mx-auto mb-2" />
-            <p className="text-zinc-400 text-xs">No time logs yet.</p>
-          </div>
-        ) : filteredLogs.length === 0 ? (
-          <div className="p-8 text-center">
-            <Inbox className="w-8 h-8 text-zinc-200 mx-auto mb-2" />
-            <p className="text-zinc-400 text-xs">No time logs match your filters.</p>
-          </div>
         ) : (
-          filteredLogs.slice(0, 50).map(log => (
-            <MobileCard key={log.id}>
-              <MobileCard.Primary>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold text-zinc-850">{staffNameById.get(log.staffId) || 'Unknown staff'}</p>
-                  <p className="text-xs text-zinc-400 mt-0.5">{log.date}</p>
-                </div>
-                <MobileCard.Actions>
-                  <MobileCardActionsMenu
-                    actions={[
-                      { label: 'Edit', icon: Edit2, onClick: () => { setEditingLog(log); setIsLogOpen(true); } },
-                      { label: 'Delete', icon: Trash2, onClick: () => handleDelete(log.id), destructive: true },
-                    ]}
-                  />
-                </MobileCard.Actions>
-              </MobileCard.Primary>
-              <MobileCard.Secondary>
-                <span>{log.clockIn} – {log.clockOut}</span>
-                {(log.teaBreak || log.lunchBreak) && (
-                  <span>{[
-                    log.teaBreak && log.teaBreakStart && log.teaBreakEnd && `Tea ${formatTimeRange(log.teaBreakStart, log.teaBreakEnd)}`,
-                    log.lunchBreak && log.lunchBreakStart && log.lunchBreakEnd && `Lunch ${formatTimeRange(log.lunchBreakStart, log.lunchBreakEnd)}`,
-                  ].filter(Boolean).join(', ')}</span>
-                )}
-                <span className="font-black text-zinc-700">{log.hours}h</span>
-              </MobileCard.Secondary>
-            </MobileCard>
-          ))
+          <StaffPayrollListMobile
+            staff={filteredStaff}
+            timeLogs={timeLogs}
+            rateGroups={rateGroups}
+            rateSettings={rateSettings}
+            attendanceSettings={attendanceSettings}
+            adjustments={adjustments}
+            period={period}
+            addTimeLog={addTimeLog}
+            updateTimeLog={updateTimeLog}
+            deleteTimeLog={deleteTimeLog}
+            onSetAdjustment={onSetAdjustment}
+          />
         )}
       </div>
 
@@ -286,9 +322,8 @@ export function TimeAttendancePageMobile({ staff, timeLogs, loading, error, atte
         <TimeLogModalMobile
           staff={staff}
           settings={attendanceSettings}
-          editingLog={editingLog}
-          onSave={handleSaveLog}
-          onClose={() => { setIsLogOpen(false); setEditingLog(null); }}
+          onSave={addTimeLog}
+          onClose={() => setIsLogOpen(false)}
         />
       )}
       {isBulkOpen && (
@@ -298,9 +333,45 @@ export function TimeAttendancePageMobile({ staff, timeLogs, loading, error, atte
         <TimeAttendanceSettingsModalMobile
           settings={attendanceSettings}
           onSave={onSaveSettings}
+          rateSettings={rateSettings}
+          onSaveRateSettings={onSaveRateSettings}
+          rateGroups={rateGroups}
+          rateGroupsLoading={rateGroupsLoading}
+          addRateGroup={addRateGroup}
+          updateRateGroup={updateRateGroup}
+          deleteRateGroup={deleteRateGroup}
           onClose={() => setIsSettingsOpen(false)}
         />
       )}
+      {isExportDialogOpen && (
+        <ExportOptionsDialog title="Export Report" onSelect={handleExportSelect} onClose={() => setIsExportDialogOpen(false)} />
+      )}
+      {isPreviewChooserOpen && (
+        <ExportOptionsDialog title="Preview Report" onSelect={handlePreviewSelect} onClose={() => setIsPreviewChooserOpen(false)} />
+      )}
+      {previewReport && (
+        <ReportPreviewDialogMobile title={previewReport.title} html={previewReport.html} onClose={() => setPreviewReport(null)} />
+      )}
+    </div>
+  );
+}
+
+function PeriodStepperMobile({ payInterval, weekStartDay, offset, onOffsetChange }: {
+  payInterval: TimeAttendanceSettings['payInterval'];
+  weekStartDay: number;
+  offset: number;
+  onOffsetChange: (offset: number) => void;
+}) {
+  const period = getPeriodRange(payInterval, weekStartDay, new Date(), offset);
+  return (
+    <div className="flex items-center gap-1">
+      <button type="button" title="Previous period" onClick={() => onOffsetChange(offset - 1)} className="p-1.5 text-zinc-400 hover:text-zinc-700 mobile-tap-target">
+        <ChevronLeft className="w-4 h-4" />
+      </button>
+      <span className="text-[10px] font-bold text-zinc-600 whitespace-nowrap">{period.label}</span>
+      <button type="button" title="Next period" onClick={() => onOffsetChange(offset + 1)} className="p-1.5 text-zinc-400 hover:text-zinc-700 mobile-tap-target">
+        <ChevronRight className="w-4 h-4" />
+      </button>
     </div>
   );
 }

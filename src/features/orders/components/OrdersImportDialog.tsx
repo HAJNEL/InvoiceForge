@@ -1,7 +1,7 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import {
   X, Download, Upload, FileSpreadsheet, CheckCircle2,
-  AlertCircle, Loader2, Table2, ChevronRight
+  AlertCircle, Loader2, Table2, ChevronRight, CopyX
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { toast } from 'sonner';
@@ -106,9 +106,14 @@ interface Props {
   isOpen: boolean;
   onClose: () => void;
   addOrder: (data: Omit<Order, 'id' | 'userId' | 'createdAt' | 'updatedAt'>) => Promise<string | null>;
+  // Orders already in the system - order numbers among these are flagged as
+  // duplicates in the preview below and unticked automatically.
+  existingOrders: Order[];
 }
 
-export function OrdersImportDialog({ isOpen, onClose, addOrder }: Props) {
+const orderNumKey = (orderNumber: string) => orderNumber.trim().toLowerCase();
+
+export function OrdersImportDialog({ isOpen, onClose, addOrder, existingOrders }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [fileName, setFileName] = useState<string | null>(null);
@@ -117,6 +122,59 @@ export function OrdersImportDialog({ isOpen, onClose, addOrder }: Props) {
   const [isImporting, setIsImporting] = useState(false);
   const [progress, setProgress] = useState(0);
   const [done, setDone] = useState(false);
+  const [importedCount, setImportedCount] = useState(0);
+  // Which parsed rows (by index into parsedRows) the user wants imported.
+  const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
+
+  const existingOrderNumbers = useMemo(
+    () => new Set(existingOrders.map(o => orderNumKey(o.orderNumber)).filter(Boolean)),
+    [existingOrders]
+  );
+
+  // A row is a duplicate if its order number already exists in the system, or if
+  // it's not the first row in this file to use that order number - both directions
+  // flagged, since either one could be the "real" order and the other the mistake.
+  const duplicateIndices = useMemo(() => {
+    const dupes = new Set<number>();
+    const firstSeenAt = new Map<string, number>();
+    parsedRows.forEach((row, i) => {
+      const key = orderNumKey(row.orderNumber);
+      if (!key) return;
+      if (existingOrderNumbers.has(key)) {
+        dupes.add(i);
+        return;
+      }
+      if (firstSeenAt.has(key)) {
+        dupes.add(i);
+        dupes.add(firstSeenAt.get(key)!);
+      } else {
+        firstSeenAt.set(key, i);
+      }
+    });
+    return dupes;
+  }, [parsedRows, existingOrderNumbers]);
+
+  // Re-derive the selection whenever a new file is parsed (or cleared) - default
+  // everything on except detected duplicates. Deliberately NOT keyed on
+  // duplicateIndices/existingOrderNumbers too, so a live order list update while
+  // the dialog is open doesn't clobber the user's manual ticks/unticks.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    setSelectedRows(new Set(parsedRows.map((_, i) => i).filter(i => !duplicateIndices.has(i))));
+  }, [parsedRows]);
+
+  const toggleRow = (i: number) => {
+    setSelectedRows(prev => {
+      const next = new Set(prev);
+      if (next.has(i)) next.delete(i); else next.add(i);
+      return next;
+    });
+  };
+
+  const allSelected = parsedRows.length > 0 && selectedRows.size === parsedRows.length;
+  const toggleSelectAll = () => {
+    setSelectedRows(allSelected ? new Set() : new Set(parsedRows.map((_, i) => i)));
+  };
 
   const reset = () => {
     setFileName(null);
@@ -124,6 +182,8 @@ export function OrdersImportDialog({ isOpen, onClose, addOrder }: Props) {
     setParseError(null);
     setProgress(0);
     setDone(false);
+    setImportedCount(0);
+    setSelectedRows(new Set());
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -176,16 +236,17 @@ export function OrdersImportDialog({ isOpen, onClose, addOrder }: Props) {
   };
 
   const handleImport = async () => {
-    if (parsedRows.length === 0 || isImporting) return;
+    const rowsToImport = parsedRows.filter((_, i) => selectedRows.has(i));
+    if (rowsToImport.length === 0 || isImporting) return;
     setIsImporting(true);
     setProgress(0);
 
     let success = 0;
     let errors = 0;
 
-    for (let i = 0; i < parsedRows.length; i++) {
+    for (let i = 0; i < rowsToImport.length; i++) {
       try {
-        const row = parsedRows[i];
+        const row = rowsToImport[i];
         const id = await addOrder({
           schoolId: row.schoolId,
           clientNumber: row.clientNumber,
@@ -200,11 +261,12 @@ export function OrdersImportDialog({ isOpen, onClose, addOrder }: Props) {
       } catch {
         errors++;
       }
-      setProgress(Math.round(((i + 1) / parsedRows.length) * 100));
+      setProgress(Math.round(((i + 1) / rowsToImport.length) * 100));
     }
 
     setIsImporting(false);
     setDone(true);
+    setImportedCount(success);
 
     if (errors === 0) {
       toast.success(`${success} Orders Imported`, {
@@ -341,17 +403,41 @@ export function OrdersImportDialog({ isOpen, onClose, addOrder }: Props) {
                 exit={{ opacity: 0, height: 0 }}
                 className="overflow-hidden"
               >
-                <div className="flex items-center gap-2 mb-2">
-                  <Table2 className="w-3.5 h-3.5 text-zinc-400" />
-                  <span className="text-[10px] font-black uppercase tracking-wider text-zinc-400">
-                    Preview — {parsedRows.length} orders
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <div className="flex items-center gap-2">
+                    <Table2 className="w-3.5 h-3.5 text-zinc-400" />
+                    <span className="text-[10px] font-black uppercase tracking-wider text-zinc-400">
+                      Preview — {parsedRows.length} orders
+                    </span>
+                  </div>
+                  <span className="text-[10px] font-bold text-zinc-400">
+                    {selectedRows.size} of {parsedRows.length} selected
                   </span>
                 </div>
+
+                {duplicateIndices.size > 0 && (
+                  <div className="mb-2 flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-xl text-[11px] text-amber-800">
+                    <CopyX className="w-4 h-4 shrink-0 mt-0.5" />
+                    <span>
+                      {duplicateIndices.size} order{duplicateIndices.size === 1 ? '' : 's'} with a duplicate order number {duplicateIndices.size === 1 ? 'was' : 'were'} found (matching an existing order, or repeated within this file) and unticked automatically. Tick a row to import it anyway.
+                    </span>
+                  </div>
+                )}
+
                 <div className="rounded-2xl border border-zinc-200 overflow-hidden">
                   <div className="overflow-x-auto max-h-56 overflow-y-auto">
                     <table className="w-full text-xs text-left border-collapse">
                       <thead className="bg-zinc-50 border-b border-zinc-200 sticky top-0">
                         <tr>
+                          <th className="px-3 py-2 w-8">
+                            <input
+                              type="checkbox"
+                              checked={allSelected}
+                              onChange={toggleSelectAll}
+                              title={allSelected ? 'Deselect all orders' : 'Select all orders'}
+                              className="w-3.5 h-3.5 rounded border-zinc-300 text-brand-accent focus:ring-brand-accent cursor-pointer"
+                            />
+                          </th>
                           <th className="px-3 py-2 font-black text-zinc-500 uppercase text-[10px] tracking-wider whitespace-nowrap">Order No.</th>
                           <th className="px-3 py-2 font-black text-zinc-500 uppercase text-[10px] tracking-wider">School</th>
                           <th className="px-3 py-2 font-black text-zinc-500 uppercase text-[10px] tracking-wider whitespace-nowrap">Area</th>
@@ -361,33 +447,50 @@ export function OrdersImportDialog({ isOpen, onClose, addOrder }: Props) {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-zinc-100">
-                        {parsedRows.slice(0, 8).map((row, i) => (
-                          <tr key={i} className="hover:bg-zinc-50/40">
-                            <td className="px-3 py-2 font-mono text-[10px] font-bold whitespace-nowrap">{row.orderNumber || '—'}</td>
-                            <td className="px-3 py-2 text-zinc-700 font-medium max-w-[220px] truncate">{row.schoolName}</td>
-                            <td className="px-3 py-2 text-zinc-600 whitespace-nowrap">{row.area || '—'}</td>
-                            <td className="px-3 py-2 whitespace-nowrap">
-                              <span className={cn(
-                                'px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wide',
-                                row.status === 'Complete' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
-                              )}>
-                                {row.status}
-                              </span>
-                            </td>
-                            <td className="px-3 py-2 text-right font-mono text-zinc-600">{row.lineItems.length}</td>
-                            <td className="px-3 py-2 text-right font-black text-zinc-800 whitespace-nowrap">
-                              {row.lineItems.reduce((s, l) => s + l.qty, 0)}
-                            </td>
-                          </tr>
-                        ))}
+                        {parsedRows.map((row, i) => {
+                          const isDuplicate = duplicateIndices.has(i);
+                          const isChecked = selectedRows.has(i);
+                          return (
+                            <tr key={i} className={cn('hover:bg-zinc-50/40', isDuplicate && 'bg-amber-50/50')}>
+                              <td className="px-3 py-2">
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={() => toggleRow(i)}
+                                  title={isChecked ? 'Exclude this order from the import' : 'Include this order in the import'}
+                                  className="w-3.5 h-3.5 rounded border-zinc-300 text-brand-accent focus:ring-brand-accent cursor-pointer"
+                                />
+                              </td>
+                              <td className="px-3 py-2 font-mono text-[10px] font-bold whitespace-nowrap">
+                                <div className="flex items-center gap-1.5">
+                                  {row.orderNumber || '—'}
+                                  {isDuplicate && (
+                                    <span className="px-1.5 py-0.5 rounded-full text-[8px] font-black uppercase tracking-wide bg-amber-100 text-amber-700">
+                                      Duplicate
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="px-3 py-2 text-zinc-700 font-medium max-w-[220px] truncate">{row.schoolName}</td>
+                              <td className="px-3 py-2 text-zinc-600 whitespace-nowrap">{row.area || '—'}</td>
+                              <td className="px-3 py-2 whitespace-nowrap">
+                                <span className={cn(
+                                  'px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wide',
+                                  row.status === 'Complete' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+                                )}>
+                                  {row.status}
+                                </span>
+                              </td>
+                              <td className="px-3 py-2 text-right font-mono text-zinc-600">{row.lineItems.length}</td>
+                              <td className="px-3 py-2 text-right font-black text-zinc-800 whitespace-nowrap">
+                                {row.lineItems.reduce((s, l) => s + l.qty, 0)}
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
-                  {parsedRows.length > 8 && (
-                    <div className="px-3 py-2 bg-zinc-50 border-t border-zinc-100 text-[10px] text-zinc-400 font-bold text-center">
-                      +{parsedRows.length - 8} more orders not shown
-                    </div>
-                  )}
                 </div>
               </motion.div>
             )}
@@ -401,7 +504,7 @@ export function OrdersImportDialog({ isOpen, onClose, addOrder }: Props) {
             >
               <CheckCircle2 className="w-12 h-12 text-emerald-500" />
               <p className="text-sm font-black text-zinc-800 uppercase tracking-wide">Import Complete</p>
-              <p className="text-xs text-zinc-500">{parsedRows.length} orders added.</p>
+              <p className="text-xs text-zinc-500">{importedCount} orders added.</p>
             </motion.div>
           )}
 
@@ -436,8 +539,8 @@ export function OrdersImportDialog({ isOpen, onClose, addOrder }: Props) {
           <button
             type="button"
             onClick={handleImport}
-            disabled={parsedRows.length === 0 || isImporting || done}
-            title={`Import ${parsedRows.length} orders`}
+            disabled={selectedRows.size === 0 || isImporting || done}
+            title={`Import ${selectedRows.size} orders`}
             className="flex items-center gap-2 px-5 py-2.5 text-white font-black text-[11px] uppercase tracking-wider rounded-xl transition-all shadow-sm cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed bg-brand-accent hover:bg-brand-accent/90"
           >
             {isImporting ? (
@@ -445,7 +548,7 @@ export function OrdersImportDialog({ isOpen, onClose, addOrder }: Props) {
             ) : (
               <>
                 <ChevronRight className="w-3.5 h-3.5 stroke-[3]" />
-                Import {parsedRows.length > 0 ? `${parsedRows.length} ` : ''}Orders
+                Import {selectedRows.size > 0 ? `${selectedRows.size} ` : ''}Orders
               </>
             )}
           </button>
