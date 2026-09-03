@@ -1,4 +1,5 @@
 import { Dispatch, SetStateAction } from 'react';
+import { Loader2, RefreshCw, CheckCircle2, XCircle } from 'lucide-react';
 import { IDENTIFICATION_TYPES, PAYMENT_METHODS, ACCOUNT_TYPES, HOLDER_RELATIONSHIPS, BANKS, PASSPORT_COUNTRY_CODES } from '../constants';
 import { RateGroup } from '../../../types';
 import { StaffFormData } from './staffFormTypes';
@@ -23,10 +24,58 @@ function SectionHeading({ children }: { children: React.ReactNode }) {
   );
 }
 
-export function StaffMemberFormFields({ form, setForm, rateGroups }: {
+// What SimplePay's employee-create/update API actually requires - confirmed
+// either from their docs (name, birthdate, appointment date, id type, payment
+// method) or from live "can't be blank" validation errors hit while testing
+// this integration (id number, bank_account.account_type).
+function simplePayReadiness(form: StaffFormData): { label: string; ok: boolean }[] {
+  const idValue = form.identificationType === 'rsa_id' ? form.idNumber : form.otherNumber;
+  const items: { label: string; ok: boolean }[] = [
+    { label: 'First Name', ok: !!form.firstName.trim() },
+    { label: 'Last Name', ok: !!form.lastName.trim() },
+    { label: 'Date of Birth', ok: !!form.birthdate },
+    { label: 'Date of Appointment', ok: !!form.appointmentDate },
+    { label: 'ID / Passport Number', ok: !!idValue.trim() },
+  ];
+  if (form.paymentMethod === 'eft_manual') {
+    items.push(
+      { label: 'Bank', ok: !!form.bankId },
+      { label: 'Account Number', ok: !!form.accountNumber.trim() },
+      { label: 'Branch Code', ok: !!form.branchCode.trim() },
+      { label: 'Account Type', ok: !!form.accountType },
+    );
+  }
+  return items;
+}
+
+function SimplePayReadinessChecklist({ form }: { form: StaffFormData }) {
+  const items = simplePayReadiness(form);
+  const missing = items.filter(i => !i.ok).length;
+  return (
+    <div className="space-y-1.5">
+      <p className={`text-[10px] font-black uppercase tracking-widest ${missing === 0 ? 'text-emerald-500' : 'text-amber-500'}`}>
+        {missing === 0 ? 'Ready to sync' : `${missing} field${missing === 1 ? '' : 's'} needed before syncing`}
+      </p>
+      <div className="border border-zinc-200 rounded-xl p-2.5 space-y-1">
+        {items.map(item => (
+          <div key={item.label} className="flex items-center gap-1.5 text-xs">
+            {item.ok ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" /> : <XCircle className="w-3.5 h-3.5 text-red-400 shrink-0" />}
+            <span className={item.ok ? 'text-zinc-600' : 'text-zinc-400'}>{item.label}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export function StaffMemberFormFields({ form, setForm, rateGroups, onSyncSimplePay, isSyncingSimplePay }: {
   form: StaffFormData;
   setForm: Dispatch<SetStateAction<StaffFormData>>;
   rateGroups: RateGroup[];
+  // Optional - only wired in from StaffMemberModal(Mobile).tsx, since syncing
+  // needs an async call + toast that belongs at the modal level, not here.
+  onSyncSimplePay?: () => void;
+  isSyncingSimplePay?: boolean;
 }) {
   const set = <K extends keyof StaffFormData>(key: K, value: StaffFormData[K]) => {
     setForm(prev => ({ ...prev, [key]: value }));
@@ -166,6 +215,39 @@ export function StaffMemberFormFields({ form, setForm, rateGroups }: {
             </Field>
           </>
         )}
+      </div>
+
+      <SectionHeading>SimplePay</SectionHeading>
+      <div className="grid grid-cols-2 gap-4">
+        <Field label="SimplePay Employee ID">
+          <div className="flex items-center gap-2">
+            <input
+              title="This staff member's employee id in SimplePay - used to push their payroll (see Settings -> Integrations)"
+              type="text"
+              value={form.simplePayEmployeeId}
+              onChange={e => set('simplePayEmployeeId', e.target.value)}
+              placeholder="e.g. 12345678"
+              className={`${inputClass} flex-1`}
+            />
+            {onSyncSimplePay && (
+              <button
+                type="button"
+                title={
+                  simplePayReadiness(form).some(i => !i.ok)
+                    ? 'Fill in the required fields listed to the right before syncing'
+                    : form.simplePayEmployeeId ? 'Update this employee in SimplePay from the details on this form' : 'Create this employee in SimplePay and fill in the id'
+                }
+                onClick={onSyncSimplePay}
+                disabled={isSyncingSimplePay || simplePayReadiness(form).some(i => !i.ok)}
+                className="shrink-0 flex items-center gap-1.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 px-3 py-2.5 rounded-xl font-bold text-xs transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isSyncingSimplePay ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                Sync
+              </button>
+            )}
+          </div>
+        </Field>
+        <SimplePayReadinessChecklist form={form} />
       </div>
 
       <SectionHeading>Residential Address</SectionHeading>

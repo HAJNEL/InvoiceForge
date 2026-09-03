@@ -6,6 +6,7 @@ import { MobileSheet } from '../../../components/mobile/MobileSheet';
 import { StaffMemberFormFields } from './StaffMemberFormFields';
 import { EMPTY_STAFF_FORM, staffToFormData, formDataToStaff, StaffFormData } from './staffFormTypes';
 import { useRateGroups } from '../../settings/hooks/useRateGroups';
+import { useSimplePayEmployeeSync } from '../hooks/useSimplePayEmployeeSync';
 
 export function StaffMemberModalMobile({ staffMember, onSave, onClose }: {
   staffMember: StaffMember | null;
@@ -15,8 +16,14 @@ export function StaffMemberModalMobile({ staffMember, onSave, onClose }: {
   const [form, setForm] = useState<StaffFormData>(() => staffMember ? staffToFormData(staffMember) : EMPTY_STAFF_FORM);
   const [submitting, setSubmitting] = useState(false);
   const { rateGroups } = useRateGroups();
+  const { isSyncing: isSyncingSimplePay, sync: syncSimplePay } = useSimplePayEmployeeSync();
 
   const isValid = form.firstName.trim() && form.lastName.trim();
+
+  const handleSyncSimplePay = async () => {
+    const employeeId = await syncSimplePay(form);
+    if (employeeId) setForm(prev => ({ ...prev, simplePayEmployeeId: employeeId }));
+  };
 
   const handleSubmit = async () => {
     if (!isValid) return;
@@ -53,7 +60,13 @@ export function StaffMemberModalMobile({ staffMember, onSave, onClose }: {
         </button>
       }
     >
-      <StaffMemberFormFields form={form} setForm={setForm} rateGroups={rateGroups} />
+      <StaffMemberFormFields
+        form={form}
+        setForm={setForm}
+        rateGroups={rateGroups}
+        onSyncSimplePay={handleSyncSimplePay}
+        isSyncingSimplePay={isSyncingSimplePay}
+      />
     </MobileSheet>
   );
 }

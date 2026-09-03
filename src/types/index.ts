@@ -144,6 +144,7 @@ export interface Settings {
   calendarSyncEnabled?: boolean;
   timeAttendance?: TimeAttendanceSettings;
   rateSettings?: RateSettings;
+  simplePay?: SimplePaySettings;
   // Orders screen's Location Issues KPI: how far (km) a school's geocoded pin may
   // sit from its order's stated area before it's flagged. See geocoding.ts's
   // describeLocationIssue/DEFAULT_LOCATION_ISSUE_DISTANCE_KM.
@@ -181,6 +182,28 @@ export interface ZohoCredentials {
   region?: string; // Zoho data center suffix: 'com' | 'eu' | 'in' | 'com.au' | ... (default 'com')
   connectedAt?: string; // set on the last successful Test Connection
   updatedAt: string;
+}
+
+// Lives in its own `simplepay_credentials/{uid}` collection (owner-only Firestore
+// rules), never in the publicly-readable `settings` doc - see firestore.rules.
+export interface SimplePayCredentials {
+  id: string;
+  userId: string;
+  apiKey?: string;   // SimplePay dashboard-generated key, sent as `Authorization: <apiKey>`
+  clientId?: string; // SimplePay "client_id" - the payroll company/entity this account manages
+  connectedAt?: string; // set on the last successful Test Connection
+  updatedAt: string;
+}
+
+// Non-secret SimplePay mapping config - lives on Settings (like timeAttendance/
+// rateSettings) since it's configuration, not a credential. Item ids are entered
+// manually by the admin (copied from SimplePay's Payroll Settings -> Items screen)
+// rather than picked from a bound dropdown, since the API's items_and_outputs
+// response shape isn't stable enough to parse with confidence.
+export interface SimplePaySettings {
+  defaultWaveId?: string;
+  normalPayItemId?: string;
+  overtimePayItemId?: string;
 }
 
 export interface SelfInvoice {
@@ -315,6 +338,10 @@ export interface StaffMember {
   status: 'active' | 'inactive';
   rateGroupId?: string;
   rateTierId?: string;
+  // Manually entered SimplePay employee id (see the SimplePay integration's Staff
+  // form) - a temporary stand-in for an automatic sync, so payroll pushes have
+  // somewhere to address a staff member's SimplePay employee record.
+  simplePayEmployeeId?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -376,6 +403,30 @@ export interface PayrollAdjustment {
   deductions: number;
   shortPayment: number;
   note?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// One doc per user per pay period, id `${userId}_${periodKey}` - records what was
+// last pushed to SimplePay for that period (see POST /api/simplepay/push-payroll),
+// so the payroll table can show sync status per staff member.
+export interface PayrollSubmission {
+  id: string;
+  userId: string;
+  periodKey: string;
+  periodLabel: string;
+  payInterval: TimeAttendanceSettings['payInterval'];
+  pushedAt: string;
+  pushedBy: string; // uid, or a team_members doc id
+  status: 'success' | 'partial' | 'failed';
+  lines: {
+    staffId: string;
+    simplePayEmployeeId?: string;
+    normalPay: number;
+    overtimePay: number;
+    status: 'pushed' | 'skipped_unlinked' | 'skipped_no_payslip' | 'failed';
+    error?: string;
+  }[];
   createdAt: string;
   updatedAt: string;
 }

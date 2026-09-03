@@ -36,6 +36,7 @@ export interface StaffFormData {
   status: StaffMember['status'];
   rateGroupId: string;
   rateTierId: string;
+  simplePayEmployeeId: string;
 }
 
 export const EMPTY_STAFF_FORM: StaffFormData = {
@@ -74,6 +75,7 @@ export const EMPTY_STAFF_FORM: StaffFormData = {
   status: 'active',
   rateGroupId: '',
   rateTierId: '',
+  simplePayEmployeeId: '',
 };
 
 export function staffToFormData(s: StaffMember): StaffFormData {
@@ -113,6 +115,7 @@ export function staffToFormData(s: StaffMember): StaffFormData {
     status: s.status || 'active',
     rateGroupId: s.rateGroupId || '',
     rateTierId: s.rateTierId || '',
+    simplePayEmployeeId: s.simplePayEmployeeId || '',
   };
 }
 
@@ -159,5 +162,6 @@ export function formDataToStaff(f: StaffFormData): Omit<StaffMember, 'id' | 'use
     status: f.status,
     rateGroupId: f.rateGroupId || undefined,
     rateTierId: f.rateGroupId ? (f.rateTierId || undefined) : undefined,
+    simplePayEmployeeId: f.simplePayEmployeeId.trim() || undefined,
   };
 }

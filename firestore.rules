@@ -53,6 +53,8 @@ service cloud.firestore {
     function isValidSelfInvoice(data) { return true; }
     function isValidClientDistance(data) { return true; }
     function isValidZohoCredentials(data) { return true; }
+    function isValidSimplePayCredentials(data) { return true; }
+    function isValidPayrollSubmission(data) { return true; }
     function isValidFuelLog(data) { return true; }
     function isValidKpiTemplates(data) { return true; }
     function isValidKpiReading(data) { return true; }
@@ -357,6 +359,44 @@ service cloud.firestore {
         && incoming().userId == uid;
 
       allow delete: if isSignedIn() && request.auth.uid == uid;
+    }
+
+    // Per-user SimplePay API credentials (API key + client id). Same shape as
+    // zoho_credentials - strictly the account owner only, doc id == their own uid.
+    match /simplepay_credentials/{uid} {
+      allow get: if isSignedIn() && request.auth.uid == uid;
+      allow list: if false;
+
+      allow create: if isSignedIn()
+        && request.auth.uid == uid
+        && isValidId(uid)
+        && isValidSimplePayCredentials(incoming())
+        && incoming().userId == uid;
+
+      allow update: if isSignedIn()
+        && request.auth.uid == uid
+        && isValidSimplePayCredentials(incoming())
+        && incoming().userId == uid;
+
+      allow delete: if isSignedIn() && request.auth.uid == uid;
+    }
+
+    // Record of what was pushed to SimplePay for a given pay period, doc id
+    // `${userId}_${periodKey}` - see PayrollSubmission / POST /api/simplepay/push-payroll.
+    match /payroll_submissions/{submissionId} {
+      allow get: if isSignedIn() && (resource == null || isOwner(resource.data) || isTeamMemberOfOwner(resource.data.userId));
+      allow list: if isSignedIn() && (resource == null || resource.data.userId == request.auth.uid || isTeamMember());
+
+      allow create: if isSignedIn()
+        && isValidId(submissionId)
+        && isValidPayrollSubmission(incoming())
+        && (incoming().userId == request.auth.uid || isTeamMemberOfOwner(incoming().userId));
+
+      allow update: if (isOwner(existing()) || isTeamMemberOfOwner(existing().userId))
+        && isValidPayrollSubmission(incoming())
+        && incoming().userId == existing().userId;
+
+      allow delete: if resource == null || isOwner(existing()) || isTeamMemberOfOwner(existing().userId);
     }
 
     match /client_distances/{recordId} {

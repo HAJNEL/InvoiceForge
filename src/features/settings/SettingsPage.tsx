@@ -4,9 +4,11 @@ import { MapPin, Save, Loader2, Warehouse, Navigation, Image as ImageIcon, Uploa
 import { APIProvider, Map, AdvancedMarker, Pin, useMapsLibrary } from '@vis.gl/react-google-maps';
 import { useSettings } from './hooks/useSettings';
 import { useZohoCredentials } from './hooks/useZohoCredentials';
+import { useSimplePayCredentials } from './hooks/useSimplePayCredentials';
 import { sendNotification, TEST_NOTIFICATION } from '../../lib/notifications';
 import { testZohoConnection } from '../../lib/zoho';
-import { Settings, ZohoCredentials } from '../../types';
+import { testSimplePayConnection, listSimplePayWaves, listSimplePayItemsAndOutputs, discoverSimplePayClients } from '../../lib/simplepay';
+import { Settings, ZohoCredentials, SimplePayCredentials, SimplePaySettings } from '../../types';
 import { NRLogo } from '../../components/Logo';
 import { TeamMembersSection } from './components/TeamMembersSection';
 import { CalendarSyncCard } from './components/CalendarSyncCard';
@@ -56,6 +58,7 @@ const ZOHO_REGIONS = [
 export function SettingsPage() {
   const { settings, loading, saveSettings } = useSettings();
   const { credentials: zohoCredentials, loading: zohoLoading, saveCredentials: saveZohoCredentials } = useZohoCredentials();
+  const { credentials: simplePayCredentials, loading: simplePayLoading, saveCredentials: saveSimplePayCredentials } = useSimplePayCredentials();
   const [address, setAddress] = useState('');
   const [saveStatus, setSaveStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [activeTab, setActiveTab] = useState<SettingsTab>('location');
@@ -237,6 +240,34 @@ export function SettingsPage() {
                       </div>
                     ) : (
                       <ZohoIntegrationCard credentials={zohoCredentials} onSave={saveZohoCredentials} />
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-3xl shadow-sm border border-zinc-200 overflow-hidden">
+              <div className="p-8 space-y-8">
+                <div className="flex items-start gap-4">
+                  <div className="p-3 bg-brand-primary/10 rounded-2xl flex-shrink-0">
+                    <Link2 className="w-6 h-6 text-brand-primary" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="text-lg font-bold text-zinc-900 mb-1">SimplePay Integration</h3>
+                    <p className="text-sm text-zinc-500 mb-6">Connect SimplePay so a pay period's computed wages can be pushed straight into its payslips - see the Payroll toolbar in Time & Attendance.</p>
+
+                    {simplePayLoading ? (
+                      <div className="flex justify-center py-8">
+                        <Loader2 className="w-6 h-6 text-brand-accent animate-spin" />
+                      </div>
+                    ) : (
+                      <SimplePayIntegrationCard credentials={simplePayCredentials} onSave={saveSimplePayCredentials} />
+                    )}
+
+                    {simplePayCredentials?.apiKey && simplePayCredentials?.clientId && (
+                      <div className="mt-8 pt-8 border-t border-zinc-100">
+                        <SimplePayMappingCard settings={settings?.simplePay} onSave={(simplePay) => saveSettings({ simplePay })} />
+                      </div>
                     )}
                   </div>
                 </div>
@@ -642,6 +673,374 @@ function ZohoIntegrationCard({
         >
           {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
           Save Connection
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function SimplePayIntegrationCard({
+  credentials,
+  onSave
+}: {
+  credentials: SimplePayCredentials | null;
+  onSave: (data: Partial<SimplePayCredentials>) => Promise<boolean>;
+}) {
+  const [apiKey, setApiKey] = useState(credentials?.apiKey || '');
+  const [clientId, setClientId] = useState(credentials?.clientId || '');
+  const [showApiKey, setShowApiKey] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isTesting, setIsTesting] = useState(false);
+  const [isDiscovering, setIsDiscovering] = useState(false);
+  const [discoveredClients, setDiscoveredClients] = useState<string | null>(null);
+  const [status, setStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  useEffect(() => {
+    setApiKey(credentials?.apiKey || '');
+    setClientId(credentials?.clientId || '');
+  }, [credentials]);
+
+  const draft = { apiKey: apiKey.trim(), clientId: clientId.trim() };
+  const isDirty = draft.apiKey !== (credentials?.apiKey || '') || draft.clientId !== (credentials?.clientId || '');
+  const isComplete = !!(draft.apiKey && draft.clientId);
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    setStatus(null);
+    const success = await onSave(draft);
+    setIsSaving(false);
+    setStatus(success
+      ? { type: 'success', message: 'SimplePay connection saved.' }
+      : { type: 'error', message: 'Failed to save your SimplePay connection.' });
+    if (success) setTimeout(() => setStatus(null), 3000);
+  };
+
+  const handleTest = async () => {
+    setIsTesting(true);
+    setStatus(null);
+    const result = await testSimplePayConnection(draft);
+    setIsTesting(false);
+    if (result.success) {
+      setStatus({ type: 'success', message: 'Connection successful.' });
+      if (!isDirty) await onSave({ connectedAt: new Date().toISOString() });
+    } else {
+      setStatus({ type: 'error', message: result.error });
+    }
+  };
+
+  // SimplePay doesn't show client_id anywhere in its own dashboard - the docs
+  // say to get it from GET /v1/clients, which only needs the API key.
+  const handleDiscoverClients = async () => {
+    setIsDiscovering(true);
+    setDiscoveredClients(null);
+    setStatus(null);
+    const result = await discoverSimplePayClients(draft.apiKey);
+    setIsDiscovering(false);
+    if (result.success) {
+      setDiscoveredClients(JSON.stringify(result.clients, null, 2));
+    } else {
+      setStatus({ type: 'error', message: result.error });
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <label htmlFor="simplepay-client-id" className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Client ID</label>
+          <div className="flex items-center gap-2">
+            <input
+              id="simplepay-client-id"
+              type="text"
+              title="SimplePay client id for this payroll company"
+              value={clientId}
+              onChange={(e) => setClientId(e.target.value)}
+              placeholder="e.g. 12345"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              className="flex-1 px-4 py-3 border border-zinc-200 rounded-xl font-mono text-sm focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent transition-all bg-zinc-50/50"
+            />
+            <button
+              type="button"
+              title={draft.apiKey ? "SimplePay doesn't show your client id anywhere - look it up using your API Key" : 'Enter an API Key first'}
+              onClick={handleDiscoverClients}
+              disabled={!draft.apiKey || isDiscovering}
+              className="shrink-0 flex items-center gap-1.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 px-3 py-3 rounded-xl font-bold text-xs transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isDiscovering ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+              Find Client ID
+            </button>
+          </div>
+          {discoveredClients && (
+            <div className="bg-zinc-50 border border-zinc-200 rounded-xl p-3">
+              <p className="text-[10px] font-black uppercase tracking-widest text-zinc-400 mb-1.5">Clients this API Key can access - copy the id you need above</p>
+              <pre className="text-[10px] font-mono text-zinc-600 max-h-32 overflow-auto whitespace-pre-wrap">{discoveredClients}</pre>
+            </div>
+          )}
+        </div>
+
+        <div className="space-y-2">
+          <label htmlFor="simplepay-api-key" className="text-[10px] font-black uppercase tracking-widest text-zinc-400">API Key</label>
+          <div className="relative">
+            <input
+              id="simplepay-api-key"
+              type={showApiKey ? 'text' : 'password'}
+              title="API key generated from your SimplePay account dashboard"
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              placeholder="API Key"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              className="w-full pl-4 pr-11 py-3 border border-zinc-200 rounded-xl font-mono text-sm focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent transition-all bg-zinc-50/50"
+            />
+            <button
+              type="button"
+              title={showApiKey ? 'Hide API Key' : 'Show API Key'}
+              onClick={() => setShowApiKey(v => !v)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600"
+            >
+              {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {credentials?.connectedAt && !status && (
+        <p className="text-xs text-zinc-400">Last verified {new Date(credentials.connectedAt).toLocaleString()}.</p>
+      )}
+
+      {status && (
+        <div className={`flex items-center gap-2 text-xs font-medium px-4 py-2.5 rounded-xl border ${
+          status.type === 'success'
+            ? 'text-emerald-600 bg-emerald-50/50 border-emerald-100'
+            : 'text-red-500 bg-red-50/50 border-red-100'
+        }`}>
+          {status.type === 'success' ? <Check className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
+          <span>{status.message}</span>
+        </div>
+      )}
+
+      <div className="flex justify-end gap-3">
+        <button
+          type="button"
+          onClick={handleTest}
+          disabled={!isComplete || isTesting}
+          title={isComplete ? 'Test this SimplePay connection' : 'Fill in both fields to test the connection'}
+          className="flex items-center gap-2 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 px-5 py-2.5 rounded-xl font-bold text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {isTesting ? <Loader2 className="w-4 h-4 animate-spin" /> : <PlugZap className="w-4 h-4" />}
+          Test Connection
+        </button>
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={isSaving || !isDirty}
+          className="flex items-center gap-2 bg-brand-primary text-white px-6 py-2.5 rounded-xl font-bold text-sm hover:bg-brand-primary/90 transition-all shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+          Save Connection
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Maps this account's pay periods onto SimplePay's own wave + pay-item ids.
+// Ids are typed in by hand rather than picked from a bound dropdown - the raw
+// "Load reference list" output below is there so the admin can find the right
+// id to copy, without this app guessing at SimplePay's exact response shape.
+function SimplePayMappingCard({
+  settings,
+  onSave
+}: {
+  settings: SimplePaySettings | undefined;
+  onSave: (data: SimplePaySettings) => Promise<boolean>;
+}) {
+  const [defaultWaveId, setDefaultWaveId] = useState(settings?.defaultWaveId || '');
+  const [normalPayItemId, setNormalPayItemId] = useState(settings?.normalPayItemId || '');
+  const [overtimePayItemId, setOvertimePayItemId] = useState(settings?.overtimePayItemId || '');
+  const [isSaving, setIsSaving] = useState(false);
+  const [status, setStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [reference, setReference] = useState<{ label: string; json: string } | null>(null);
+  const [customItems, setCustomItems] = useState<Record<string, unknown>[] | null>(null);
+  const [isLoadingReference, setIsLoadingReference] = useState<'waves' | 'items' | null>(null);
+
+  useEffect(() => {
+    setDefaultWaveId(settings?.defaultWaveId || '');
+    setNormalPayItemId(settings?.normalPayItemId || '');
+    setOvertimePayItemId(settings?.overtimePayItemId || '');
+  }, [settings]);
+
+  const draft: SimplePaySettings = {
+    defaultWaveId: defaultWaveId.trim() || undefined,
+    normalPayItemId: normalPayItemId.trim() || undefined,
+    overtimePayItemId: overtimePayItemId.trim() || undefined,
+  };
+  const isDirty =
+    draft.defaultWaveId !== (settings?.defaultWaveId || undefined) ||
+    draft.normalPayItemId !== (settings?.normalPayItemId || undefined) ||
+    draft.overtimePayItemId !== (settings?.overtimePayItemId || undefined);
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    setStatus(null);
+    const success = await onSave(draft);
+    setIsSaving(false);
+    setStatus(success
+      ? { type: 'success', message: 'Pay item mapping saved.' }
+      : { type: 'error', message: 'Failed to save the pay item mapping.' });
+    if (success) setTimeout(() => setStatus(null), 3000);
+  };
+
+  const handleLoadReference = async (kind: 'waves' | 'items') => {
+    setIsLoadingReference(kind);
+    setReference(null);
+    setCustomItems(null);
+    if (kind === 'waves') {
+      const result = await listSimplePayWaves();
+      setIsLoadingReference(null);
+      if (result.success) {
+        setReference({ label: 'Pay waves', json: JSON.stringify(result.data, null, 2) });
+      } else {
+        setStatus({ type: 'error', message: result.error });
+      }
+      return;
+    }
+    // Only SimplePay *custom* pay items get a numeric id usable in the fields
+    // below - system items (Basic Salary, Commission, etc.) are addressed by
+    // name, not an id, so they can't go in these fields even though they show
+    // up in the same API response.
+    const result = await listSimplePayItemsAndOutputs();
+    setIsLoadingReference(null);
+    if (result.success) {
+      const data = (result.data ?? {}) as { custom_items?: Record<string, unknown>[] };
+      setCustomItems(Array.isArray(data.custom_items) ? data.custom_items : []);
+    } else {
+      setStatus({ type: 'error', message: result.error });
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <h4 className="text-sm font-bold text-zinc-900">Pay Period Mapping</h4>
+      <p className="text-xs text-zinc-500">
+        The Pay Item fields need a SimplePay <strong>custom</strong> pay item's numeric id (built-in items like Basic
+        Salary don't have one) - create the custom items in SimplePay first, then click Load Pay Items below to find their ids.
+      </p>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="space-y-2">
+          <label htmlFor="simplepay-wave-id" className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Default Wave ID</label>
+          <input
+            id="simplepay-wave-id"
+            type="text"
+            title="SimplePay wave id for this account's weekly pay run"
+            value={defaultWaveId}
+            onChange={(e) => setDefaultWaveId(e.target.value)}
+            className="w-full px-4 py-3 border border-zinc-200 rounded-xl font-mono text-sm focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent transition-all bg-zinc-50/50"
+          />
+        </div>
+        <div className="space-y-2">
+          <label htmlFor="simplepay-normal-item" className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Normal Pay Item ID</label>
+          <input
+            id="simplepay-normal-item"
+            type="text"
+            title="Numeric id of a SimplePay CUSTOM pay item that normal-hours pay is written to"
+            value={normalPayItemId}
+            onChange={(e) => setNormalPayItemId(e.target.value)}
+            placeholder="e.g. 123456"
+            className="w-full px-4 py-3 border border-zinc-200 rounded-xl font-mono text-sm focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent transition-all bg-zinc-50/50"
+          />
+        </div>
+        <div className="space-y-2">
+          <label htmlFor="simplepay-overtime-item" className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Overtime Pay Item ID</label>
+          <input
+            id="simplepay-overtime-item"
+            type="text"
+            title="Numeric id of a SimplePay CUSTOM pay item that overtime pay is written to"
+            value={overtimePayItemId}
+            onChange={(e) => setOvertimePayItemId(e.target.value)}
+            placeholder="e.g. 123457"
+            className="w-full px-4 py-3 border border-zinc-200 rounded-xl font-mono text-sm focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent transition-all bg-zinc-50/50"
+          />
+        </div>
+      </div>
+
+      <div className="flex items-center gap-3 flex-wrap">
+        <button
+          type="button"
+          title="Load this SimplePay client's pay waves for reference"
+          onClick={() => handleLoadReference('waves')}
+          disabled={isLoadingReference !== null}
+          className="flex items-center gap-2 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 px-4 py-2 rounded-xl font-bold text-xs transition-all disabled:opacity-50"
+        >
+          {isLoadingReference === 'waves' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+          Load Waves
+        </button>
+        <button
+          type="button"
+          title="Load this SimplePay client's pay items for reference"
+          onClick={() => handleLoadReference('items')}
+          disabled={isLoadingReference !== null}
+          className="flex items-center gap-2 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 px-4 py-2 rounded-xl font-bold text-xs transition-all disabled:opacity-50"
+        >
+          {isLoadingReference === 'items' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+          Load Pay Items
+        </button>
+      </div>
+
+      {reference && (
+        <div className="bg-zinc-50 border border-zinc-200 rounded-xl p-3">
+          <p className="text-[10px] font-black uppercase tracking-widest text-zinc-400 mb-1.5">{reference.label} (raw)</p>
+          <pre className="text-[10px] font-mono text-zinc-600 max-h-48 overflow-auto whitespace-pre-wrap">{reference.json}</pre>
+        </div>
+      )}
+
+      {customItems !== null && (
+        customItems.length === 0 ? (
+          <div className="flex items-start gap-2 text-xs font-medium px-4 py-3 rounded-xl border text-amber-600 bg-amber-50/50 border-amber-100">
+            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+            <span>
+              You don't have any custom pay items yet. Only <em>custom</em> items get a numeric id these fields can use -
+              SimplePay's built-in items (Basic Salary, Commission, etc.) are addressed by name, not an id, so they
+              won't work here. In SimplePay, go to Payroll Settings and create two custom pay items (e.g. "Normal Pay
+              (InvoiceForge)" and "Overtime Pay (InvoiceForge)"), then click Load Pay Items again.
+            </span>
+          </div>
+        ) : (
+          <div className="bg-zinc-50 border border-zinc-200 rounded-xl p-3 space-y-1.5">
+            <p className="text-[10px] font-black uppercase tracking-widest text-zinc-400 mb-1">Custom pay items - copy the id into the fields above</p>
+            {customItems.map((item, idx) => (
+              <div key={idx} className="flex items-center justify-between gap-3 bg-white rounded-lg border border-zinc-200 px-3 py-1.5 text-xs">
+                <span className="font-semibold text-zinc-700">{String(item.label ?? item.name ?? 'Unnamed item')}</span>
+                <code className="font-mono text-zinc-500">{String(item.id ?? item.name ?? '—')}</code>
+              </div>
+            ))}
+          </div>
+        )
+      )}
+
+      {status && (
+        <div className={`flex items-center gap-2 text-xs font-medium px-4 py-2.5 rounded-xl border ${
+          status.type === 'success'
+            ? 'text-emerald-600 bg-emerald-50/50 border-emerald-100'
+            : 'text-red-500 bg-red-50/50 border-red-100'
+        }`}>
+          {status.type === 'success' ? <Check className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
+          <span>{status.message}</span>
+        </div>
+      )}
+
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={isSaving || !isDirty}
+          className="flex items-center gap-2 bg-brand-primary text-white px-6 py-2.5 rounded-xl font-bold text-sm hover:bg-brand-primary/90 transition-all shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+          Save Mapping
         </button>
       </div>
     </div>

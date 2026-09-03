@@ -1,11 +1,13 @@
 import { useState, useMemo } from 'react';
 import { ResponsiveContainer, BarChart, Bar, LineChart as RLineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
-import { Clock, Plus, Users, Loader2, AlertCircle, Settings as SettingsIcon, BarChart3, LineChart as LineChartIcon, Search, Download, Table2, Eye } from 'lucide-react';
+import { Clock, Plus, Users, Loader2, AlertCircle, Settings as SettingsIcon, BarChart3, LineChart as LineChartIcon, Search, Download, Table2, Eye, Send } from 'lucide-react';
 import { useStaff } from '../staff/hooks/useStaff';
 import { useSettings } from '../settings/hooks/useSettings';
 import { useRateGroups } from '../settings/hooks/useRateGroups';
 import { useTimeLogs } from './hooks/useTimeLogs';
 import { usePayrollAdjustments } from './hooks/usePayrollAdjustments';
+import { usePayrollSubmissions } from './hooks/usePayrollSubmissions';
+import { PushToSimplePayDialog } from './components/PushToSimplePayDialog';
 import { TimeAttendanceSettings, RateSettings } from '../../types';
 import { buildChartData, withAverageLine } from './chartData';
 import { TimeLogModal } from './components/TimeLogModal';
@@ -37,6 +39,7 @@ export function TimeAttendancePage() {
   const { timeLogs, loading, error, addTimeLog, addTimeLogsBulk, updateTimeLog, deleteTimeLog } = useTimeLogs();
   const { rateGroups, loading: rateGroupsLoading, addRateGroup, updateRateGroup, deleteRateGroup } = useRateGroups();
   const { adjustments, setAdjustment } = usePayrollAdjustments();
+  const { submissions } = usePayrollSubmissions();
 
   // Merge over defaults so a config saved before a settings-field rename/addition doesn't
   // leave newer fields undefined.
@@ -50,6 +53,7 @@ export function TimeAttendancePage() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
   const [isPreviewChooserOpen, setIsPreviewChooserOpen] = useState(false);
+  const [isPushToSimplePayOpen, setIsPushToSimplePayOpen] = useState(false);
   const [previewReport, setPreviewReport] = useState<{ title: string; html: string } | null>(null);
   const [periodOffset, setPeriodOffset] = useState(0);
   const [staffSearch, setStaffSearch] = useState('');
@@ -75,6 +79,16 @@ export function TimeAttendancePage() {
   );
 
   const activeStaff = useMemo(() => staff.filter(s => s.status === 'active'), [staff]);
+
+  const currentPeriodSubmission = useMemo(
+    () => submissions.find(s => s.periodKey === period.periodKey),
+    [submissions, period.periodKey]
+  );
+  const pushStatusByStaffId = useMemo(() => {
+    const map: Record<string, { status: string; error?: string }> = {};
+    currentPeriodSubmission?.lines.forEach(l => { map[l.staffId] = { status: l.status, error: l.error }; });
+    return map;
+  }, [currentPeriodSubmission]);
 
   const filteredStaff = useMemo(() => {
     const query = staffSearch.trim().toLowerCase();
@@ -326,6 +340,15 @@ export function TimeAttendancePage() {
               <Download className="w-3.5 h-3.5 text-zinc-500" />
               Export
             </button>
+            <button
+              type="button"
+              title="Push this period's computed pay into SimplePay"
+              onClick={() => setIsPushToSimplePayOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50 font-semibold text-xs transition-all shadow-2xs cursor-pointer"
+            >
+              <Send className="w-3.5 h-3.5 text-zinc-500" />
+              Push to SimplePay
+            </button>
           </div>
         </div>
         {loading ? (
@@ -350,9 +373,20 @@ export function TimeAttendancePage() {
             updateTimeLog={updateTimeLog}
             deleteTimeLog={deleteTimeLog}
             onSetAdjustment={setAdjustment}
+            pushStatusByStaffId={pushStatusByStaffId}
           />
         )}
       </div>
+
+      {isPushToSimplePayOpen && (
+        <PushToSimplePayDialog
+          rows={buildPayrollRows(activeStaff, timeLogs, rateGroups, rateSettings, attendanceSettings, adjustments, period)}
+          period={period}
+          payInterval={attendanceSettings.payInterval}
+          simplePaySettings={appSettings?.simplePay}
+          onClose={() => setIsPushToSimplePayOpen(false)}
+        />
+      )}
 
       {isLogOpen && (
         <TimeLogModal

@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
-import { ChevronDown, ChevronRight, Edit2, Trash2, Plus, Check, X, Loader2, Inbox } from 'lucide-react';
+import { ChevronDown, ChevronRight, Edit2, Trash2, Plus, Check, X, Loader2, Inbox, Send, XCircle, AlertTriangle } from 'lucide-react';
 import { StaffMember, TimeLog, TimeAttendanceSettings, RateGroup, RateSettings, PayrollAdjustment } from '../../../types';
 import { TimeLogEntry } from '../hooks/useTimeLogs';
 import { PayrollAdjustmentEntry } from '../hooks/usePayrollAdjustments';
@@ -12,7 +12,7 @@ const currency = (n: number) => `R${n.toFixed(2)}`;
 
 export function StaffPayrollTable({
   staff, timeLogs, rateGroups, rateSettings, attendanceSettings, adjustments, period,
-  addTimeLog, updateTimeLog, deleteTimeLog, onSetAdjustment,
+  addTimeLog, updateTimeLog, deleteTimeLog, onSetAdjustment, pushStatusByStaffId,
 }: {
   staff: StaffMember[];
   timeLogs: TimeLog[];
@@ -25,6 +25,10 @@ export function StaffPayrollTable({
   updateTimeLog: (id: string, entry: Partial<TimeLogEntry>) => Promise<boolean>;
   deleteTimeLog: (id: string) => Promise<boolean>;
   onSetAdjustment: (staffId: string, periodKey: string, entry: PayrollAdjustmentEntry) => Promise<boolean>;
+  // Per-staff SimplePay push status for the current period, keyed by staffId - see
+  // usePayrollSubmissions.ts / PushToSimplePayDialog.tsx. Optional so this table
+  // still works anywhere SimplePay context isn't wired in (e.g. future reuse).
+  pushStatusByStaffId?: Record<string, { status: string; error?: string }>;
 }) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [logModal, setLogModal] = useState<{ staffId: string; date?: string; editingLog?: TimeLog | null } | null>(null);
@@ -84,6 +88,7 @@ export function StaffPayrollTable({
             <tr className="bg-zinc-50/70 border-b border-zinc-200">
               <th className="px-3 py-3.5 w-8"></th>
               <th className="px-3 py-3.5 text-xs font-bold text-zinc-500 uppercase tracking-wider">Staff Member</th>
+              <th className="px-3 py-3.5 text-xs font-bold text-zinc-500 uppercase tracking-wider">SimplePay</th>
               <th className="px-3 py-3.5 text-xs font-bold text-zinc-500 uppercase tracking-wider text-right">Normal Hrs</th>
               <th className="px-3 py-3.5 text-xs font-bold text-zinc-500 uppercase tracking-wider text-right">OT Hrs</th>
               <th className="px-3 py-3.5 text-xs font-bold text-zinc-500 uppercase tracking-wider text-right">Total Hrs</th>
@@ -114,6 +119,12 @@ export function StaffPayrollTable({
                       <span className="text-zinc-400 font-normal mr-1.5">{row.staffMember.number || idx + 1}</span>
                       {row.staffMember.firstName} {row.staffMember.lastName}
                     </td>
+                    <td className="px-3 py-3.5">
+                      <SimplePayStatusBadge
+                        linked={!!row.staffMember.simplePayEmployeeId}
+                        status={pushStatusByStaffId?.[row.staffMember.id]}
+                      />
+                    </td>
                     <td className="px-3 py-3.5 text-sm text-zinc-700 text-right">{row.split.normal}h</td>
                     <td className="px-3 py-3.5 text-sm text-zinc-700 text-right">{row.split.overtime}h</td>
                     <td className="px-3 py-3.5 text-sm font-black text-zinc-800 text-right">{row.split.total}h</td>
@@ -137,7 +148,7 @@ export function StaffPayrollTable({
                   </tr>
                   {isExpanded && (
                     <tr>
-                      <td colSpan={10} className="bg-zinc-50/60 px-8 py-4">
+                      <td colSpan={11} className="bg-zinc-50/60 px-8 py-4">
                         <TimecardBreakdown
                           logs={row.periodLogs}
                           missingDays={missingDaysFor(row.periodLogs)}
@@ -160,6 +171,7 @@ export function StaffPayrollTable({
             <tr className="bg-zinc-50 border-t-2 border-zinc-200 font-black text-zinc-800">
               <td></td>
               <td className="px-3 py-3.5 text-xs uppercase tracking-wider">Totals</td>
+              <td></td>
               <td className="px-3 py-3.5 text-sm text-right">{Math.round(totals.normal * 100) / 100}h</td>
               <td className="px-3 py-3.5 text-sm text-right">{Math.round(totals.overtime * 100) / 100}h</td>
               <td className="px-3 py-3.5 text-sm text-right">{Math.round(totals.total * 100) / 100}h</td>
@@ -189,6 +201,24 @@ export function StaffPayrollTable({
       )}
     </>
   );
+}
+
+// Shows whether this staff member's pay was pushed to SimplePay for the current period -
+// see usePayrollSubmissions.ts / PushToSimplePayDialog.tsx.
+function SimplePayStatusBadge({ linked, status }: { linked: boolean; status?: { status: string; error?: string } }) {
+  if (!linked) {
+    return <span title="No SimplePay Employee ID set for this staff member" className="text-[10px] font-bold text-zinc-300">Not linked</span>;
+  }
+  if (!status) {
+    return <span title="Not yet pushed to SimplePay for this period" className="text-[10px] font-bold text-zinc-300">—</span>;
+  }
+  if (status.status === 'pushed') {
+    return <span title="Pushed to SimplePay" className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600"><Send className="w-3 h-3" /> Pushed</span>;
+  }
+  if (status.status === 'failed') {
+    return <span title={status.error || 'SimplePay rejected this line'} className="inline-flex items-center gap-1 text-[10px] font-bold text-red-500"><XCircle className="w-3 h-3" /> Failed</span>;
+  }
+  return <span title={status.error || 'Skipped - not sent to SimplePay'} className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-600"><AlertTriangle className="w-3 h-3" /> Skipped</span>;
 }
 
 // Debounced-on-blur currency input: keeps a local editable string so the field doesn't

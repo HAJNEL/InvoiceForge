@@ -1503,6 +1503,441 @@ app.post("/api/zoho/create-invoice", notifyLimiter, requireAuth, async (req, res
   }
 });
 
+// ---------------------------------------------------------------------------
+// SimplePay integration - push a pay period's computed wages (see
+// src/features/time-attendance/payroll.ts buildPayrollRows) into SimplePay so
+// its own weekly payroll run has the right figures. Each user connects their
+// own SimplePay account from Settings; credentials live in the owner-only
+// `simplepay_credentials/{uid}` Firestore collection (never the public
+// `settings` doc) and are only ever read server-side via the Admin SDK.
+//
+// SimplePay's API has no timesheet-import or bank/EFT-payment endpoint - this
+// integration writes payslip calculation values via bulk_input and reads them
+// back; SimplePay itself still owns running/finalising the actual pay run.
+// ---------------------------------------------------------------------------
+
+const SIMPLEPAY_API_BASE = "https://api.payroll.simplepay.cloud/v1";
+
+interface SimplePayCreds {
+  apiKey: string;
+  clientId: string;
+}
+
+async function getSimplePayCredentialsForUser(uid: string): Promise<SimplePayCreds> {
+  const snap = await getAdminFirestore().collection("simplepay_credentials").doc(uid).get();
+  const data = snap.exists ? snap.data() : undefined;
+  const apiKey = typeof data?.apiKey === "string" ? data.apiKey.trim() : "";
+  const clientId = typeof data?.clientId === "string" ? data.clientId.trim() : "";
+  if (!apiKey || !clientId) {
+    throw new Error("SimplePay is not connected. Configure it in Settings first.");
+  }
+  return { apiKey, clientId };
+}
+
+// Thin wrapper around a SimplePay API call: attaches the API key and parses
+// the JSON body. Unlike Zoho, SimplePay uses a static per-account key (no
+// OAuth refresh), so there's no token cache to manage.
+async function simplePayRequest(
+  creds: SimplePayCreds,
+  path: string,
+  options: { method?: string; query?: Record<string, string>; body?: unknown } = {}
+): Promise<{ ok: boolean; status?: number; data: unknown }> {
+  const query = options.query ? `?${new URLSearchParams(options.query).toString()}` : "";
+  const url = `${SIMPLEPAY_API_BASE}${path}${query}`;
+  const bodyStr = options.body !== undefined ? JSON.stringify(options.body) : null;
+
+  const response = await makeRequest(
+    url,
+    {
+      method: options.method || "GET",
+      headers: {
+        Authorization: creds.apiKey,
+        "Content-Type": "application/json",
+      },
+      timeout: 20000,
+    },
+    bodyStr
+  );
+  const data = await response.json().catch(() => ({}));
+  return { ok: response.ok, status: response.status, data };
+}
+
+async function getSimplePaySettingsForUser(uid: string): Promise<{ defaultWaveId?: string; normalPayItemId?: string; overtimePayItemId?: string }> {
+  const snap = await getAdminFirestore().collection("settings").doc(uid).get();
+  const data = snap.exists ? snap.data() : undefined;
+  const simplePay = (data?.simplePay ?? {}) as Record<string, unknown>;
+  return {
+    defaultWaveId: typeof simplePay.defaultWaveId === "string" ? simplePay.defaultWaveId.trim() : undefined,
+    normalPayItemId: typeof simplePay.normalPayItemId === "string" ? simplePay.normalPayItemId.trim() : undefined,
+    overtimePayItemId: typeof simplePay.overtimePayItemId === "string" ? simplePay.overtimePayItemId.trim() : undefined,
+  };
+}
+
+// POST /api/simplepay/discover-clients - lists the clients (companies) this API
+// key can access, keyed only by apiKey (SimplePay's client_id isn't shown
+// anywhere in their dashboard - the docs say to get it from this same list
+// call). Used by the Settings card to help the admin find their client_id
+// before a clientId even exists to test a full connection with.
+app.post("/api/simplepay/discover-clients", adminLimiter, requireAuth, async (req, res) => {
+  const callerUid = (req as AuthedRequest).authUid;
+  const { apiKey } = (req.body ?? {}) as { apiKey?: unknown };
+  const key = typeof apiKey === "string" ? apiKey.trim() : "";
+  if (!key) {
+    return res.status(400).json({ success: false, error: "An API Key is required." });
+  }
+  try {
+    const result = await simplePayRequest({ apiKey: key, clientId: "" }, "/clients");
+    if (!result.ok) {
+      const message = (result.data as { error?: string; message?: string } | undefined)?.error
+        || (result.data as { error?: string; message?: string } | undefined)?.message
+        || `SimplePay returned an error (status ${result.status}).`;
+      throw new Error(message);
+    }
+    console.log(`[AUDIT] simplepay discover-clients OK caller=${callerUid}`);
+    return res.json({ success: true, clients: result.data });
+  } catch (error: unknown) {
+    const err = error as Error;
+    console.warn(`[AUDIT] simplepay discover-clients FAILED caller=${callerUid}:`, err.message || err);
+    return res.status(400).json({ success: false, error: err.message || "Could not list clients from SimplePay with this API key." });
+  }
+});
+
+// POST /api/simplepay/test-connection - verifies a candidate {apiKey, clientId}
+// pair works, without requiring it to be saved first (mirrors Zoho's test-connection).
+app.post("/api/simplepay/test-connection", adminLimiter, requireAuth, async (req, res) => {
+  const callerUid = (req as AuthedRequest).authUid;
+  const { apiKey, clientId } = (req.body ?? {}) as { apiKey?: unknown; clientId?: unknown };
+
+  const creds: SimplePayCreds = {
+    apiKey: typeof apiKey === "string" ? apiKey.trim() : "",
+    clientId: typeof clientId === "string" ? clientId.trim() : "",
+  };
+  if (!creds.apiKey || !creds.clientId) {
+    return res.status(400).json({ success: false, error: "API Key and Client ID are both required." });
+  }
+
+  try {
+    const result = await simplePayRequest(creds, `/clients/${encodeURIComponent(creds.clientId)}/employees`, {
+      query: { per_page: "1" },
+    });
+    if (!result.ok) {
+      const message = (result.data as { error?: string; message?: string } | undefined)?.error
+        || (result.data as { error?: string; message?: string } | undefined)?.message
+        || `SimplePay returned an error (status ${result.status}).`;
+      throw new Error(message);
+    }
+    console.log(`[AUDIT] simplepay test-connection OK caller=${callerUid} client=${creds.clientId}`);
+    return res.json({ success: true });
+  } catch (error: unknown) {
+    const err = error as Error;
+    console.warn(`[AUDIT] simplepay test-connection FAILED caller=${callerUid}:`, err.message || err);
+    return res.status(400).json({ success: false, error: err.message || "Could not connect to SimplePay with these credentials." });
+  }
+});
+
+// GET /api/simplepay/waves - lists this SimplePay client's payment frequency
+// groupings, shown as a raw reference list in Settings so the admin can copy
+// the right wave id (the mapping is entered manually, not bound to a select -
+// see SimplePaySettings for why).
+app.get("/api/simplepay/waves", notifyLimiter, requireAuth, async (req, res) => {
+  const callerUid = (req as AuthedRequest).authUid;
+  try {
+    const creds = await getSimplePayCredentialsForUser(callerUid);
+    const result = await simplePayRequest(creds, `/clients/${encodeURIComponent(creds.clientId)}/waves`);
+    if (!result.ok) throw new Error(`SimplePay returned an error (status ${result.status}).`);
+    return res.json({ success: true, waves: result.data });
+  } catch (error: unknown) {
+    const err = error as Error;
+    console.error(`[AUDIT] simplepay list-waves FAILED caller=${callerUid}:`, err.message || err);
+    return res.status(500).json({ success: false, error: err.message || "Failed to load pay waves from SimplePay." });
+  }
+});
+
+// GET /api/simplepay/items-and-outputs - lists this SimplePay client's pay
+// item ids, shown as a raw reference list in Settings (see /waves comment).
+app.get("/api/simplepay/items-and-outputs", notifyLimiter, requireAuth, async (req, res) => {
+  const callerUid = (req as AuthedRequest).authUid;
+  try {
+    const creds = await getSimplePayCredentialsForUser(callerUid);
+    const result = await simplePayRequest(creds, `/clients/${encodeURIComponent(creds.clientId)}/items_and_outputs`);
+    if (!result.ok) throw new Error(`SimplePay returned an error (status ${result.status}).`);
+    return res.json({ success: true, items: result.data });
+  } catch (error: unknown) {
+    const err = error as Error;
+    console.error(`[AUDIT] simplepay list-items FAILED caller=${callerUid}:`, err.message || err);
+    return res.status(500).json({ success: false, error: err.message || "Failed to load pay items from SimplePay." });
+  }
+});
+
+interface SimplePayPayslipSummary {
+  id: string;
+  date?: string;
+  finalised: boolean;
+  nettPay?: number;
+}
+
+// Best-effort normalisation of a SimplePay payslip object into the shape the
+// client needs - tolerant of minor field-naming variation since this endpoint
+// is only used to let the admin pick the right open payslip to push into.
+function normalizeSimplePayslip(raw: unknown): SimplePayPayslipSummary | null {
+  const obj = (raw && typeof raw === "object" && "payslip" in (raw as Record<string, unknown>)
+    ? (raw as Record<string, unknown>).payslip
+    : raw) as Record<string, unknown> | undefined;
+  if (!obj || obj.id === undefined || obj.id === null) return null;
+  return {
+    id: String(obj.id),
+    date: typeof obj.date === "string" ? obj.date : undefined,
+    finalised: obj.finalised === true || obj.finalised === "true",
+    nettPay: typeof obj.nett_pay === "number" ? obj.nett_pay : (typeof obj.nett_pay === "string" ? Number(obj.nett_pay) : undefined),
+  };
+}
+
+// GET /api/simplepay/employees/:employeeId/payslips - lists a linked
+// employee's payslips so the "Push to SimplePay" dialog can identify which
+// draft (non-finalised) payslip a period's pay should be written into. The
+// API addresses bulk_input writes by payslip_id, not just employee_id, so
+// this lookup is required before every push rather than assumed.
+app.get("/api/simplepay/employees/:employeeId/payslips", notifyLimiter, requireAuth, async (req, res) => {
+  const callerUid = (req as AuthedRequest).authUid;
+  const employeeId = String(req.params.employeeId || "").trim();
+  if (!employeeId) {
+    return res.status(400).json({ success: false, error: "An employee id is required." });
+  }
+  try {
+    const creds = await getSimplePayCredentialsForUser(callerUid);
+    const result = await simplePayRequest(creds, `/employees/${encodeURIComponent(employeeId)}/payslips`);
+    if (!result.ok) throw new Error(`SimplePay returned an error (status ${result.status}).`);
+    const list = Array.isArray(result.data) ? result.data : [];
+    const payslips = list.map(normalizeSimplePayslip).filter((p): p is SimplePayPayslipSummary => p !== null)
+      .sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+    return res.json({ success: true, payslips });
+  } catch (error: unknown) {
+    const err = error as Error;
+    console.error(`[AUDIT] simplepay list-payslips FAILED caller=${callerUid} employee=${employeeId}:`, err.message || err);
+    return res.status(500).json({ success: false, error: err.message || "Failed to load payslips from SimplePay." });
+  }
+});
+
+function extractSimplePayError(data: unknown, status?: number): string {
+  const obj = (data ?? {}) as Record<string, unknown>;
+  const parts: string[] = [];
+  if (obj.errors && typeof obj.errors === "object") {
+    parts.push(...Object.entries(obj.errors as Record<string, unknown>).map(([k, v]) => `${k}: ${v}`));
+  }
+  if (typeof obj.message === "string" && obj.message) parts.push(obj.message);
+  if (typeof obj.error === "string" && obj.error && obj.error !== obj.message) parts.push(obj.error);
+  const raw = JSON.stringify(data);
+  const hasContext = raw && raw !== "{}" && !parts.every(p => raw === `{"error":"${p}"}` || raw === `{"message":"${p}"}`);
+  if (parts.length > 0) {
+    // While this integration is still being validated against the live API,
+    // append the raw body too whenever it carries more than the short message
+    // already shown - a terse "Failed" alone isn't enough to diagnose.
+    return hasContext ? `${parts.join("; ")} (raw: ${raw})` : parts.join("; ");
+  }
+  return `SimplePay returned an error (status ${status})${raw && raw !== "{}" ? `: ${raw}` : "."}`;
+}
+
+// POST /api/simplepay/employees/sync - creates or updates a SimplePay employee
+// record from a staff member's InvoiceForge data, so the SimplePay Employee ID
+// field can be auto-populated instead of hand-typed. Stateless on the server
+// side - the client sends the current form data directly (which may not be
+// saved in Firestore yet, e.g. mid-Add) rather than this route reading
+// staff/{id} itself, mirroring the rest of the SimplePay routes.
+app.post("/api/simplepay/employees/sync", notifyLimiter, requireAuth, async (req, res) => {
+  const callerUid = (req as AuthedRequest).authUid;
+  const { employeeId, employee } = (req.body ?? {}) as { employeeId?: unknown; employee?: unknown };
+  const e = (employee ?? {}) as Record<string, unknown>;
+
+  const firstName = typeof e.firstName === "string" ? e.firstName.trim() : "";
+  const lastName = typeof e.lastName === "string" ? e.lastName.trim() : "";
+  if (!firstName || !lastName) {
+    return res.status(400).json({ success: false, error: "First and last name are required to sync an employee." });
+  }
+  const existingId = typeof employeeId === "string" ? employeeId.trim() : "";
+
+  const payload: Record<string, unknown> = { first_name: firstName, last_name: lastName };
+  if (typeof e.birthdate === "string" && e.birthdate) payload.birthdate = e.birthdate;
+  if (typeof e.appointmentDate === "string" && e.appointmentDate) payload.appointment_date = e.appointmentDate;
+  if (typeof e.identificationType === "string" && e.identificationType) payload.identification_type = e.identificationType;
+  const idNumber = typeof e.idNumber === "string" && e.idNumber ? e.idNumber : (typeof e.otherNumber === "string" ? e.otherNumber : "");
+  if (idNumber) payload.id_number = idNumber;
+  if (typeof e.paymentMethod === "string" && e.paymentMethod) payload.payment_method = e.paymentMethod;
+  if (e.paymentMethod === "eft_manual" && e.bankId && e.accountNumber && e.branchCode) {
+    const bankAccount: Record<string, unknown> = {
+      bank_id: e.bankId,
+      account_number: e.accountNumber,
+      branch_code: e.branchCode,
+      // Confirmed required by a live "bank_account.account_type: can't be
+      // blank" validation error - not shown in SimplePay's minimal docs example.
+      account_type: e.accountType,
+    };
+    if (typeof e.holderRelationship === "string" && e.holderRelationship) bankAccount.holder_relationship = e.holderRelationship;
+    if (typeof e.holderName === "string" && e.holderName) bankAccount.holder_name = e.holderName;
+    payload.bank_account = bankAccount;
+  }
+
+  try {
+    const creds = await getSimplePayCredentialsForUser(callerUid);
+    let result;
+    if (existingId) {
+      result = await simplePayRequest(creds, `/employees/${encodeURIComponent(existingId)}`, {
+        method: "PATCH",
+        body: { employee: payload },
+      });
+    } else {
+      const settings = await getSimplePaySettingsForUser(callerUid);
+      if (!settings.defaultWaveId) {
+        return res.status(400).json({ success: false, error: "Configure a Default Wave ID in Settings -> Integrations before syncing a new employee." });
+      }
+      payload.wave_id = settings.defaultWaveId;
+      result = await simplePayRequest(creds, `/clients/${encodeURIComponent(creds.clientId)}/employees`, {
+        method: "POST",
+        body: { employee: payload },
+      });
+    }
+    if (!result.ok) {
+      console.error(`[AUDIT] simplepay employee-sync RAW ERROR caller=${callerUid} status=${result.status} body=${JSON.stringify(result.data)} payload=${JSON.stringify(payload)}`);
+      throw new Error(extractSimplePayError(result.data, result.status));
+    }
+    const data = (result.data ?? {}) as Record<string, unknown>;
+    const returnedEmployee = (data.employee ?? data) as Record<string, unknown>;
+    const newEmployeeId = returnedEmployee?.id !== undefined && returnedEmployee.id !== null ? String(returnedEmployee.id) : existingId;
+    if (!newEmployeeId) {
+      throw new Error("SimplePay did not return an employee id.");
+    }
+    console.log(`[AUDIT] simplepay employee-sync OK caller=${callerUid} employee=${newEmployeeId} created=${!existingId}`);
+    return res.json({ success: true, employeeId: newEmployeeId });
+  } catch (error: unknown) {
+    const err = error as Error;
+    console.error(`[AUDIT] simplepay employee-sync FAILED caller=${callerUid}:`, err.message || err);
+    return res.status(500).json({ success: false, error: err.message || "Failed to sync employee to SimplePay." });
+  }
+});
+
+interface PushPayrollLineInput {
+  staffId: string;
+  simplePayEmployeeId?: string;
+  payslipId?: string;
+  normalPay: number;
+  overtimePay: number;
+}
+
+interface PushPayrollLineResult {
+  staffId: string;
+  simplePayEmployeeId?: string;
+  normalPay: number;
+  overtimePay: number;
+  status: "pushed" | "skipped_unlinked" | "skipped_no_payslip" | "failed";
+  error?: string;
+}
+
+// POST /api/simplepay/push-payroll - writes one pay period's computed normal/
+// overtime pay into SimplePay via bulk_input, one entity per staff member
+// with both a linked employee id and a chosen draft payslip id. Lines missing
+// either are reported back as skipped rather than attempted. This route does
+// not write Firestore itself - the client persists the returned per-line
+// results as a PayrollSubmission, same pattern as /api/zoho/create-invoice.
+app.post("/api/simplepay/push-payroll", notifyLimiter, requireAuth, async (req, res) => {
+  const callerUid = (req as AuthedRequest).authUid;
+  const { lines: rawLines } = (req.body ?? {}) as { periodKey?: unknown; lines?: unknown };
+
+  if (!Array.isArray(rawLines) || rawLines.length === 0) {
+    return res.status(400).json({ success: false, error: "At least one payroll line is required." });
+  }
+  const lines: PushPayrollLineInput[] = rawLines.map((raw) => {
+    const l = (raw ?? {}) as Record<string, unknown>;
+    return {
+      staffId: String(l.staffId || ""),
+      simplePayEmployeeId: typeof l.simplePayEmployeeId === "string" ? l.simplePayEmployeeId.trim() : undefined,
+      payslipId: typeof l.payslipId === "string" ? l.payslipId.trim() : undefined,
+      normalPay: typeof l.normalPay === "number" ? l.normalPay : Number(l.normalPay) || 0,
+      overtimePay: typeof l.overtimePay === "number" ? l.overtimePay : Number(l.overtimePay) || 0,
+    };
+  }).filter(l => l.staffId);
+
+  try {
+    const creds = await getSimplePayCredentialsForUser(callerUid);
+    const settings = await getSimplePaySettingsForUser(callerUid);
+    if (!settings.normalPayItemId || !settings.overtimePayItemId) {
+      return res.status(400).json({ success: false, error: "Configure the Normal Pay and Overtime Pay item ids in Settings -> Integrations first." });
+    }
+
+    const results: PushPayrollLineResult[] = [];
+    const entities: { id: string; payslip_id: string; attributes: Record<string, string> }[] = [];
+    const entityLineIndex = new Map<string, number>(); // `${employeeId}:${payslipId}` -> results index
+
+    lines.forEach((line) => {
+      if (!line.simplePayEmployeeId) {
+        results.push({ ...line, status: "skipped_unlinked" });
+        return;
+      }
+      if (!line.payslipId) {
+        results.push({ ...line, status: "skipped_no_payslip" });
+        return;
+      }
+      const idx = results.length;
+      results.push({ ...line, status: "failed" }); // overwritten below on success
+      entityLineIndex.set(`${line.simplePayEmployeeId}:${line.payslipId}`, idx);
+      entities.push({
+        id: line.simplePayEmployeeId,
+        payslip_id: line.payslipId,
+        attributes: {
+          [`calc.${settings.normalPayItemId}.amount`]: String(line.normalPay),
+          [`calc.${settings.overtimePayItemId}.amount`]: String(line.overtimePay),
+        },
+      });
+    });
+
+    if (entities.length > 0) {
+      const bulkResult = await simplePayRequest(creds, `/clients/${encodeURIComponent(creds.clientId)}/bulk_input`, {
+        method: "POST",
+        body: { entities },
+      });
+      if (!bulkResult.ok) {
+        throw new Error(`SimplePay rejected the bulk update (status ${bulkResult.status}).`);
+      }
+      const responseEntries = Array.isArray(bulkResult.data) ? bulkResult.data : [];
+      responseEntries.forEach((raw) => {
+        const entry = (raw ?? {}) as Record<string, unknown>;
+        const key = `${entry.id}:${entry.payslip_id}`;
+        const idx = entityLineIndex.get(key);
+        if (idx === undefined) return;
+        const succeeded = entry.success === true || entry.success === "true";
+        let errorMessage: string | undefined;
+        if (!succeeded) {
+          // bulk_input's per-entity failure carries a generic top-level "message"
+          // ("Information for X failed to save") plus the actual reason nested in
+          // "errors" (e.g. {"calc.commission.commission_input": "Commission is
+          // not enabled"}) - without the latter the message alone isn't actionable.
+          const parts: string[] = [];
+          if (entry.errors && typeof entry.errors === "object") {
+            parts.push(...Object.entries(entry.errors as Record<string, unknown>).map(([k, v]) => `${k}: ${v}`));
+          }
+          if (parts.length === 0 && typeof entry.message === "string") parts.push(entry.message);
+          errorMessage = parts.length > 0 ? parts.join("; ") : "SimplePay rejected this entry.";
+        }
+        results[idx] = {
+          ...results[idx],
+          status: succeeded ? "pushed" : "failed",
+          error: errorMessage,
+        };
+      });
+    }
+
+    const overallStatus: "success" | "partial" | "failed" =
+      results.every(r => r.status === "pushed") ? "success"
+      : results.some(r => r.status === "pushed") ? "partial"
+      : "failed";
+
+    console.log(`[AUDIT] simplepay push-payroll caller=${callerUid} status=${overallStatus} lines=${results.length}`);
+    return res.json({ success: true, status: overallStatus, lines: results });
+  } catch (error: unknown) {
+    const err = error as Error;
+    console.error(`[AUDIT] simplepay push-payroll FAILED caller=${callerUid}:`, err.message || err);
+    return res.status(500).json({ success: false, error: err.message || "Failed to push payroll to SimplePay." });
+  }
+});
+
 function findFreePort(startPort: number, maxAttempts = 100): Promise<number> {
   return new Promise((resolve, reject) => {
     if (maxAttempts <= 0) {
